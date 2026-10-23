@@ -27,6 +27,13 @@ Press `Ctrl+C` to stop. Files are served with `no-cache`, so edits show up on re
 
 You can also open `index.html` directly in a browser; no server is required. jQuery is loaded from a CDN, so you need internet access.
 
+### Deploy to GitHub Pages
+
+The GitHub Actions workflow deploys the site when changes are pushed to `main`, or
+when started manually from the Actions tab. In the repository settings, set
+**Pages → Build and deployment → Source** to **GitHub Actions**. Once the workflow
+finishes, the deployment URL is available in its run summary.
+
 ### Docker (optional)
 
 A `Dockerfile` (nginx serving the static files) is included, but `run.ps1` does not use it:
