@@ -30,9 +30,11 @@ You can also open `index.html` directly in a browser; no server is required. jQu
 ### Deploy to GitHub Pages
 
 The GitHub Actions workflow deploys the site when changes are pushed to `main`, or
-when started manually from the Actions tab. In the repository settings, set
-**Pages → Build and deployment → Source** to **GitHub Actions**. Once the workflow
-finishes, the deployment URL is available in its run summary.
+when started manually from the Actions tab. Before the first deployment, enable
+GitHub Pages in the repository settings: open **Settings → Pages** and set
+**Build and deployment → Source** to **GitHub Actions**. Rerun the workflow from
+the Actions tab if its initial run failed because Pages was not enabled. Once the
+workflow finishes, the deployment URL is available in its run summary.
 
 ### Docker (optional)
 
