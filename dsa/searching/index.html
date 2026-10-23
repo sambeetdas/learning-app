@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Searching - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>11. Searching</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../sorting/index.html">&larr; Sorting</a><a href="../recursion/index.html">Recursion &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Finding things fast</h2>
+  <p>
+    Searching means locating an item, a position, or a value that satisfies a condition. On unsorted data you must look at everything: <strong>linear search</strong>, O(n).
+    On sorted data, <strong>binary search</strong> halves the candidates at every step: O(log n), so a billion items need only about 30 comparisons.
+    And binary search is much more than "find x in an array": it finds boundaries, minimum feasible values and optimal answers whenever a yes/no condition flips exactly once.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Need</th><th>Best tool</th><th>Cost</th></tr>
+      <tr><td>Find in unsorted data once</td><td>Linear scan</td><td>O(n)</td></tr>
+      <tr><td>Many lookups by exact key</td><td>Hash set / map (<a href="../hashing/index.html">hashing</a>)</td><td>O(1) average</td></tr>
+      <tr><td>Lookups plus ordering, ranges, nearest value</td><td>Sorted array + binary search, or a balanced BST</td><td>O(log n)</td></tr>
+      <tr><td>Smallest / largest value that satisfies a monotonic condition</td><td>Binary search on the answer</td><td>O(log range &times; check)</td></tr>
+      <tr><td>k-th smallest without sorting</td><td>Quickselect</td><td>O(n) average</td></tr>
+      <tr><td>Maximum of a unimodal function</td><td>Ternary search / golden-section</td><td>O(log range)</td></tr>
+      <tr><td>Similar items in high dimensions</td><td>Approximate nearest neighbour (<a href="../modern/index.html#vector">modern</a>)</td><td>sub-linear</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="binary">Binary search and its variants</h2>
+  <div class="demo" id="bs-demo">
+    <h3>Binary search</h3>
+    <div class="bar">
+      <label>Variant <select id="bs-mode"><option value="exact">Find exact value</option><option value="lower">Lower bound (first &ge; target)</option><option value="rotated">Search a rotated sorted array</option></select></label>
+      <label>Array <input type="text" class="wide" id="bs-arr" value="2, 5, 8, 12, 16, 23, 38, 56, 72, 91"></label>
+      <label>target <input type="number" id="bs-t" value="23" style="width:5rem"></label>
+      <button type="button" id="bs-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+
+  <h3>Getting binary search right</h3>
+  <p>Binary search is famous for off-by-one bugs (Jon Bentley found that most professional programmers got it wrong, and a bug in Java's library version went unnoticed for nine years). Fix the meaning of lo and hi, keep it true in every step, and the code writes itself:</p>
+<pre class="pseudo">// Template: find the FIRST index where condition(i) is true,
+// given condition is false ... false, true ... true  (monotonic)
+lo = 0, hi = n                      // the answer is somewhere in [lo, hi]; hi = n means "none"
+while lo &lt; hi:
+    mid = lo + (hi - lo) // 2       // this form never overflows in fixed-width integers
+    if condition(mid): hi = mid     // mid may be the answer: keep it
+    else:              lo = mid + 1 // mid is definitely not: drop it
+return lo</pre>
+<pre><code>import bisect
+a = [1, 3, 3, 5, 5, 5, 8]
+bisect.bisect_left(a, 5)     # 3: first index with a[i] &gt;= 5   (lower bound)
+bisect.bisect_right(a, 5)    # 6: first index with a[i] &gt; 5    (upper bound)
+bisect.bisect_right(a, 5) - bisect.bisect_left(a, 5)   # 3 occurrences of 5
+bisect.insort(a, 4)          # insert keeping order (O(n) because of shifting)
+# C#: Array.BinarySearch / List&lt;T&gt;.BinarySearch return ~insertionPoint when not found
+# C++: std::lower_bound, std::upper_bound, std::equal_range</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="on-answer">Binary search on the answer</h2>
+  <p>
+    Many optimisation problems ask for "the minimum X such that something is possible". If being possible is <strong>monotonic</strong> (whenever X works, every bigger X works too),
+    you can binary search over X and use a simple feasibility check. Signals: "minimise the maximum", "maximise the minimum", "smallest capacity / speed / time / distance such that...".
+  </p>
+  <div class="demo" id="ans-demo">
+    <h3>Minimum ship capacity to deliver within D days</h3>
+    <div class="bar">
+      <label>Weights <input type="text" class="wide" id="ans-w" value="1, 2, 3, 4, 5, 6, 7, 8, 9, 10"></label>
+      <label>days D <input type="number" id="ans-d" value="5" style="width:4rem"></label>
+      <button type="button" id="ans-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">The same pattern solves: Koko eating bananas (minimum eating speed), split array largest sum, aggressive cows / magnetic force (maximise the minimum distance), minimum time to complete trips, and the square root of x.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="quickselect">Quickselect: the k-th smallest in O(n)</h2>
+  <p>Like quicksort, but after partitioning you only continue into the side that contains position k. On average the work halves each time: n + n/2 + n/4 + ... &asymp; 2n.</p>
+  <div class="demo" id="qs-demo">
+    <h3>Quickselect</h3>
+    <div class="bar">
+      <label>Array <input type="text" class="wide" id="qs-arr" value="31, 7, 22, 15, 3, 40, 18, 9, 27, 12"></label>
+      <label>k-th smallest, k = <input type="number" id="qs-k" value="5" min="1" style="width:4rem"></label>
+      <button type="button" id="qs-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">Worst case is O(n&sup2;) with bad pivots; random pivots make it unlikely, and the <strong>median of medians</strong> algorithm guarantees O(n) (used in introselect as a fallback). Library versions: <code>std::nth_element</code>, <code>numpy.partition</code>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="others">Other search strategies</h2>
+  <div class="demo">
+    <h3>How many probes does each strategy need?</h3>
+    <div class="bar">
+      <label>Array size <select id="race-n"><option value="100">100</option><option value="10000">10,000</option><option value="1000000" selected>1,000,000</option></select></label>
+      <label>Values <select id="race-dist"><option value="uniform">Evenly spaced</option><option value="skewed">Very uneven gaps</option></select></label>
+    </div>
+    <p class="muted" id="race-note"></p>
+    <div class="table-wrap"><table><thead><tr><th>Strategy</th><th>Probes</th><th>Complexity</th></tr></thead><tbody id="race-body"></tbody></table></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Strategy</th><th>How it works</th><th>When to use</th></tr>
+      <tr><td><strong>Linear (with sentinel)</strong></td><td>Check each item; a sentinel at the end removes the bounds check</td><td>Unsorted or tiny data; linked lists</td></tr>
+      <tr><td><strong>Jump search</strong></td><td>Jump ahead &radic;n at a time, then scan back</td><td>Sorted data where going backwards is expensive</td></tr>
+      <tr><td><strong>Exponential (galloping)</strong></td><td>Check 1, 2, 4, 8... until past the target, then binary search that range</td><td>Unbounded or infinite sorted lists; targets near the start; Timsort's merging</td></tr>
+      <tr><td><strong>Interpolation search</strong></td><td>Guess the position from the value, like looking up a name in a phone book</td><td>Uniformly distributed keys: O(log log n). Terrible on skewed data.</td></tr>
+      <tr><td><strong>Ternary / golden-section search</strong></td><td>Compare two interior points of a unimodal function and drop a third of the range</td><td>Finding the peak/minimum of a smooth function (tuning parameters)</td></tr>
+      <tr><td><strong>Fractional cascading</strong></td><td>Link several sorted lists so one binary search answers all of them</td><td>Computational geometry, multi-level indexes</td></tr>
+      <tr><td><strong>Search in a sorted matrix</strong></td><td>Start at the top-right: go left if too big, down if too small (staircase), O(m + n); or binary search a fully sorted matrix as one flat array, O(log mn)</td><td>2-D tables, Young tableaux</td></tr>
+    </table>
+  </div>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Databases:</strong> B-tree index lookups are a multi-way binary search; sorted string tables (SSTables) are binary searched on disk.</li>
+    <li><strong>git bisect:</strong> binary search over commits to find the one that introduced a bug, in log&#8322;(commits) test runs.</li>
+    <li><strong>Debugging and tuning:</strong> finding the largest batch size that fits in memory, the timeout threshold, or the first failing input.</li>
+    <li><strong>Networking:</strong> routing tables, IP-range lookups (find the range containing an address).</li>
+    <li><strong>Games and graphics:</strong> collision times, ray marching, root finding (the bisection method).</li>
+    <li><strong>Statistics:</strong> percentiles and medians of huge data (quickselect, streaming quantile sketches).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Search insert position <span class="diff easy">easy</span> <span class="tag">lower bound</span></summary>
+    <p>The answer is exactly the lower bound: first index with a[i] &ge; target (template above, or <code>bisect_left</code>). <span class="big g">O(log n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. First and last position of a target <span class="diff med">medium</span> <span class="tag">two bounds</span></summary>
+    <p>first = lower_bound(t); last = lower_bound(t + 1) - 1 (or upper_bound - 1). If first is out of range or a[first] != t, return [-1, -1]. Two O(log n) searches.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Integer square root <span class="diff easy">easy</span> <span class="tag">search on answer</span></summary>
+<pre><code>def isqrt(x):
+    lo, hi = 0, x + 1                     # find the first m with m*m &gt; x
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if mid * mid &gt; x: hi = mid
+        else: lo = mid + 1
+    return lo - 1</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q4. Search in a rotated sorted array <span class="diff med">medium</span> <span class="tag">sorted half</span></summary>
+    <p>At every step one half around mid is sorted; check whether the target lies in that sorted half (animated above). <span class="big g">O(log n)</span>. With duplicates the worst case becomes O(n), because <code>a[lo] == a[mid]</code> tells you nothing; shrink lo by one in that case.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Minimum in a rotated sorted array <span class="diff med">medium</span> <span class="tag">compare with the end</span></summary>
+<pre><code>def find_min(a):
+    lo, hi = 0, len(a) - 1
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if a[mid] &gt; a[hi]: lo = mid + 1     # the drop is to the right of mid
+        else: hi = mid
+    return a[lo]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q6. Find a peak element <span class="diff med">medium</span> <span class="tag">binary search on slope</span></summary>
+    <p class="q">Return any index that is larger than its neighbours.</p>
+    <p>If <code>a[mid] &lt; a[mid+1]</code>, a peak must exist to the right (the values climb and must come down or end); otherwise one exists at mid or to its left. <span class="big g">O(log n)</span> even though the array is not sorted.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Koko eating bananas <span class="diff med">medium</span> <span class="tag">search on answer</span></summary>
+    <p class="q">Piles of bananas, h hours; at speed k Koko eats up to k from one pile per hour. Minimum k to finish?</p>
+    <p>Hours needed at speed k = <code>sum(ceil(p / k))</code>, which decreases as k grows: binary search k in [1, max(piles)]. O(n log max).</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Split an array into k parts minimising the largest sum <span class="diff hard">hard</span> <span class="tag">search on answer</span></summary>
+    <p>Exactly the ship-capacity demo: binary search the maximum allowed part sum in [max, total]; greedily count how many parts are needed. O(n log total). (A DP solution is O(k n&sup2;).)</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Search a 2-D matrix <span class="diff med">medium</span> <span class="tag">flatten / staircase</span></summary>
+    <p>If every row starts after the previous row ends, treat it as one sorted array of length m&middot;n: index i maps to <code>(i // n, i % n)</code>. If rows and columns are only sorted individually, use the staircase walk from the top-right: O(m + n).</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Median of two sorted arrays <span class="diff hard">hard</span> <span class="tag">partition search</span></summary>
+    <h4>Approach</h4><p>Binary search a cut i in the shorter array A (and j = half - i in B) so that everything left of both cuts is &le; everything right of them: <code>A[i-1] &le; B[j]</code> and <code>B[j-1] &le; A[i]</code>. Then the median comes from the four boundary values.</p>
+<pre><code>def median_two(A, B):
+    if len(A) &gt; len(B): A, B = B, A
+    m, n = len(A), len(B); half = (m + n + 1) // 2
+    lo, hi = 0, m
+    while lo &lt;= hi:
+        i = (lo + hi) // 2; j = half - i
+        Al = A[i - 1] if i else float('-inf'); Ar = A[i] if i &lt; m else float('inf')
+        Bl = B[j - 1] if j else float('-inf'); Br = B[j] if j &lt; n else float('inf')
+        if Al &lt;= Br and Bl &lt;= Ar:
+            if (m + n) % 2: return max(Al, Bl)
+            return (max(Al, Bl) + min(Ar, Br)) / 2
+        if Al &gt; Br: hi = i - 1
+        else: lo = i + 1</code></pre>
+    <p><span class="big g">O(log min(m, n))</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. K-th smallest element in a sorted matrix <span class="diff med">medium</span> <span class="tag">search on value</span></summary>
+    <p>Binary search on the <em>value</em> v in [min, max]; count elements &le; v with the staircase walk in O(n). The smallest v with count &ge; k is the answer. O(n log range). A heap of row heads also works: O(k log n).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Find the duplicate number (values 1..n in n+1 slots) <span class="diff med">medium</span> <span class="tag">search on value / Floyd</span></summary>
+    <p>Binary search on value v: if more than v numbers are &le; v, the duplicate is &le; v (pigeonhole). O(n log n), O(1) space. Or treat <code>i &rarr; a[i]</code> as a linked list and find the cycle start with Floyd's algorithm: O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q13. Time-based key-value store <span class="diff med">medium</span> <span class="tag">binary search per key</span></summary>
+    <p class="q">set(key, value, timestamp); get(key, t) returns the value with the largest timestamp &le; t.</p>
+    <p>Timestamps arrive in increasing order, so each key's list stays sorted: <code>bisect_right(times, t) - 1</code> gives the answer in O(log n).</p>
+  </details>
+
+  <div class="pager"><a href="../sorting/index.html">&larr; Sorting</a><a href="../recursion/index.html">Next: Recursion and backtracking &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

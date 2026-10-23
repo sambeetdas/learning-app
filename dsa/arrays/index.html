@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arrays and Strings - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>2. Arrays, strings and core techniques</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../complexity/index.html">&larr; Complexity</a><a href="../linked-lists/index.html">Linked lists &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is an array?</h2>
+  <p>
+    An <strong>array</strong> stores elements of the same size <strong>side by side in memory</strong>. Because of that, the address of element <code>i</code> is simply
+    <code>base + i &times; element_size</code>, so reading or writing any index is <span class="big g">O(1)</span>. Arrays are the most used data structure in computing, and many of the most important
+    interview and real-world techniques (two pointers, sliding windows, prefix sums) are really just clever ways of walking an array.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Operation</th><th>Cost</th><th>Why</th></tr>
+      <tr><td>Read / write <code>a[i]</code></td><td><span class="big g">O(1)</span></td><td>Address arithmetic</td></tr>
+      <tr><td>Append at the end (dynamic array)</td><td><span class="big g">O(1)</span> amortised</td><td>Occasional resize, see the animation</td></tr>
+      <tr><td>Insert / delete at position i</td><td><span class="big y">O(n)</span></td><td>Everything after i must shift</td></tr>
+      <tr><td>Search unsorted</td><td><span class="big y">O(n)</span></td><td>Check each element</td></tr>
+      <tr><td>Search sorted</td><td><span class="big g">O(log n)</span></td><td>Binary search</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Static array:</strong> fixed size chosen at creation (C arrays, <code>int[]</code> in C#/Java).</li>
+    <li><strong>Dynamic array:</strong> grows automatically: Python <code>list</code>, C# <code>List&lt;T&gt;</code>, Java <code>ArrayList</code>, C++ <code>vector</code>, JavaScript arrays.</li>
+    <li><strong>2-D arrays</strong> are stored row by row (row-major in C, C#, Python/NumPy by default): element (r, c) is at <code>r &times; cols + c</code>. Looping row by row is much faster than column by column because of the CPU cache.</li>
+    <li><strong>Cache locality</strong> is the hidden super-power of arrays: neighbouring elements arrive in the CPU cache together, so linear scans are extremely fast in practice.</li>
+  </ul>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="dynamic">Dynamic arrays and amortised O(1) append</h2>
+  <p>
+    A dynamic array keeps a block with some spare <strong>capacity</strong>. When the block is full, it allocates a new one (typically <strong>2&times;</strong> or 1.5&times; bigger), copies everything over, and frees the old block.
+    Copying is expensive, but it happens so rarely that the <em>average</em> cost per append stays constant.
+  </p>
+  <div class="demo" id="dyn-demo">
+    <h3>Watch a dynamic array grow</h3>
+    <div class="bar"><label>Number of appends <select id="dyn-n"><option>5</option><option selected>9</option><option>16</option></select></label></div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">Why it works: copies happen at sizes 1, 2, 4, 8, ... n. Their total is 1 + 2 + 4 + ... + n &lt; 2n, so n appends cost less than 3n writes in total. If the array grew by a fixed +10 instead of doubling, the total would be O(n&sup2;).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="strings">Strings</h2>
+  <ul>
+    <li>A string is an array of characters. In Python, Java, C# and JavaScript strings are <strong>immutable</strong>: "changing" one creates a new string, costing O(n).</li>
+    <li>Build strings by collecting pieces in a list and joining once (<code>"".join(parts)</code>, <code>StringBuilder</code>).</li>
+    <li>Characters are numbers: <code>ord('a') = 97</code>. For lowercase letters, an array of 26 counters (<code>count[ord(c) - 97]</code>) is faster than a hash map.</li>
+    <li>Unicode: one visible character may be several code points or bytes (emoji, accents). Lengths and reversals can surprise you.</li>
+    <li>Common building blocks: frequency counting (anagrams), two pointers (palindromes), sliding window (substrings), hashing (duplicates), and the specialised algorithms on the <a href="../strings/index.html">string algorithms page</a> (KMP, Z, Rabin-Karp, tries).</li>
+  </ul>
+<pre><code>from collections import Counter
+def is_anagram(s, t):            # O(n)
+    return Counter(s) == Counter(t)
+
+def is_palindrome(s):            # O(n) time, O(1) space, ignores non-alphanumerics
+    i, j = 0, len(s) - 1
+    while i &lt; j:
+        if not s[i].isalnum(): i += 1
+        elif not s[j].isalnum(): j -= 1
+        elif s[i].lower() != s[j].lower(): return False
+        else: i += 1; j -= 1
+    return True</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="two-pointers">Technique: two pointers</h2>
+  <p>Use two indexes that move through the array according to a rule, instead of checking every pair. It turns many O(n&sup2;) problems into O(n).</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Variant</th><th>How the pointers move</th><th>Typical problems</th></tr>
+      <tr><td><strong>Opposite ends</strong></td><td>Start at both ends and move inwards</td><td>Pair sum in a sorted array, palindromes, container with most water, 3Sum</td></tr>
+      <tr><td><strong>Same direction (read / write)</strong></td><td>A fast reader and a slow writer</td><td>Remove duplicates in place, move zeroes, compact an array</td></tr>
+      <tr><td><strong>Fast and slow</strong></td><td>One moves 2 steps, one moves 1</td><td>Cycle detection, middle of a linked list (see <a href="../linked-lists/index.html">linked lists</a>)</td></tr>
+      <tr><td><strong>Partitioning</strong></td><td>Pointers mark zone boundaries</td><td>Dutch national flag, quicksort partition</td></tr>
+      <tr><td><strong>Two sequences</strong></td><td>One pointer per array</td><td>Merge two sorted arrays, intersection, is-subsequence</td></tr>
+    </table>
+  </div>
+  <div class="demo" id="tp-demo">
+    <h3>Two pointers in action</h3>
+    <div class="bar">
+      <label>Problem <select id="tp-kind"><option value="pair">Pair with target sum (sorted array)</option><option value="flag">Dutch national flag (sort 0/1/2)</option></select></label>
+      <input type="text" class="wide" id="tp-arr" value="1, 3, 4, 6, 8, 11, 15" aria-label="array">
+      <input type="text" class="wide" id="tp-flag" value="2, 0, 2, 1, 1, 0, 0, 2, 1" aria-label="array of 0, 1, 2" style="display:none">
+      <span id="tp-target-wrap"><label>target <input type="number" id="tp-target" value="14" style="width:5rem"></label></span>
+      <button type="button" id="tp-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre class="pseudo">pair_sum(sorted a, target):
+    lo = 0, hi = n - 1
+    while lo &lt; hi:
+        s = a[lo] + a[hi]
+        if s == target: return (lo, hi)
+        if s &lt; target: lo = lo + 1        // only way to increase the sum
+        else:          hi = hi - 1        // only way to decrease it
+    return none</pre>
+  <p class="muted"><strong>Why it is correct:</strong> when the sum is too small, a[lo] cannot be part of any answer with an element left of hi (those are even smaller), so discarding lo loses nothing. Each step discards one element: O(n).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="sliding-window">Technique: sliding window</h2>
+  <p>
+    For problems about <strong>contiguous</strong> subarrays or substrings, keep a window [left, right] and update a running summary (sum, counts, set) as the window slides,
+    instead of recomputing every window from scratch. Each element enters and leaves the window at most once: O(n).
+  </p>
+  <div class="cols">
+    <div>
+      <h3>Fixed size k</h3>
+<pre class="pseudo">window = sum(a[0..k-1]); best = window
+for right in k .. n-1:
+    window += a[right] - a[right - k]   // add new, drop old
+    best = max(best, window)</pre>
+    </div>
+    <div>
+      <h3>Variable size</h3>
+<pre class="pseudo">left = 0
+for right in 0 .. n-1:
+    add a[right] to the window
+    while window is invalid:
+        remove a[left]; left += 1
+    update the answer with window [left, right]</pre>
+    </div>
+  </div>
+  <div class="demo" id="sw-demo">
+    <h3>Longest substring without repeating characters</h3>
+    <div class="bar"><label>String <input type="text" id="sw-s" value="abcabcbb" maxlength="18"></label><button type="button" id="sw-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">Signals for sliding window: "longest / shortest / count of subarrays or substrings that satisfy X", where X can be checked incrementally. If values can be negative and you need sums, a window may not work; use prefix sums + hash map instead.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="prefix-sums">Technique: prefix sums and difference arrays</h2>
+  <p>Precompute running totals once, then answer any range-sum question in O(1).</p>
+  <div class="demo" id="ps-demo">
+    <h3>Prefix sums</h3>
+    <div class="bar">
+      <label>Array <input type="text" class="wide" id="ps-arr" value="3, 1, 4, 1, 5, 9, 2, 6"></label>
+      <label>l <input type="number" id="ps-l" value="2" style="width:4rem"></label>
+      <label>r <input type="number" id="ps-r" value="5" style="width:4rem"></label>
+      <button type="button" id="ps-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Subarray sum equals k:</strong> a subarray (i, j] sums to k exactly when <code>P[j] - P[i] = k</code>. Store counts of prefix sums seen so far in a hash map and look up <code>P[j] - k</code>: O(n), works with negatives.</li>
+    <li><strong>2-D prefix sums:</strong> <code>S[r][c]</code> = sum of the rectangle from (0, 0) to (r-1, c-1); any rectangle sum = <code>S[r2][c2] - S[r1][c2] - S[r2][c1] + S[r1][c1]</code>.</li>
+    <li><strong>Difference array</strong> (the reverse trick): to add v to every element in [l, r] many times, do <code>D[l] += v; D[r+1] -= v</code>, then take the prefix sum of D once at the end. Each range update becomes O(1). Used for booking systems, calendars, and "how many intervals cover each point".</li>
+    <li><strong>Prefix XOR, prefix products, prefix min/max</strong> follow the same idea.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="kadane">Technique: Kadane's algorithm (maximum subarray)</h2>
+  <p>At every position, the best subarray ending here either <strong>extends</strong> the best one ending at the previous position, or <strong>starts fresh</strong> here. This is a tiny dynamic programme.</p>
+  <div class="demo" id="kd-demo">
+    <h3>Maximum subarray sum</h3>
+    <div class="bar"><label>Array <input type="text" class="wide" id="kd-arr" value="-2, 1, -3, 4, -1, 2, 1, -5, 4"></label><button type="button" id="kd-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">Variants: maximum product subarray (track both max and min, because a negative times a negative is positive), maximum circular subarray (total minus the minimum subarray), best time to buy and sell stock (a running minimum).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="more">More array techniques</h2>
+  <div class="card arch">
+    <h3>In-place reversal and rotation</h3>
+    <p>Rotate right by k: reverse the whole array, then reverse the first k, then the rest. O(n) time, O(1) space.</p>
+<pre><code>def rotate(a, k):
+    k %= len(a)
+    def rev(i, j):
+        while i &lt; j: a[i], a[j] = a[j], a[i]; i += 1; j -= 1
+    rev(0, len(a) - 1); rev(0, k - 1); rev(k, len(a) - 1)</code></pre>
+  </div>
+  <div class="card arch">
+    <h3>Boyer-Moore majority vote</h3>
+    <p>Find the element that appears more than n/2 times in O(n) time and O(1) space: keep a candidate and a counter; equal elements add 1, different ones subtract 1; when the counter hits 0, adopt the current element.</p>
+<pre><code>def majority(a):
+    cand, cnt = None, 0
+    for x in a:
+        if cnt == 0: cand = x
+        cnt += 1 if x == cand else -1
+    return cand          # verify with a second pass if a majority is not guaranteed</code></pre>
+  </div>
+  <div class="card arch">
+    <h3>Matrix traversal</h3>
+    <ul>
+      <li><strong>Spiral order:</strong> keep four boundaries (top, bottom, left, right) and shrink them after each side.</li>
+      <li><strong>Rotate 90&deg; clockwise in place:</strong> transpose (swap <code>m[i][j]</code> and <code>m[j][i]</code>), then reverse each row.</li>
+      <li><strong>Grids as graphs:</strong> each cell has up to 4 neighbours; flood fill and islands are BFS/DFS (see <a href="../graphs/index.html">graphs</a>).</li>
+    </ul>
+  </div>
+  <div class="card arch">
+    <h3>Cyclic sort (values in a known range)</h3>
+    <p>When values are 1..n, put each value at index value-1 by swapping. Afterwards, the first index i with <code>a[i] != i+1</code> reveals the missing / duplicate number. O(n) time, O(1) space.</p>
+  </div>
+  <div class="card arch">
+    <h3>Intervals</h3>
+    <p>Sort by start time, then sweep: merge overlapping intervals, insert a new interval, or count overlaps. Sorting dominates: O(n log n).</p>
+<pre><code>def merge(intervals):
+    intervals.sort()
+    out = []
+    for s, e in intervals:
+        if out and s &lt;= out[-1][1]: out[-1][1] = max(out[-1][1], e)
+        else: out.append([s, e])
+    return out</code></pre>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Where</th><th>How arrays and these techniques are used</th></tr>
+      <tr><td>Images, audio, video</td><td>Pixels and samples are arrays; filters are sliding windows over them.</td></tr>
+      <tr><td>Data science</td><td>NumPy / pandas columns are contiguous arrays; vectorised operations scan them at memory speed.</td></tr>
+      <tr><td>Monitoring and finance</td><td>Moving averages and rolling max over the last N minutes are sliding windows; cumulative totals are prefix sums.</td></tr>
+      <tr><td>Networking</td><td>TCP's sliding window controls how many bytes can be in flight; ring buffers hold packets.</td></tr>
+      <tr><td>Databases and analytics</td><td>Column stores keep each column as a compressed array; range aggregations use prefix sums.</td></tr>
+      <tr><td>Calendars and booking</td><td>Difference arrays answer "how many bookings overlap each day" in one pass.</td></tr>
+      <tr><td>Text editors</td><td>Gap buffers (an array with a movable hole) make typing at the cursor O(1).</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Two Sum II (sorted input) <span class="diff easy">easy</span> <span class="tag">two pointers</span></summary>
+    <p class="q">Given a sorted array and a target, return the indexes of two numbers that add up to the target.</p>
+    <h4>Approach</h4><p>Opposite-end pointers, exactly as in the animation. Too small &rarr; move left pointer right; too big &rarr; move right pointer left.</p>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space. (Unsorted input: use a hash map instead, see hashing.)</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Best time to buy and sell stock <span class="diff easy">easy</span> <span class="tag">running minimum</span></summary>
+    <p class="q">prices[i] is the price on day i. Buy once and sell later; maximise the profit.</p>
+    <h4>Approach</h4><p>Scan once, remembering the cheapest price so far. Selling today gives <code>price - min_so_far</code>.</p>
+<pre><code>def max_profit(prices):
+    lo, best = float('inf'), 0
+    for p in prices:
+        lo = min(lo, p)
+        best = max(best, p - lo)
+    return best</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Move zeroes <span class="diff easy">easy</span> <span class="tag">read/write pointers</span></summary>
+    <p class="q">Move all zeroes to the end while keeping the order of the other elements, in place.</p>
+<pre><code>def move_zeroes(a):
+    w = 0                          # next position to write a non-zero
+    for r in range(len(a)):
+        if a[r] != 0:
+            a[w], a[r] = a[r], a[w]
+            w += 1</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Maximum subarray <span class="diff med">medium</span> <span class="tag">Kadane</span></summary>
+    <p class="q">Find the contiguous subarray with the largest sum.</p>
+    <h4>Approach</h4><p>Kadane's algorithm (animated above): <code>cur = max(x, cur + x); best = max(best, cur)</code>. Divide and conquer also works in O(n log n), but Kadane is simpler and faster.</p>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Product of array except self <span class="diff med">medium</span> <span class="tag">prefix / suffix</span></summary>
+    <p class="q">Return an array where out[i] is the product of all elements except a[i], without using division.</p>
+    <h4>Approach</h4><p>out[i] = (product of everything left of i) &times; (product of everything right of i). Fill left products in one pass, then multiply by a running right product in a backward pass.</p>
+<pre><code>def product_except_self(a):
+    n = len(a); out = [1] * n
+    left = 1
+    for i in range(n): out[i] = left; left *= a[i]
+    right = 1
+    for i in range(n - 1, -1, -1): out[i] *= right; right *= a[i]
+    return out</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) extra space (besides the output).</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Container with most water <span class="diff med">medium</span> <span class="tag">two pointers</span></summary>
+    <p class="q">Heights h[i] form vertical lines. Choose two lines that, with the x-axis, hold the most water.</p>
+    <h4>Approach</h4><p>Start with the widest pair. Area = width &times; min(h[l], h[r]). Always move the <em>shorter</em> line inwards: keeping it can never give a bigger area, because the width only shrinks and the height is capped by it.</p>
+<pre class="pseudo">l = 0, r = n - 1, best = 0
+while l &lt; r:
+    best = max(best, (r - l) * min(h[l], h[r]))
+    if h[l] &lt; h[r]: l += 1 else: r -= 1</pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. 3Sum <span class="diff med">medium</span> <span class="tag">sort + two pointers</span></summary>
+    <p class="q">Find all unique triplets that sum to zero.</p>
+    <h4>Approach</h4><p>Sort. Fix each element a[i] (skipping duplicates), then run the two-pointer pair search for <code>-a[i]</code> on the part to its right, skipping duplicate values as the pointers move.</p>
+<pre><code>def three_sum(a):
+    a.sort(); res = []
+    for i in range(len(a) - 2):
+        if i and a[i] == a[i - 1]: continue
+        l, r = i + 1, len(a) - 1
+        while l &lt; r:
+            s = a[i] + a[l] + a[r]
+            if s &lt; 0: l += 1
+            elif s &gt; 0: r -= 1
+            else:
+                res.append([a[i], a[l], a[r]]); l += 1; r -= 1
+                while l &lt; r and a[l] == a[l - 1]: l += 1
+    return res</code></pre>
+    <h4>Complexity</h4><p><span class="big y">O(n&sup2;)</span> time, O(1) extra space (besides sorting). This is optimal for the general problem in practice.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Subarray sum equals k <span class="diff med">medium</span> <span class="tag">prefix sums + hash map</span></summary>
+    <p class="q">Count subarrays whose sum is exactly k. Values may be negative.</p>
+    <h4>Approach</h4><p>A sliding window fails with negatives. Instead: a subarray ending at j sums to k when some earlier prefix sum equals <code>P[j] - k</code>. Keep a hash map of how often each prefix sum has occurred.</p>
+<pre><code>def subarray_sum(a, k):
+    count, s, seen = 0, 0, {0: 1}
+    for x in a:
+        s += x
+        count += seen.get(s - k, 0)
+        seen[s] = seen.get(s, 0) + 1
+    return count</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time and space.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Longest substring without repeating characters <span class="diff med">medium</span> <span class="tag">sliding window</span></summary>
+    <p class="q">Return the length of the longest substring with all distinct characters.</p>
+    <h4>Approach</h4><p>Variable sliding window with a map of each character's last index (animated above). When the new character was seen inside the window, jump <code>left</code> past it.</p>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(alphabet) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Minimum window substring <span class="diff hard">hard</span> <span class="tag">sliding window + counts</span></summary>
+    <p class="q">Find the smallest substring of s that contains every character of t (with multiplicity).</p>
+    <h4>Approach</h4><p>Count what t needs. Expand right until the window satisfies all needs (track how many distinct characters are fully satisfied); then shrink left as long as it stays valid, recording the smallest window.</p>
+<pre><code>from collections import Counter
+def min_window(s, t):
+    need, have = Counter(t), {}
+    formed, req = 0, len(need)
+    best = (float('inf'), 0, 0); l = 0
+    for r, c in enumerate(s):
+        have[c] = have.get(c, 0) + 1
+        if c in need and have[c] == need[c]: formed += 1
+        while formed == req:
+            if r - l + 1 &lt; best[0]: best = (r - l + 1, l, r)
+            have[s[l]] -= 1
+            if s[l] in need and have[s[l]] &lt; need[s[l]]: formed -= 1
+            l += 1
+    return "" if best[0] == float('inf') else s[best[1]:best[2] + 1]</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(|s| + |t|)</span> time.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Trapping rain water <span class="diff hard">hard</span> <span class="tag">two pointers / prefix max</span></summary>
+    <p class="q">Given bar heights, how much water is trapped after rain?</p>
+    <h4>Approach</h4><p>Water above bar i = min(max height to its left, max height to its right) - h[i]. Two pointers: move the side with the smaller running max, because that side's water level is already decided.</p>
+<pre><code>def trap(h):
+    l, r, lmax, rmax, water = 0, len(h) - 1, 0, 0, 0
+    while l &lt; r:
+        if h[l] &lt; h[r]:
+            lmax = max(lmax, h[l]); water += lmax - h[l]; l += 1
+        else:
+            rmax = max(rmax, h[r]); water += rmax - h[r]; r -= 1
+    return water</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space. (A monotonic stack solution also works, see stacks.)</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Merge intervals <span class="diff med">medium</span> <span class="tag">sort + sweep</span></summary>
+    <p class="q">Merge all overlapping intervals.</p>
+    <h4>Approach</h4><p>Sort by start; extend the last merged interval while the next one starts before it ends (code above, in "More array techniques").</p>
+    <h4>Complexity</h4><p><span class="big g">O(n log n)</span> for the sort.</p>
+  </details>
+
+  <details class="prob"><summary>Q13. Spiral matrix <span class="diff med">medium</span> <span class="tag">simulation</span></summary>
+<pre><code>def spiral(m):
+    res = []
+    top, bot, left, right = 0, len(m) - 1, 0, len(m[0]) - 1
+    while top &lt;= bot and left &lt;= right:
+        for c in range(left, right + 1): res.append(m[top][c])
+        top += 1
+        for r in range(top, bot + 1): res.append(m[r][right])
+        right -= 1
+        if top &lt;= bot:
+            for c in range(right, left - 1, -1): res.append(m[bot][c])
+            bot -= 1
+        if left &lt;= right:
+            for r in range(bot, top - 1, -1): res.append(m[r][left])
+            left += 1
+    return res</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(rows &times; cols)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q14. Range addition (many range updates) <span class="diff med">medium</span> <span class="tag">difference array</span></summary>
+    <p class="q">Start with n zeros and apply q updates "add v to every index in [l, r]". Return the final array.</p>
+    <h4>Approach</h4><p>Naively each update is O(n): O(nq) total. With a difference array, each update is two writes; one prefix sum at the end rebuilds the array.</p>
+<pre><code>def apply(n, updates):
+    d = [0] * (n + 1)
+    for l, r, v in updates:
+        d[l] += v; d[r + 1] -= v
+    out, run = [], 0
+    for i in range(n): run += d[i]; out.append(run)
+    return out</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n + q)</span>.</p>
+  </details>
+
+  <div class="pager"><a href="../complexity/index.html">&larr; Complexity</a><a href="../linked-lists/index.html">Next: Linked lists &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

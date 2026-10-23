@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PyTorch and Deep Learning - Learning App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>PyTorch and Deep Learning</h1>
+    <nav><a href="../ml/index.html">&larr; Machine Learning</a><a href="../index.html">All topics</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What are PyTorch and deep learning?</h2>
+  <p>
+    <strong>Deep learning</strong> is machine learning with neural networks that have many layers. Instead of a human designing features, the network learns them from raw data: pixels, words, sound.
+    Each layer turns the output of the previous one into something more abstract (edges, then shapes, then faces).
+  </p>
+  <p>
+    <strong>PyTorch</strong> is an open-source Python library for building and training such networks. It gives you three things:
+  </p>
+  <ul>
+    <li><strong>Tensors:</strong> NumPy-like multi-dimensional arrays that run on GPUs.</li>
+    <li><strong>Autograd:</strong> automatic differentiation. You write the forward calculation; PyTorch works out all the gradients for you.</li>
+    <li><strong>Building blocks:</strong> layers, loss functions, optimizers and data loaders (<code>torch.nn</code>, <code>torch.optim</code>, <code>torch.utils.data</code>) to assemble and train models.</li>
+  </ul>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Quick facts</th><th></th></tr>
+      <tr><td>Created by</td><td>Facebook (Meta) AI Research, first released January 2017. Now governed by the PyTorch Foundation (Linux Foundation) since 2022.</td></tr>
+      <tr><td>Core idea</td><td>"Define-by-run": the computation graph is built as normal Python code executes, so you can use <code>if</code>, loops, <code>print</code> and a debugger.</td></tr>
+      <tr><td>Language</td><td>Python front end, C++ core, CUDA/other backends for speed.</td></tr>
+      <tr><td>Used for</td><td>Most deep learning research, and a large share of production systems, including most large language models.</td></tr>
+    </table>
+  </div>
+  <p class="muted">New to ML in general? Read the <a href="../ml/index.html">Machine Learning topic</a> first: it covers data, overfitting, metrics and classic algorithms. This topic goes deep on neural networks and the PyTorch library.</p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="history">History</h2>
+  <p>Deep learning and PyTorch have separate but intertwined stories. Filter the timeline, click any milestone, or press Play.</p>
+
+  <div class="demo">
+    <h3>Timeline</h3>
+    <div class="bar" id="tl-filter">
+      <button type="button" data-f="all" class="primary active">All</button>
+      <button type="button" data-f="dl">Deep learning</button>
+      <button type="button" data-f="fw">Frameworks and PyTorch</button>
+      <span class="legend muted"><span><span class="dot" style="background:var(--accent)"></span>deep learning</span><span><span class="dot" style="background:var(--good)"></span>framework</span></span>
+    </div>
+    <div class="tl-track" id="tl-track"></div>
+    <div class="msg tl-card" id="tl-card"></div>
+    <div class="bar">
+      <button type="button" id="tlp-prev">&larr; Earlier</button>
+      <button type="button" id="tlp-play" class="primary">Play</button>
+      <button type="button" id="tlp-next">Later &rarr;</button>
+    </div>
+  </div>
+
+  <h3>Why PyTorch won over researchers</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Static graph (TensorFlow 1, Theano, Caffe)</th><th>Dynamic graph (PyTorch, Chainer)</th></tr>
+      <tr><td>How you work</td><td>First describe the whole graph, then run it in a session.</td><td>Just run Python; the graph is recorded as you go.</td></tr>
+      <tr><td>Debugging</td><td>Errors appear later, away from your code; you cannot easily print a value.</td><td>Normal Python errors, <code>print</code>, breakpoints.</td></tr>
+      <tr><td>Control flow</td><td>Special graph operations for loops and conditions.</td><td>Plain <code>for</code> and <code>if</code>.</td></tr>
+      <tr><td>Speed</td><td>The whole graph can be optimised ahead of time.</td><td>Originally slower; closed the gap with <code>torch.compile</code> (2023).</td></tr>
+    </table>
+  </div>
+  <p class="muted">TensorFlow 2 (2019) adopted eager execution, and PyTorch 2 added compilation: the two approaches converged. PyTorch's earlier lead in ease of use is why research papers and then industry moved to it.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="dl">Deep learning in a nutshell</h2>
+  <ol>
+    <li><strong>Neuron:</strong> multiplies its inputs by weights, adds them up with a bias, and passes the sum through an <em>activation function</em>: <code>output = f(w1&middot;x1 + w2&middot;x2 + ... + b)</code>.</li>
+    <li><strong>Layer:</strong> many neurons side by side. A network stacks layers: input &rarr; hidden layers &rarr; output.</li>
+    <li><strong>Non-linearity is essential:</strong> without activation functions, any number of layers collapses into one linear function. The activation lets the network bend its decision boundary.</li>
+    <li><strong>Loss:</strong> one number measuring how wrong the output is compared with the truth.</li>
+    <li><strong>Learning:</strong> compute the gradient of the loss with respect to every weight (backpropagation) and nudge the weights downhill (gradient descent). Repeat on batches of data, many times.</li>
+    <li><strong>Why "deep"?</strong> Each layer builds on the previous one, so depth lets a network compose simple features into complex ones with far fewer parameters than one huge flat layer.</li>
+  </ol>
+  <div class="card note">
+    <h3>Why deep learning took off around 2012</h3>
+    <p>Three things arrived together: <strong>big labelled datasets</strong> (ImageNet), <strong>GPUs</strong> that do thousands of multiplications in parallel, and <strong>better training tricks</strong> (ReLU, dropout, normalisation, residual connections, Adam). Today's added ingredient is <strong>scale</strong>: more data, more parameters, more compute.</p>
+  </div>
+
+  <h3>Activation functions</h3>
+  <p>The activation is the "bend" in each neuron. Pick one and drag <em>x</em> to see its value and its <strong>gradient</strong>: when the gradient is near zero, learning stalls.</p>
+  <div class="demo">
+    <div class="bar">
+      <label>Function
+        <select id="act-fn">
+          <option value="relu">ReLU</option><option value="leaky">Leaky ReLU</option><option value="sigmoid">Sigmoid</option>
+          <option value="tanh">Tanh</option><option value="gelu">GELU</option><option value="silu">SiLU / Swish</option><option value="softplus">Softplus</option>
+        </select>
+      </label>
+      <label>x <input type="range" id="act-x" min="-5" max="5" step="0.1" value="1.5"> <b id="act-x-v">1.5</b></label>
+    </div>
+    <canvas class="plot" id="act" width="720" height="300"></canvas>
+    <div class="readout" id="act-readout"></div>
+    <p class="cap" id="act-note"></p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="tensors">Tensors: the data structure of PyTorch</h2>
+  <p>
+    A <strong>tensor</strong> is an n-dimensional array of numbers: a scalar (0-D), a vector (1-D), a matrix (2-D), or more (an image batch is 4-D: batch, channels, height, width).
+    Every tensor has a <strong>shape</strong>, a <strong>dtype</strong> (float32, int64, bfloat16...) and a <strong>device</strong> (CPU or GPU). Operations on tensors run in optimised C++/CUDA, not in Python loops.
+  </p>
+<pre><code>import torch
+
+a = torch.tensor([[1., 2., 3.], [4., 5., 6.]])    # from Python data
+z = torch.zeros(2, 3);  r = torch.randn(2, 3)     # filled / random normal
+print(a.shape, a.dtype, a.device)                 # torch.Size([2, 3]) torch.float32 cpu
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+a = a.to(device)                                  # move to the GPU
+
+b = a * 2 + 1               # element-wise maths
+c = a @ a.T                 # matrix multiply: (2,3) @ (3,2) -> (2,2)
+a.sum(dim=0)                # reduce over rows -> shape (3,)
+a[:, 1]                     # slicing: second column
+a[a &gt; 3]                    # boolean mask: tensor([4., 5., 6.])
+
+x = torch.arange(12)
+y = x.view(3, 4)            # a VIEW: same memory, new shape
+y[0, 0] = 99                # x[0] is now 99 too
+n = a.cpu().numpy()         # NumPy array sharing memory (CPU only)</code></pre>
+
+  <h3>Matrix multiplication, the core operation</h3>
+  <p>Linear layers, convolutions (after unrolling) and attention are all mostly matrix multiplications, which is exactly what GPUs are built for.</p>
+  <div class="demo" id="mm-demo">
+    <div class="mrow">
+      <div><div id="mm-a"></div><div class="cap">A  (2, 3)</div></div>
+      <span class="op">@</span>
+      <div><div id="mm-b"></div><div class="cap">B  (3, 2)</div></div>
+      <span class="op">=</span>
+      <div><div id="mm-c"></div><div class="cap">C  (2, 2)</div></div>
+    </div>
+    <div class="formula" id="mm-formula"></div>
+    <div class="bar">
+      <button type="button" id="mm-prev">&larr; Back</button>
+      <button type="button" id="mm-play" class="primary">Play</button>
+      <button type="button" id="mm-next">Next &rarr;</button>
+      <button type="button" id="mm-reset">Reset</button>
+    </div>
+  </div>
+
+  <h3>Broadcasting: arithmetic between different shapes</h3>
+  <p>
+    PyTorch automatically "stretches" size-1 dimensions so tensors of different shapes can be combined, without copying data.
+    The rule: line the shapes up from the <strong>right</strong>; each pair of sizes must be equal, or one must be 1 (or missing). Try your own shapes.
+  </p>
+  <div class="demo">
+    <div class="bar">
+      <label>Examples
+        <select id="bc-preset">
+          <option value="3,1|1,4">(3,1) + (1,4)</option>
+          <option value="8,3,5|5">(8,3,5) + (5)</option>
+          <option value="32,10|10">batch of 32 scores + (10) bias</option>
+          <option value="4,3|4">(4,3) + (4)  &mdash; error</option>
+          <option value="2,1,6|3,1">(2,1,6) + (3,1)</option>
+        </select>
+      </label>
+      <label>shape a <input class="shape" id="bc-a" value="3,1"></label>
+      <label>shape b <input class="shape" id="bc-b" value="1,4"></label>
+    </div>
+    <div id="bc-out"></div>
+  </div>
+
+  <h3>Things to remember about tensors</h3>
+  <ul>
+    <li><strong>Shapes cause most bugs.</strong> Print <code>x.shape</code> constantly. Convention: the first dimension is the batch; images are <code>[N, C, H, W]</code> (channels first).</li>
+    <li><strong>View vs copy:</strong> <code>view</code>, slicing, <code>transpose</code> share memory (changing one changes the other); <code>clone()</code> makes a real copy. <code>reshape</code> returns a view when it can, otherwise a copy.</li>
+    <li><strong>Devices must match:</strong> you cannot add a CPU tensor to a GPU tensor. Move model <em>and</em> data with <code>.to(device)</code>.</li>
+    <li><strong>dtype matters:</strong> float32 is the default; bfloat16/float16 save memory and speed on GPUs; class labels are <code>int64</code> (<code>long</code>).</li>
+    <li><strong>Internally</strong> a tensor is a block of memory (<em>storage</em>) plus a <em>shape</em>, <em>strides</em> (how many elements to skip per dimension) and a dtype. That is why views are free.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="autograd">Autograd: automatic differentiation</h2>
+  <p>
+    Training needs the gradient of the loss with respect to every weight. Writing those derivatives by hand for a million-parameter network is impossible, so PyTorch records each operation on tensors that have <code>requires_grad=True</code>
+    into a <strong>computation graph</strong>, then <code>loss.backward()</code> walks that graph <em>backwards</em>, applying the <strong>chain rule</strong> at every node (this is called reverse-mode differentiation, or backpropagation).
+  </p>
+<pre><code>w = torch.tensor(1.5, requires_grad=True)     # a parameter to learn
+b = torch.tensor(0.5, requires_grad=True)
+x, t = torch.tensor(2.0), torch.tensor(1.0)   # input and target (no gradient needed)
+
+loss = (w * x + b - t) ** 2                   # forward: the graph is built here
+loss.backward()                               # backward: fills w.grad and b.grad
+print(w.grad, b.grad)                         # tensor(10.)  tensor(5.)</code></pre>
+
+  <div class="demo">
+    <h3>Watch the graph being built, then the gradients flowing back</h3>
+    <div class="sliders">
+      <label>w <input type="range" class="ag-slider" id="ag-w" min="-2" max="3" step="0.1" value="1.5"> <b id="ag-w-v">1.50</b></label>
+      <label>b <input type="range" class="ag-slider" id="ag-b" min="-2" max="3" step="0.1" value="0.5"> <b id="ag-b-v">0.50</b></label>
+      <span class="muted">x = 2, target t = 1 (fixed)</span>
+    </div>
+    <svg class="ag" id="ag" viewBox="0 0 700 280" role="img" aria-label="Computation graph for loss = (w*x + b - t) squared"></svg>
+    <div class="bar">
+      <button type="button" id="ag-fwd" class="primary">Animate forward</button>
+      <button type="button" id="ag-bwd">Animate backward</button>
+    </div>
+    <div class="readout" id="ag-caption">Press "Animate forward", then "Animate backward".</div>
+    <div class="readout" id="ag-out"></div>
+    <p class="cap">Blue = values computed going forward. Orange = gradients computed going backward. Change a slider and run backward again: the gradient shows which way to move that parameter to reduce the loss.</p>
+  </div>
+
+  <h3>Autograd rules you must know</h3>
+  <ul>
+    <li><strong>Gradients accumulate:</strong> every <code>backward()</code> <em>adds</em> to <code>.grad</code>. That is why training loops call <code>optimizer.zero_grad()</code> each iteration. (It is also what makes gradient accumulation possible on purpose.)</li>
+    <li><strong><code>torch.no_grad()</code></strong> turns off graph recording: use it for validation and inference to save memory and time.</li>
+    <li><strong><code>.detach()</code></strong> cuts a tensor out of the graph; <strong><code>.item()</code></strong> turns a one-value tensor into a Python number (use it when logging the loss).</li>
+    <li><strong>The graph is freed after <code>backward()</code></strong> (to save memory). Calling backward twice on the same graph fails unless you pass <code>retain_graph=True</code>.</li>
+    <li><strong>In-place operations</strong> (<code>x += 1</code>, <code>x.relu_()</code>) can overwrite values autograd needs and raise errors. Prefer out-of-place code.</li>
+    <li><strong>Only leaf tensors with <code>requires_grad</code></strong> keep a <code>.grad</code>. <code>nn.Parameter</code>s inside modules are such leaves.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="modules">Building models with torch.nn</h2>
+  <p>
+    A model is a class that inherits <code>nn.Module</code>. You create layers in <code>__init__</code> and describe how data flows in <code>forward</code>.
+    Anything assigned as a layer is tracked automatically: <code>model.parameters()</code> returns all learnable weights, <code>model.to(device)</code> moves them all, and <code>state_dict()</code> saves them.
+  </p>
+<pre><code>import torch.nn as nn
+import torch.nn.functional as F
+
+class Net(nn.Module):
+    def __init__(self, in_dim=784, hidden=128, classes=10):
+        super().__init__()
+        self.fc1  = nn.Linear(in_dim, hidden)       # weights [128, 784] + bias [128]
+        self.fc2  = nn.Linear(hidden, classes)
+        self.drop = nn.Dropout(0.2)
+
+    def forward(self, x):                           # x: [batch, 1, 28, 28]
+        x = x.flatten(1)                            # -&gt; [batch, 784]
+        x = self.drop(F.relu(self.fc1(x)))
+        return self.fc2(x)                          # raw scores ("logits"), NOT softmax
+
+model = Net()
+print(sum(p.numel() for p in model.parameters()))   # 101,770 learnable parameters</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Layer</th><th>What it does</th></tr>
+      <tr><td><code>nn.Linear(in, out)</code></td><td>Fully connected: <code>y = xW<sup>T</sup> + b</code>.</td></tr>
+      <tr><td><code>nn.Conv2d / Conv1d / Conv3d</code></td><td>Learned sliding filters for images, sequences, volumes.</td></tr>
+      <tr><td><code>nn.MaxPool2d, AvgPool2d, AdaptiveAvgPool2d</code></td><td>Shrink feature maps by taking the max or average of regions.</td></tr>
+      <tr><td><code>nn.BatchNorm2d, LayerNorm, GroupNorm</code></td><td>Normalise activations to keep training stable and fast.</td></tr>
+      <tr><td><code>nn.Dropout</code></td><td>Randomly zero activations during training to reduce overfitting.</td></tr>
+      <tr><td><code>nn.Embedding(vocab, dim)</code></td><td>Looks up a learned vector for each integer id (words, users, items).</td></tr>
+      <tr><td><code>nn.LSTM, GRU, RNN</code></td><td>Recurrent layers for sequences.</td></tr>
+      <tr><td><code>nn.MultiheadAttention, TransformerEncoderLayer</code></td><td>Attention and ready-made transformer blocks.</td></tr>
+      <tr><td><code>nn.ReLU, GELU, SiLU, Sigmoid, Softmax</code></td><td>Activation functions.</td></tr>
+      <tr><td><code>nn.Sequential(...)</code></td><td>Chains layers in order, for simple stacks.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong><code>model.train()</code> / <code>model.eval()</code>:</strong> switch behaviour of Dropout (off in eval) and BatchNorm (uses running statistics in eval). Forgetting <code>eval()</code> at test time is a classic bug.</li>
+    <li><strong>Functional API:</strong> <code>F.relu(x)</code> etc. for operations without weights; <code>nn.ReLU()</code> as a layer object is equivalent.</li>
+    <li><strong>Save / load:</strong> <code>torch.save(model.state_dict(), "m.pt")</code> and <code>model.load_state_dict(torch.load("m.pt"))</code>; save the optimizer state too to resume training.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="loop">The training loop</h2>
+  <p>
+    PyTorch gives you the pieces, and <strong>you write the loop</strong>. This is the heart of every PyTorch program, and it is the same whether you train a tiny classifier or a giant language model.
+    Step through it below. It trains a model with a single weight so every number is visible.
+  </p>
+
+  <div class="demo">
+    <h3>The loop, one line at a time</h3>
+<pre class="stepcode" id="tl-code"><code><span class="cl" data-line="-9">model = nn.Linear(1, 1, bias=False)                  # one weight, w = 0.5</span>
+<span class="cl" data-line="-9">loss_fn = nn.MSELoss()</span>
+<span class="cl" data-line="-9">optimizer = torch.optim.SGD(model.parameters(), lr=0.1)</span>
+<span class="cl" data-line="-9"> </span>
+<span class="cl" data-line="-9">for step in range(5):                                # x = 2, target y = 3</span>
+<span class="cl" data-line="0">    pred = model(x)               # 1. forward pass:   pred = w * x</span>
+<span class="cl" data-line="1">    loss = loss_fn(pred, y)       # 2. loss:           (pred - y) ** 2</span>
+<span class="cl" data-line="2">    optimizer.zero_grad()         # 3. clear old gradients</span>
+<span class="cl" data-line="3">    loss.backward()               # 4. backward pass:  fills w.grad</span>
+<span class="cl" data-line="4">    optimizer.step()              # 5. update:         w = w - lr * w.grad</span></code></pre>
+    <table class="state-table" id="tl-state">
+      <tr><th>w (weight)</th><th>pred</th><th>loss</th><th>w.grad</th><th>where we are</th></tr>
+      <tr><td class="v" data-k="w"></td><td class="v" data-k="pred"></td><td class="v" data-k="loss"></td><td class="v" data-k="grad"></td><td id="tl-iter"></td></tr>
+    </table>
+    <div class="msg" id="tl-msg" style="min-height:3.5rem"></div>
+    <div class="bar">
+      <button type="button" id="tl-prev">&larr; Back</button>
+      <button type="button" id="tl-play" class="primary">Play</button>
+      <button type="button" id="tl-next">Next &rarr;</button>
+      <button type="button" id="tl-reset">Reset</button>
+    </div>
+  </div>
+
+  <h3>A complete, realistic training script</h3>
+<pre><code>import torch, torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset, random_split
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# 1. Data: X float tensor [N, features], y long tensor [N] of class ids
+ds = TensorDataset(X, y)
+train_ds, val_ds = random_split(ds, [0.8, 0.2])
+train_dl = DataLoader(train_ds, batch_size=64, shuffle=True)
+val_dl   = DataLoader(val_ds, batch_size=256)
+
+# 2. Model, loss, optimizer
+model   = Net().to(device)
+loss_fn = nn.CrossEntropyLoss()                       # expects raw logits + class ids
+opt     = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2)
+
+# 3. Train + validate
+for epoch in range(10):
+    model.train()
+    for xb, yb in train_dl:                           # one batch at a time
+        xb, yb = xb.to(device), yb.to(device)
+        loss = loss_fn(model(xb), yb)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+    model.eval()
+    correct = 0
+    with torch.no_grad():                             # no graph needed for evaluation
+        for xb, yb in val_dl:
+            xb, yb = xb.to(device), yb.to(device)
+            correct += (model(xb).argmax(dim=1) == yb).sum().item()
+    print(f"epoch {epoch}  val accuracy {correct / len(val_ds):.3f}")
+
+torch.save(model.state_dict(), "model.pt")</code></pre>
+
+  <h3>Data loading: Dataset and DataLoader</h3>
+<pre><code>from torch.utils.data import Dataset
+
+class MyData(Dataset):
+    def __init__(self, items): self.items = items
+    def __len__(self): return len(self.items)                 # how many samples
+    def __getitem__(self, i): return self.items[i]            # one sample: (input_tensor, label)
+
+dl = DataLoader(MyData(items), batch_size=64, shuffle=True,
+                num_workers=4, pin_memory=True)               # parallel loading, faster GPU copies</code></pre>
+  <ul>
+    <li><strong>Epoch</strong> = one full pass over the training data. <strong>Batch</strong> = the samples used for one gradient step. <strong>Iteration</strong> = one step.</li>
+    <li>Use <code>torchvision.transforms</code> for image augmentation (flips, crops, colour jitter) and normalisation inside the <code>Dataset</code>.</li>
+    <li>Add a learning-rate <strong>scheduler</strong> (<code>sched.step()</code> per epoch or per batch), <strong>checkpointing</strong> (save the best model on validation), and <strong>early stopping</strong>.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="playground">Try it: train a neural network live</h2>
+  <p>
+    This network is written from scratch in JavaScript, doing by hand what PyTorch does for you: forward pass, loss, backpropagation, optimizer step.
+    Pick a dataset and a network, press <strong>Train</strong>, and watch the decision regions form. The model predicts which of the two colours a point at each location belongs to.
+  </p>
+  <div class="demo">
+    <h3>Neural network playground</h3>
+    <div class="bar wrap">
+      <label>Data
+        <select id="pg-data"><option value="circle">Circle</option><option value="xor">XOR</option><option value="spiral">Spiral</option><option value="blobs">Two blobs</option></select>
+      </label>
+      <label>Hidden layers
+        <select id="pg-layers"><option value="0">0</option><option value="1">1</option><option value="2" selected>2</option></select>
+      </label>
+      <label>Neurons each
+        <select id="pg-width"><option>2</option><option>3</option><option>4</option><option>6</option><option selected>8</option><option>12</option></select>
+      </label>
+      <label>Activation
+        <select id="pg-act"><option value="tanh">Tanh</option><option value="relu">ReLU</option></select>
+      </label>
+      <label><input type="checkbox" id="pg-extra"> extra features (x&sup2;, y&sup2;, xy)</label>
+    </div>
+    <div class="bar wrap">
+      <label>Optimizer
+        <select id="pg-opt"><option value="adam">Adam</option><option value="sgd">SGD</option></select>
+      </label>
+      <label>Learning rate <input type="range" id="pg-lr" min="-3" max="0" step="0.1" value="-1.5"> <b id="pg-lr-val">0.03</b></label>
+      <label>Batch size <input type="range" id="pg-batch" min="1" max="64" step="1" value="16"></label>
+      <button type="button" id="pg-play" class="primary">Train</button>
+      <button type="button" id="pg-reset">Reset</button>
+    </div>
+    <div class="pg-grid">
+      <figure style="margin:0"><canvas class="plot" id="pg-map" width="480" height="480"></canvas><figcaption>Decision regions: colour = what the model predicts there; dots = training data.</figcaption></figure>
+      <figure style="margin:0"><canvas class="plot" id="pg-curve" width="480" height="480"></canvas><figcaption>Training loss (red) and accuracy (green).</figcaption></figure>
+    </div>
+    <div class="readout"><span id="pg-arch"></span><br><span id="pg-stats"></span></div>
+    <p class="cap">Experiments: (1) Circle with 0 hidden layers cannot work (a straight line cannot separate a ring); tick "extra features" and it can. (2) Give it a hidden layer and it learns the features itself: that is deep learning. (3) Spiral needs 2 layers and enough neurons. (4) Compare Adam and SGD at the same learning rate. (5) Set the learning rate to 1 and watch training become unstable.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="algorithms">The algorithms of deep learning, explained</h2>
+  <p>
+    "Algorithms" in deep learning come in two groups: the <strong>learning algorithms</strong> that train any network (backpropagation, optimizers, normalisation, regularisation), and the <strong>architectures</strong> that define what the network looks like (CNN, RNN, transformer...). Both are explained here.
+  </p>
+
+  <h3 id="learning-algos">A. How networks learn</h3>
+
+  <div class="card arch">
+    <h3>Backpropagation</h3>
+    <ul>
+      <li><strong>Problem:</strong> a network has millions of weights; which way should each one move to reduce the loss?</li>
+      <li><strong>Idea:</strong> the network is a chain of functions, so the <em>chain rule</em> of calculus gives the gradient of the loss for every weight. Compute it layer by layer, starting from the output and moving backwards, reusing intermediate results so the cost is only about 2-3 times one forward pass.</li>
+      <li><strong>In PyTorch:</strong> <code>loss.backward()</code>. Autograd does all of it; the animation in the Autograd section shows it on a small graph.</li>
+      <li><strong>Trouble spots:</strong> <em>vanishing gradients</em> (they shrink to ~0 through many saturating layers; fixed by ReLU-like activations, residual connections, normalisation, good initialisation) and <em>exploding gradients</em> (fixed by gradient clipping, <code>torch.nn.utils.clip_grad_norm_</code>).</li>
+    </ul>
+  </div>
+
+  <div class="card arch">
+    <h3>Gradient descent and its variants</h3>
+    <ul>
+      <li><strong>Batch gradient descent:</strong> gradient from the entire dataset per step. Accurate but slow and memory-hungry.</li>
+      <li><strong>Stochastic (SGD):</strong> one sample per step. Fast, very noisy.</li>
+      <li><strong>Mini-batch (what everyone uses):</strong> 16-1024 samples per step. A good balance, and it maps well to GPUs. The noise even helps escape poor spots.</li>
+      <li><strong>Learning rate</strong> is the single most important setting: too small trains slowly, too large overshoots and diverges (try it in the playground).</li>
+    </ul>
+  </div>
+
+  <h4>Optimizers</h4>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Optimizer</th><th>Update rule (simplified)</th><th>Intuition</th><th>Use</th></tr>
+      <tr><td><strong>SGD</strong><br><code>optim.SGD</code></td><td><code>w &larr; w &minus; lr&middot;g</code></td><td>Step straight downhill.</td><td>Simple baseline; with momentum and tuning it still wins on some vision tasks.</td></tr>
+      <tr><td><strong>SGD + momentum</strong><br><code>SGD(momentum=0.9)</code></td><td><code>v &larr; &mu;v + g;  w &larr; w &minus; lr&middot;v</code></td><td>A heavy ball rolling downhill: keeps speed in consistent directions, smooths noise.</td><td>CNNs (ResNets), often with a schedule.</td></tr>
+      <tr><td><strong>Adagrad</strong></td><td>divides step by the square root of the sum of all past squared gradients</td><td>Rarely updated weights get larger steps.</td><td>Sparse features. The step size only ever shrinks.</td></tr>
+      <tr><td><strong>RMSprop</strong></td><td><code>s &larr; &rho;s + (1&minus;&rho;)g&sup2;;  w &larr; w &minus; lr&middot;g/(&radic;s+&epsilon;)</code></td><td>Per-weight step scaled by a moving average of recent gradient size.</td><td>RNNs, reinforcement learning.</td></tr>
+      <tr><td><strong>Adam</strong><br><code>optim.Adam</code></td><td>momentum of g <em>and</em> moving average of g&sup2;: <code>w &larr; w &minus; lr&middot;m&#770;/(&radic;v&#770;+&epsilon;)</code></td><td>Momentum plus per-weight step sizes. Works well with little tuning.</td><td>The default for most deep learning.</td></tr>
+      <tr><td><strong>AdamW</strong><br><code>optim.AdamW</code></td><td>Adam with weight decay applied directly to the weights</td><td>Fixes how Adam interacts with L2 regularisation.</td><td>The standard for transformers and LLMs.</td></tr>
+    </table>
+  </div>
+  <p class="muted">Starting point: <code>AdamW(lr=1e-3)</code> for small models, <code>1e-4</code> to <code>3e-4</code> for transformers, <code>1e-5</code> to <code>5e-5</code> when fine-tuning pre-trained models.</p>
+
+  <h4>Learning-rate schedules</h4>
+  <ul>
+    <li><strong>Step / MultiStep decay:</strong> multiply the rate by 0.1 every N epochs (<code>StepLR</code>).</li>
+    <li><strong>Cosine annealing:</strong> smoothly decrease along a cosine curve (<code>CosineAnnealingLR</code>); very common.</li>
+    <li><strong>Warm-up:</strong> start tiny and ramp up for the first steps; essential for transformers, because early large steps on random weights can wreck training.</li>
+    <li><strong>One-cycle:</strong> ramp up then down (<code>OneCycleLR</code>); fast convergence.</li>
+    <li><strong>ReduceLROnPlateau:</strong> cut the rate when validation loss stops improving.</li>
+  </ul>
+
+  <h4>Loss functions</h4>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Loss</th><th>Task</th><th>Notes</th></tr>
+      <tr><td><code>nn.MSELoss</code></td><td>Regression</td><td>Mean of squared errors; punishes big errors strongly.</td></tr>
+      <tr><td><code>nn.L1Loss</code>, <code>nn.HuberLoss</code> / <code>SmoothL1Loss</code></td><td>Regression</td><td>L1 is robust to outliers; Huber is quadratic for small errors and linear for large ones.</td></tr>
+      <tr><td><code>nn.CrossEntropyLoss</code></td><td>Multi-class classification</td><td>Takes <strong>raw logits</strong> and integer class ids (applies log-softmax internally). Do not add softmax yourself.</td></tr>
+      <tr><td><code>nn.BCEWithLogitsLoss</code></td><td>Binary and multi-label classification</td><td>Takes raw logits; numerically safer than sigmoid + BCELoss.</td></tr>
+      <tr><td><code>nn.NLLLoss</code></td><td>Classification</td><td>Expects log-probabilities; CrossEntropy = LogSoftmax + NLL.</td></tr>
+      <tr><td><code>nn.KLDivLoss</code></td><td>Matching distributions</td><td>Distillation, VAEs.</td></tr>
+      <tr><td><code>nn.CTCLoss</code></td><td>Sequence alignment</td><td>Speech recognition, OCR without per-frame labels.</td></tr>
+      <tr><td><code>TripletMarginLoss</code>, InfoNCE (contrastive)</td><td>Embeddings</td><td>Pull similar items together, push different ones apart (face recognition, CLIP).</td></tr>
+      <tr><td>Focal loss (custom / torchvision)</td><td>Imbalanced detection</td><td>Down-weights easy examples so rare ones count more.</td></tr>
+    </table>
+  </div>
+
+  <h4>Initialisation, normalisation and regularisation</h4>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Technique</th><th>What it does and why</th></tr>
+      <tr><td><strong>Weight initialisation</strong> (Xavier/Glorot, He/Kaiming)</td><td>Choose starting weights with a variance that keeps signals and gradients at a sensible size from layer to layer. He init for ReLU, Xavier for tanh/sigmoid. PyTorch layers already use a sensible default; <code>nn.init</code> lets you change it.</td></tr>
+      <tr><td><strong>Batch Normalization</strong> <code>nn.BatchNorm2d</code></td><td>Normalises each channel using batch statistics, then rescales with learned parameters. Allows larger learning rates and faster training in CNNs. Behaves differently in train and eval mode.</td></tr>
+      <tr><td><strong>Layer Normalization</strong> <code>nn.LayerNorm</code></td><td>Normalises across the features of one sample, independent of batch size. The norm of choice in transformers and RNNs. RMSNorm is a cheaper variant used in modern LLMs.</td></tr>
+      <tr><td><strong>Dropout</strong> <code>nn.Dropout(p)</code></td><td>Randomly zeroes a fraction p of activations during training, so the network cannot rely on any single neuron. Like training an ensemble of many thinned networks.</td></tr>
+      <tr><td><strong>Weight decay (L2)</strong></td><td>Penalises large weights, keeping the function smooth. Set in the optimizer (<code>weight_decay=...</code>).</td></tr>
+      <tr><td><strong>Data augmentation</strong></td><td>Create more training variety: flips, crops, colour jitter, noise, mixup/cutmix, text paraphrases.</td></tr>
+      <tr><td><strong>Early stopping, label smoothing</strong></td><td>Stop when validation loss turns up; soften hard labels (0/1 &rarr; 0.1/0.9) to avoid over-confidence (<code>CrossEntropyLoss(label_smoothing=0.1)</code>).</td></tr>
+      <tr><td><strong>Gradient clipping</strong></td><td>Rescale gradients whose norm exceeds a limit: <code>clip_grad_norm_(model.parameters(), 1.0)</code>. Prevents exploding gradients (RNNs, transformers).</td></tr>
+    </table>
+  </div>
+
+  <!-- ---------------- architectures ---------------- -->
+  <h3 id="architectures">B. Architectures: what the network looks like</h3>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Architecture</th><th>Built for</th><th>Key idea</th><th>PyTorch</th></tr>
+      <tr><td>MLP</td><td>Tabular data</td><td>Stacked fully connected layers</td><td><code>nn.Linear</code></td></tr>
+      <tr><td>CNN</td><td>Images, audio</td><td>Shared sliding filters</td><td><code>nn.Conv2d</code></td></tr>
+      <tr><td>RNN / LSTM / GRU</td><td>Sequences</td><td>A memory carried step to step</td><td><code>nn.LSTM</code></td></tr>
+      <tr><td>Transformer</td><td>Text, code, images, audio</td><td>Self-attention</td><td><code>nn.TransformerEncoder</code>, <code>F.scaled_dot_product_attention</code></td></tr>
+      <tr><td>Autoencoder / VAE</td><td>Compression, anomalies, generation</td><td>Squeeze through a bottleneck and rebuild</td><td>encoder + decoder modules</td></tr>
+      <tr><td>GAN</td><td>Image generation</td><td>Generator vs discriminator game</td><td>two modules, two optimizers</td></tr>
+      <tr><td>Diffusion</td><td>Image/video/audio generation</td><td>Learn to remove noise step by step</td><td>U-Net / transformer + noise schedule</td></tr>
+      <tr><td>GNN</td><td>Graphs: molecules, social networks</td><td>Neighbours pass messages</td><td>PyTorch Geometric, DGL</td></tr>
+      <tr><td>RL agents</td><td>Decisions over time</td><td>Learn from reward</td><td>policy / value networks</td></tr>
+    </table>
+  </div>
+
+  <div class="card arch">
+    <h3>1. MLP: multi-layer perceptron (feed-forward network)</h3>
+    <ul>
+      <li><strong>How it works:</strong> each layer computes <code>activation(W&middot;x + b)</code> and feeds the next. Every neuron connects to every neuron in the next layer.</li>
+      <li><strong>Strengths:</strong> universal approximator (with enough width it can fit any reasonable function); simple. <strong>Weaknesses:</strong> ignores structure (spatial or sequential), many parameters for images.</li>
+      <li><strong>Use for:</strong> tabular data, small problems, and as the "feed-forward" part inside bigger models like transformers. (On tabular data, gradient boosting often wins.)</li>
+      <li><strong>Code:</strong> the <code>Net</code> class in the nn section above.</li>
+    </ul>
+  </div>
+
+  <div class="card arch">
+    <h3>2. CNN: convolutional neural network</h3>
+    <ul>
+      <li><strong>Problem it solves:</strong> a 224&times;224 colour image has 150,000 numbers; a fully connected layer would need billions of weights and would not know that a cat in the corner is the same cat as in the middle.</li>
+      <li><strong>How it works:</strong> a small <strong>filter</strong> (kernel, e.g. 3&times;3) slides across the image; at each position it multiplies and sums, producing a <strong>feature map</strong>. The same weights are reused everywhere (<em>weight sharing</em>), so the network detects a pattern wherever it appears (<em>translation equivariance</em>). Early layers learn edges, middle layers textures and parts, deep layers whole objects.</li>
+      <li><strong>Other ingredients:</strong> <em>stride</em> (step size of the slide), <em>padding</em> (border zeros to keep size), <em>pooling</em> (shrink by taking max/average of a region), channels (many filters per layer), and a final linear layer to classify.</li>
+    </ul>
+
+    <div class="demo">
+      <h3>A filter sliding over an image</h3>
+      <div class="bar">
+        <label>Kernel
+          <select id="cv-kernel"><option value="vedge">Vertical edges</option><option value="hedge">Horizontal edges</option><option value="blur">Blur</option><option value="sharp">Sharpen</option></select>
+        </label>
+        <label>Stride <select id="cv-stride"><option value="1">1</option><option value="2">2</option></select></label>
+        <button type="button" id="cv-prev">&larr; Back</button>
+        <button type="button" id="cv-play" class="primary">Play</button>
+        <button type="button" id="cv-next">Next &rarr;</button>
+        <button type="button" id="cv-reset">Reset</button>
+      </div>
+      <div class="mrow">
+        <div><div id="cv-in"></div><div class="cap">Input image (7&times;7)</div></div>
+        <span class="op">&lowast;</span>
+        <div><div id="cv-k"></div><div class="cap">Kernel (3&times;3)</div></div>
+        <span class="op">=</span>
+        <div><div id="cv-out"></div><div class="cap">Feature map</div></div>
+      </div>
+      <div class="formula" id="cv-formula"></div>
+      <p class="cap" id="cv-note"></p>
+      <p class="cap">In a real CNN the kernel values are not chosen by hand: they are weights that training learns.</p>
+    </div>
+
+    <ul>
+      <li><strong>Famous models:</strong> <em>LeNet</em> (1998, digits), <em>AlexNet</em> (2012, the breakthrough), <em>VGG</em> (deep stacks of 3&times;3), <em>Inception</em> (parallel filter sizes), <strong><em>ResNet</em></strong> (2015: skip connections let you train 50-150+ layers), <em>MobileNet / EfficientNet</em> (small and efficient), <em>ConvNeXt</em> (modernised CNN).</li>
+      <li><strong>Residual (skip) connection:</strong> output = <code>x + F(x)</code>. The layer only learns the <em>change</em>, and gradients can flow straight through the shortcut, which cures vanishing gradients in very deep networks.</li>
+      <li><strong>Beyond classification:</strong> object detection (Faster R-CNN, YOLO, SSD), segmentation (U-Net, Mask R-CNN), pose estimation, image super-resolution. All available in <code>torchvision.models</code>.</li>
+      <li><strong>Also used on:</strong> audio spectrograms, 1-D signals (<code>Conv1d</code>), video (<code>Conv3d</code>), and even text.</li>
+    </ul>
+<pre><code>class CNN(nn.Module):
+    def __init__(self, classes=10):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),   # 28x28 -&gt; 14x14
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),  # 14x14 -&gt; 7x7
+        )
+        self.head = nn.Sequential(nn.Flatten(), nn.Linear(64 * 7 * 7, 128), nn.ReLU(), nn.Linear(128, classes))
+    def forward(self, x):                                  # x: [batch, 1, 28, 28]
+        return self.head(self.features(x))
+
+class ResBlock(nn.Module):                                 # the building block of ResNet
+    def __init__(self, ch):
+        super().__init__()
+        self.body = nn.Sequential(nn.Conv2d(ch, ch, 3, padding=1), nn.BatchNorm2d(ch), nn.ReLU(),
+                                  nn.Conv2d(ch, ch, 3, padding=1), nn.BatchNorm2d(ch))
+    def forward(self, x):
+        return F.relu(x + self.body(x))                    # skip connection: x + F(x)</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>3. RNN, LSTM and GRU: models with memory</h3>
+    <ul>
+      <li><strong>Problem:</strong> sequences (sentences, sensor readings, music) have variable length and order matters.</li>
+      <li><strong>How an RNN works:</strong> it reads one element at a time and keeps a <em>hidden state</em> that summarises what it has seen: <code>h<sub>t</sub> = tanh(W&middot;x<sub>t</sub> + U&middot;h<sub>t-1</sub> + b)</code>. The same weights are reused at every step.</li>
+      <li><strong>Weakness:</strong> to learn from step 1 at step 100, gradients must pass through 100 multiplications, so they vanish (or explode): plain RNNs forget quickly.</li>
+      <li><strong>LSTM:</strong> adds a separate <em>cell state</em> (a conveyor belt of memory) controlled by three <em>gates</em>: forget (what to erase), input (what to write) and output (what to reveal). Gradients flow along the cell state almost unchanged. <strong>GRU</strong> is a lighter version with two gates.</li>
+      <li><strong>Seq2seq:</strong> an <em>encoder</em> RNN compresses the input into a vector; a <em>decoder</em> RNN generates the output (translation, summarisation). Adding <strong>attention</strong> let the decoder look back at every input word: this was the step towards transformers.</li>
+      <li><strong>Today:</strong> transformers replaced RNNs for language, but LSTM/GRU still appear in small, streaming and time-series models, and newer state-space models (Mamba) revisit recurrence for long sequences.</li>
+    </ul>
+<pre><code>class LSTMClassifier(nn.Module):
+    def __init__(self, vocab, emb=128, hidden=256, classes=2):
+        super().__init__()
+        self.emb  = nn.Embedding(vocab, emb)                # word id -&gt; vector
+        self.lstm = nn.LSTM(emb, hidden, batch_first=True)
+        self.out  = nn.Linear(hidden, classes)
+    def forward(self, tokens):                              # tokens: [batch, seq_len] integer ids
+        _, (h, _) = self.lstm(self.emb(tokens))             # h: [1, batch, hidden] = last hidden state
+        return self.out(h[-1])</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>4. Attention and the Transformer</h3>
+    <ul>
+      <li><strong>Self-attention idea:</strong> to understand a word, look at all the other words and decide how much each one matters. In "The cat sat on the mat", the word "sat" should pay attention to "cat" (who sat?).</li>
+      <li><strong>How it works:</strong> every token is turned into three vectors: a <strong>query</strong> (what am I looking for?), a <strong>key</strong> (what do I contain?) and a <strong>value</strong> (what do I pass on?). Scores = query &middot; key for every pair; <em>softmax</em> turns scores into weights that sum to 1; the output is the weighted average of the values.</li>
+    </ul>
+<pre><code>Attention(Q, K, V) = softmax( Q &middot; K<sup>T</sup> / &radic;d<sub>k</sub> ) &middot; V        (the &radic;d<sub>k</sub> keeps the scores in a range softmax handles well)</code></pre>
+
+    <div class="demo">
+      <h3>Self-attention weights</h3>
+      <p class="muted">Click a word in the top row (the query). Lines show how strongly it attends to every word. The weights here are hand-made to be illustrative; in a real model they are computed from learned queries and keys.</p>
+      <div class="bar"><label>Softmax temperature <input type="range" id="att-temp" min="0.3" max="3" step="0.1" value="1"> <b id="att-temp-v">1.0</b></label></div>
+      <svg class="att" id="att" viewBox="0 0 720 260" role="img" aria-label="Attention from the selected word to every word in the sentence"></svg>
+      <div class="readout" id="att-note"></div>
+      <div class="table-wrap" style="margin-top:.5rem"><table class="mtx" id="att-matrix"></table></div>
+      <p class="cap">Rows = the word asking, columns = the word looked at, numbers = attention in %. A low temperature makes attention sharp (almost one word); a high temperature spreads it evenly.</p>
+    </div>
+
+    <ul>
+      <li><strong>Multi-head attention:</strong> run several attention "heads" in parallel (each with its own queries, keys and values) so the model can track different relationships at once (grammar, meaning, position), then concatenate them.</li>
+      <li><strong>Positional encoding:</strong> attention itself ignores word order, so position information is added (sinusoidal, learned, or rotary / RoPE).</li>
+      <li><strong>The block:</strong> <code>x = x + Attention(LayerNorm(x))</code>, then <code>x = x + FeedForward(LayerNorm(x))</code>. Stack 12 to 100+ of these blocks. Residual connections and normalisation make that depth trainable.</li>
+      <li><strong>Why it won:</strong> every token is processed in parallel (unlike an RNN), so training scales across thousands of GPUs, and attention connects distant tokens directly.</li>
+      <li><strong>Cost:</strong> attention compares every token with every other, so compute and memory grow with the <em>square</em> of the sequence length. FlashAttention (built into PyTorch's <code>scaled_dot_product_attention</code>) and sparse or linear variants reduce this.</li>
+      <li><strong>Three families:</strong>
+        <ul>
+          <li><strong>Encoder-only (BERT):</strong> sees the whole text both ways; for understanding: classification, search embeddings, entity extraction.</li>
+          <li><strong>Decoder-only (GPT, LLaMA):</strong> a <em>causal</em> mask hides future tokens; trained to predict the next token; for generation. Uses a <em>KV cache</em> at inference to avoid recomputation.</li>
+          <li><strong>Encoder-decoder (T5, original Transformer):</strong> reads input, then generates output; translation, summarisation.</li>
+        </ul>
+      </li>
+      <li><strong>Beyond text:</strong> <strong>ViT</strong> cuts an image into patches and treats them as tokens; Whisper does speech; transformers also power protein models, time-series models and multimodal systems (CLIP, GPT-4-style).</li>
+      <li><strong>Large language models:</strong> decoder-only transformers with billions of parameters, trained on next-token prediction over huge text, then tuned to follow instructions (supervised fine-tuning, RLHF/DPO). Performance improves predictably with more data, parameters and compute ("scaling laws").</li>
+    </ul>
+<pre><code>class SelfAttention(nn.Module):
+    def __init__(self, d, heads):
+        super().__init__()
+        self.h, self.dk = heads, d // heads
+        self.qkv  = nn.Linear(d, 3 * d)                     # produces queries, keys, values at once
+        self.proj = nn.Linear(d, d)
+    def forward(self, x, causal=False):                     # x: [B, T, d]
+        B, T, d = x.shape
+        q, k, v = self.qkv(x).view(B, T, 3, self.h, self.dk).permute(2, 0, 3, 1, 4)   # each [B, h, T, dk]
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=causal)               # softmax(QK^T/sqrt(dk)) V
+        return self.proj(out.transpose(1, 2).reshape(B, T, d))
+
+class Block(nn.Module):                                     # one transformer block
+    def __init__(self, d, heads):
+        super().__init__()
+        self.n1, self.n2 = nn.LayerNorm(d), nn.LayerNorm(d)
+        self.att = SelfAttention(d, heads)
+        self.mlp = nn.Sequential(nn.Linear(d, 4 * d), nn.GELU(), nn.Linear(4 * d, d))
+    def forward(self, x):
+        x = x + self.att(self.n1(x))                        # attention + residual
+        return x + self.mlp(self.n2(x))                     # feed-forward + residual</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>5. Autoencoders and VAEs</h3>
+    <ul>
+      <li><strong>Autoencoder:</strong> an <em>encoder</em> squeezes the input into a small vector (the <em>latent code</em>) and a <em>decoder</em> rebuilds the input from it. The loss is the reconstruction error; the input is its own target, so no labels are needed (self-supervised).</li>
+      <li><strong>Why useful:</strong> compression, denoising, learning features, and <strong>anomaly detection</strong> (data unlike the training set reconstructs badly, so a high error means "unusual").</li>
+      <li><strong>Variational autoencoder (VAE):</strong> the encoder outputs a <em>distribution</em> (mean and variance) instead of a point, and a KL-divergence term keeps the latent space smooth. You can then <em>sample</em> new points and decode them into new, realistic data. The sampling uses the <em>reparameterisation trick</em> so gradients can still flow.</li>
+    </ul>
+<pre><code>class AE(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.enc = nn.Sequential(nn.Linear(784, 128), nn.ReLU(), nn.Linear(128, 16))   # squeeze to 16 numbers
+        self.dec = nn.Sequential(nn.Linear(16, 128), nn.ReLU(), nn.Linear(128, 784), nn.Sigmoid())
+    def forward(self, x): return self.dec(self.enc(x))
+# loss = F.mse_loss(model(x), x)          # the input is its own target
+
+# VAE: sampling with the reparameterisation trick, and the extra KL loss
+mu, logvar = encoder(x).chunk(2, dim=1)
+z = mu + torch.randn_like(mu) * torch.exp(0.5 * logvar)
+kl = -0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp())</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>6. GAN: generative adversarial network</h3>
+    <ul>
+      <li><strong>Idea:</strong> two networks play a game. The <strong>generator</strong> turns random noise into fake data (images); the <strong>discriminator</strong> tries to tell fake from real. Each improves by beating the other: like a forger and a detective.</li>
+      <li><strong>Training:</strong> alternate: (1) update the discriminator to classify real as 1 and fake as 0; (2) update the generator so the discriminator calls its fakes real.</li>
+      <li><strong>Strengths:</strong> sharp, realistic images (StyleGAN faces), fast sampling. <strong>Weaknesses:</strong> unstable training, <em>mode collapse</em> (the generator produces only a few kinds of output), hard to evaluate. Largely replaced by diffusion for image generation, but still used for super-resolution, style transfer and data augmentation.</li>
+    </ul>
+<pre><code>bce = nn.BCEWithLogitsLoss()
+for real in loader:
+    n = real.size(0)
+    ones, zeros = torch.ones(n, 1, device=device), torch.zeros(n, 1, device=device)
+    fake = G(torch.randn(n, 100, device=device))
+
+    d_loss = bce(D(real), ones) + bce(D(fake.detach()), zeros)   # 1) discriminator: real=1, fake=0
+    optD.zero_grad(); d_loss.backward(); optD.step()
+
+    g_loss = bce(D(fake), ones)                                  # 2) generator: make D say "real"
+    optG.zero_grad(); g_loss.backward(); optG.step()</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>7. Diffusion models</h3>
+    <ul>
+      <li><strong>Idea:</strong> gradually destroy an image by adding a little random noise over many steps until it is pure static (the <em>forward</em> process, no learning needed). Then train a network to <strong>undo one step</strong>: given a noisy image and the step number, predict the noise that was added.</li>
+      <li><strong>Generation:</strong> start from pure noise and repeatedly remove the predicted noise, step by step, until a clean image appears. Text prompts steer this using a text encoder (<em>classifier-free guidance</em>).</li>
+      <li><strong>Latent diffusion</strong> (Stable Diffusion) does all this in a compressed latent space made by an autoencoder, which makes it far cheaper. The denoiser is a U-Net or a transformer (DiT).</li>
+      <li><strong>Strengths:</strong> stable training, high quality, great diversity; also used for video, audio and molecules. <strong>Weakness:</strong> slower, since it needs many sampling steps (distillation and better samplers cut this to a few).</li>
+    </ul>
+<pre><code># one training step of a denoising diffusion model
+t     = torch.randint(0, T, (x0.size(0),), device=device)           # random noise level per image
+noise = torch.randn_like(x0)
+a     = alphas_cumprod[t].view(-1, 1, 1, 1)
+xt    = a.sqrt() * x0 + (1 - a).sqrt() * noise                      # the noisy image
+loss  = F.mse_loss(model(xt, t), noise)                             # learn to predict the noise</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>8. Graph neural networks (GNN)</h3>
+    <ul>
+      <li><strong>Data:</strong> things connected to other things: molecules (atoms and bonds), social networks, road maps, knowledge graphs, transaction networks.</li>
+      <li><strong>How it works (message passing):</strong> each node gathers the features of its neighbours, combines them (sum / mean / attention), and updates its own representation. After <em>k</em> rounds, a node knows about everything within <em>k</em> hops. Variants: GCN, GraphSAGE, GAT (attention), message-passing networks.</li>
+      <li><strong>Use for:</strong> drug and materials discovery, fraud rings, recommendations, traffic forecasting, chip design.</li>
+      <li><strong>Library:</strong> PyTorch Geometric (<code>torch_geometric</code>) or DGL.</li>
+    </ul>
+<pre><code>from torch_geometric.nn import GCNConv
+
+class GCN(nn.Module):
+    def __init__(self, inp, hid, out):
+        super().__init__()
+        self.c1, self.c2 = GCNConv(inp, hid), GCNConv(hid, out)
+    def forward(self, x, edge_index):                # edge_index: [2, num_edges] list of connections
+        return self.c2(F.relu(self.c1(x, edge_index)), edge_index)</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>9. Deep reinforcement learning</h3>
+    <ul>
+      <li><strong>Setting:</strong> an agent acts in an environment, gets rewards, and learns a <em>policy</em> to maximise total reward. Neural networks approximate the policy or the value of states.</li>
+      <li><strong>DQN</strong> (value-based): a network predicts the future reward (Q-value) of each action; pick the best; learn from a replay buffer of past experience. Good for discrete actions (Atari games).</li>
+      <li><strong>Policy gradient / REINFORCE:</strong> directly adjust the policy so actions that led to high return become more likely.</li>
+      <li><strong>Actor-critic, PPO, SAC:</strong> an <em>actor</em> chooses actions, a <em>critic</em> estimates how good the situation is, reducing variance. PPO is the common stable choice (robotics, games, and RLHF for language models).</li>
+      <li><strong>Libraries:</strong> Gymnasium (environments), Stable-Baselines3, TorchRL, RLlib.</li>
+    </ul>
+<pre><code># REINFORCE: make actions that led to high return more likely
+dist = torch.distributions.Categorical(logits=policy(state))
+action = dist.sample()
+loss = -(dist.log_prob(action) * return_).mean()       # return_ = reward collected afterwards</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>10. Embeddings and contrastive learning</h3>
+    <ul>
+      <li><strong>Embedding:</strong> a learned vector for each item (word, user, product, image). Similar items end up close together. <code>nn.Embedding</code> is a trainable lookup table.</li>
+      <li><strong>Word2vec / GloVe:</strong> early word embeddings learned by predicting words from their context.</li>
+      <li><strong>Contrastive learning</strong> (SimCLR, CLIP, sentence-transformers): train with pairs. Pull matching pairs together (an image and its caption, two crops of the same photo) and push non-matching ones apart (InfoNCE loss). No labels needed beyond the pairing.</li>
+      <li><strong>Two-tower models:</strong> one network embeds users, another embeds items; relevance = dot product. Used with approximate-nearest-neighbour search for recommendation and retrieval at huge scale.</li>
+      <li><strong>Use for:</strong> semantic search, retrieval-augmented generation (RAG), recommendations, zero-shot image classification.</li>
+    </ul>
+  </div>
+
+  <div class="card arch">
+    <h3>11. Transfer learning and fine-tuning</h3>
+    <ul>
+      <li><strong>Idea:</strong> do not train from scratch. Take a model pre-trained on a huge dataset (ImageNet, web text) and adapt it to your small dataset. The early layers already know generally useful features.</li>
+      <li><strong>Feature extraction:</strong> freeze the pre-trained body, train only a new final layer. Fast, needs little data.</li>
+      <li><strong>Full fine-tuning:</strong> unfreeze everything and train with a <em>small</em> learning rate. Better results, more risk of overfitting and forgetting.</li>
+      <li><strong>Parameter-efficient fine-tuning (LoRA, adapters, prefix tuning):</strong> freeze the huge model and train tiny added matrices (often under 1% of the parameters). LoRA adds a low-rank update <code>W + B&middot;A</code>. With <strong>QLoRA</strong> (4-bit quantised base model) you can fine-tune a multi-billion-parameter LLM on one GPU.</li>
+      <li><strong>Hubs:</strong> <code>torchvision.models</code>, <code>timm</code> (image models), Hugging Face Hub (text, vision, audio, multimodal).</li>
+    </ul>
+<pre><code>from torchvision import models
+
+m = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)    # pre-trained on ImageNet
+for p in m.parameters(): p.requires_grad = False                 # freeze the backbone
+m.fc = nn.Linear(m.fc.in_features, 5)                            # new head for 5 classes (trainable)
+opt = torch.optim.AdamW(m.fc.parameters(), lr=1e-3)
+
+# LLM fine-tuning with LoRA (Hugging Face PEFT)
+from peft import LoraConfig, get_peft_model
+cfg   = LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"], lora_dropout=0.05)
+model = get_peft_model(base_model, cfg)            # only a tiny fraction of weights are trainable</code></pre>
+  </div>
+
+  <div class="card arch">
+    <h3>12. Making models smaller and faster</h3>
+    <ul>
+      <li><strong>Quantisation:</strong> store weights (and activations) in 8-bit or 4-bit integers instead of 32-bit floats: 4-8x smaller, faster on supported hardware, small accuracy loss. (<code>torch.ao.quantization</code>, bitsandbytes, GPTQ/AWQ.)</li>
+      <li><strong>Pruning:</strong> remove weights or whole channels that contribute little.</li>
+      <li><strong>Knowledge distillation:</strong> train a small "student" to imitate the outputs of a large "teacher" (using soft probabilities), keeping most of the accuracy.</li>
+      <li><strong>Mixed precision:</strong> compute in 16-bit (float16 or bfloat16) while keeping critical values in 32-bit.</li>
+      <li><strong>Mixture of experts (MoE):</strong> a router sends each token to a few specialised sub-networks, so a model can have huge capacity while using only a fraction of it per token.</li>
+    </ul>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Area</th><th>Tasks</th><th>Typical models</th></tr>
+      <tr><td><strong>Computer vision</strong></td><td>Classification, object detection, segmentation, OCR, face recognition, medical imaging, quality inspection, self-driving perception</td><td>ResNet, EfficientNet, YOLO, U-Net, Mask R-CNN, ViT, DINO, SAM</td></tr>
+      <tr><td><strong>Natural language</strong></td><td>Chatbots, summarisation, translation, search, classification, entity extraction, code generation</td><td>BERT, GPT/LLaMA-style LLMs, T5, sentence embeddings</td></tr>
+      <tr><td><strong>Speech and audio</strong></td><td>Speech-to-text, text-to-speech, speaker ID, music generation, sound classification</td><td>Whisper, wav2vec 2.0, conformer, audio diffusion</td></tr>
+      <tr><td><strong>Recommendation and ranking</strong></td><td>Feeds, ads, products, search results</td><td>Two-tower retrieval, deep ranking networks (TorchRec)</td></tr>
+      <tr><td><strong>Time series</strong></td><td>Forecasting, anomaly detection, predictive maintenance</td><td>LSTM/GRU, temporal CNN, transformers, autoencoders</td></tr>
+      <tr><td><strong>Generative AI</strong></td><td>Text, images, video, music, code, synthetic data</td><td>LLMs, diffusion, VAEs, GANs</td></tr>
+      <tr><td><strong>Science and healthcare</strong></td><td>Protein structure, drug discovery, weather, genomics, radiology</td><td>AlphaFold-style transformers, GNNs, 3-D CNNs</td></tr>
+      <tr><td><strong>Robotics and games</strong></td><td>Control, navigation, planning</td><td>Deep RL (PPO, SAC), vision models</td></tr>
+      <tr><td><strong>Finance and security</strong></td><td>Fraud, risk, anomaly and intrusion detection, document understanding</td><td>Autoencoders, GNNs, transformers, gradient boosting alongside</td></tr>
+      <tr><td><strong>Multimodal</strong></td><td>Image captioning, visual question answering, text-to-image, video understanding</td><td>CLIP, vision-language models</td></tr>
+    </table>
+  </div>
+  <p class="muted">Tip: for plain tabular business data, try gradient boosting first (see the <a href="../ml/index.html#combine">ML topic</a>). Deep learning shines on unstructured data: images, text, audio, video, graphs.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="architecture">PyTorch architecture: what is inside</h2>
+  <p>A PyTorch call passes through several layers, from friendly Python at the top to hand-tuned GPU code at the bottom.</p>
+<pre><code>+--------------------------------------------------------------------------+
+|  Your code and Python API:  torch, torch.nn, torch.optim, torch.utils.data |
++--------------------------------------------------------------------------+
+|  Autograd engine (C++): records the graph, runs backward()                |
++--------------------------------------------------------------------------+
+|  Dispatcher (c10): chooses the implementation by device, dtype, layout    |
++--------------------------------------------------------------------------+
+|  ATen: the tensor operator library (add, mm, conv2d, softmax, ...)        |
++------------------+------------------+------------------+-----------------+
+|  CPU kernels     |  CUDA kernels    |  ROCm / MPS /    |  Compiler path  |
+|  MKL, oneDNN     |  cuBLAS, cuDNN,  |  XPU backends    |  torch.compile  |
+|  OpenMP          |  NCCL            |                  |                 |
++------------------+------------------+------------------+-----------------+</code></pre>
+
+  <div class="demo">
+    <h3>Follow one operation (<code>c = a @ b</code>) through the stack</h3>
+    <div class="nodes" id="st-nodes"></div>
+    <div class="stepno" id="st-no"></div>
+    <div class="msg" id="st-msg" style="min-height:6.5rem"></div>
+    <div class="bar">
+      <button type="button" id="st-prev">&larr; Back</button>
+      <button type="button" id="st-next" class="primary">Next &rarr;</button>
+      <button type="button" id="st-reset">Reset</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Component</th><th>Role</th></tr>
+      <tr><td><strong>Tensor</strong></td><td>Storage (a flat memory block) + size + strides + dtype + device. Views share storage, which makes slicing and transposing free.</td></tr>
+      <tr><td><strong>Autograd engine</strong></td><td>Each differentiable operation creates a <code>grad_fn</code> node. <code>backward()</code> visits nodes in reverse topological order, multiplying local gradients (chain rule), and accumulates them in leaf <code>.grad</code>. It runs in C++ and in multiple threads.</td></tr>
+      <tr><td><strong>Dispatcher</strong></td><td>One function name, many implementations. Dispatch keys (autograd, CUDA, CPU, quantized, sparse, batching...) are checked in priority order. This is how features compose without changing your code.</td></tr>
+      <tr><td><strong>ATen</strong></td><td>"A Tensor library": the hundreds of operators, each with per-backend kernels. Operators are declared in a central YAML file, and much glue code is generated from it.</td></tr>
+      <tr><td><strong>Caching memory allocator</strong></td><td>Keeps freed GPU memory reserved for reuse, avoiding slow allocations. This is why <code>nvidia-smi</code> shows more memory used than your tensors need; <code>torch.cuda.empty_cache()</code> releases unused blocks.</td></tr>
+      <tr><td><strong>CUDA streams and async execution</strong></td><td>GPU kernels are queued and run asynchronously; Python continues immediately. Reading values (<code>.item()</code>, <code>.cpu()</code>) forces a synchronisation.</td></tr>
+      <tr><td><strong>Distributed (c10d)</strong></td><td>Collective communication (all-reduce, broadcast) through NCCL on GPUs or Gloo on CPUs, used by DDP and FSDP.</td></tr>
+      <tr><td><strong>Compiler stack (PyTorch 2)</strong></td><td>See below.</td></tr>
+    </table>
+  </div>
+
+  <h3>Eager mode vs torch.compile</h3>
+  <p>
+    By default PyTorch runs in <strong>eager mode</strong>: each operation executes immediately, one by one. That is easy to debug but leaves speed on the table, because every small operation reads and writes GPU memory.
+    <code>torch.compile</code> (PyTorch 2.0, 2023) keeps eager's user experience but speeds up the model by turning it into <strong>fused</strong> kernels.
+  </p>
+<pre><code>your Python model
+   |   TorchDynamo      watches Python bytecode and captures a graph of tensor operations
+   v                    (where it cannot, a "graph break" falls back to normal Python)
+FX graph
+   |   AOTAutograd      traces the forward AND backward pass ahead of time
+   v
+TorchInductor           fuses many small ops into one kernel, chooses memory layouts
+   v
+Triton kernels (GPU)  /  C++ with OpenMP (CPU)
+
+model = torch.compile(model)      # one line; the first call is slow (compilation), later calls are fast</code></pre>
+  <ul>
+    <li>Typical speed-ups are 1.3-2x for training and inference with no code change; more with large models and careful use.</li>
+    <li>Related tools: <code>torch.export</code> (capture a full graph for deployment), TorchScript (older, now legacy), ONNX export, ExecuTorch (mobile/edge).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="perf">Performance and scaling</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Technique</th><th>What it gives you</th></tr>
+      <tr><td><strong>Use the GPU</strong></td><td>10-100x faster than CPU for big models. Move model and data with <code>.to("cuda")</code>.</td></tr>
+      <tr><td><strong>Mixed precision (AMP)</strong></td><td>Half the memory and often 2x speed on modern GPUs. bfloat16 needs no loss scaling; float16 needs a GradScaler.</td></tr>
+      <tr><td><strong><code>torch.compile</code></strong></td><td>Fused kernels, 1.3-2x typical.</td></tr>
+      <tr><td><strong>Efficient data loading</strong></td><td><code>num_workers&gt;0</code>, <code>pin_memory=True</code>, <code>persistent_workers=True</code>: keep the GPU fed. A GPU waiting on data is the most common waste.</td></tr>
+      <tr><td><strong>Larger batches / gradient accumulation</strong></td><td>Accumulate gradients over several small batches to mimic a big one when memory is short.</td></tr>
+      <tr><td><strong>Activation checkpointing</strong></td><td>Recompute activations during backward instead of storing them: trades ~30% more compute for far less memory (<code>torch.utils.checkpoint</code>).</td></tr>
+      <tr><td><strong>DDP (DistributedDataParallel)</strong></td><td>One model copy per GPU, different data per GPU, gradients averaged each step. The standard way to use several GPUs.</td></tr>
+      <tr><td><strong>FSDP / DeepSpeed ZeRO</strong></td><td>Shard parameters, gradients and optimizer state across GPUs so models too big for one GPU can be trained.</td></tr>
+      <tr><td><strong>Tensor / pipeline parallelism</strong></td><td>Split the layers or the matrices themselves across devices for the very largest models.</td></tr>
+      <tr><td><strong>Profiling</strong></td><td><code>torch.profiler</code> and TensorBoard show where time goes; look for idle GPU gaps and sync points.</td></tr>
+    </table>
+  </div>
+<pre><code># Mixed precision (PyTorch 2.3+: torch.amp.GradScaler("cuda"))
+scaler = torch.amp.GradScaler("cuda")                     # needed for float16, not for bfloat16
+for xb, yb in dl:
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        loss = loss_fn(model(xb.to("cuda")), yb.to("cuda"))
+    opt.zero_grad(set_to_none=True)
+    scaler.scale(loss).backward()
+    scaler.step(opt); scaler.update()
+
+# Gradient accumulation + clipping: batch of 64 x 4 steps = effective batch 256
+accum = 4
+for i, (xb, yb) in enumerate(dl):
+    loss = loss_fn(model(xb), yb) / accum
+    loss.backward()
+    if (i + 1) % accum == 0:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step(); opt.zero_grad()
+
+# Multi-GPU with DDP.  Launch with:  torchrun --nproc_per_node=4 train.py
+import os, torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
+
+dist.init_process_group("nccl")
+rank  = int(os.environ["LOCAL_RANK"]); torch.cuda.set_device(rank)
+model = DDP(model.to(rank), device_ids=[rank])
+sampler = DistributedSampler(ds)
+dl = DataLoader(ds, batch_size=64, sampler=sampler)
+for epoch in range(n_epochs):
+    sampler.set_epoch(epoch)                              # reshuffle differently each epoch
+    ...</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="deploy">Deployment: getting a model into production</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Option</th><th>When to use</th></tr>
+      <tr><td><strong>Plain PyTorch behind an API</strong> (FastAPI, Flask)</td><td>Simplest. Load the model once at start-up, call it in <code>eval()</code> mode under <code>no_grad()</code>. Good for moderate traffic.</td></tr>
+      <tr><td><strong>TorchServe / BentoML / Triton Inference Server</strong></td><td>Production serving with batching, versioning, metrics and multi-model support.</td></tr>
+      <tr><td><strong>ONNX / ONNX Runtime / TensorRT</strong></td><td>Export a framework-neutral graph and run it on an optimised runtime; often faster and Python-free.</td></tr>
+      <tr><td><strong><code>torch.export</code> / TorchScript</strong></td><td>Capture a self-contained program to run from C++ or on servers without Python.</td></tr>
+      <tr><td><strong>ExecuTorch / PyTorch Mobile</strong></td><td>Phones, wearables and embedded devices.</td></tr>
+      <tr><td><strong>LLM serving engines</strong> (vLLM, TGI, TensorRT-LLM)</td><td>Language models: continuous batching, paged KV cache and quantisation for high throughput.</td></tr>
+      <tr><td><strong>Managed cloud</strong></td><td>Azure ML, SageMaker, Vertex AI endpoints.</td></tr>
+    </table>
+  </div>
+<pre><code>model.eval()
+example = torch.randn(1, 3, 224, 224)
+
+torch.onnx.export(model, example, "model.onnx",
+                  input_names=["image"], output_names=["logits"],
+                  dynamic_axes={"image": {0: "batch"}})        # allow any batch size
+
+ep = torch.export.export(model, (example,))                    # PyTorch 2 graph capture
+
+# Save and resume checkpoints (weights + optimizer + progress)
+torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "epoch": epoch}, "ckpt.pt")
+ckpt = torch.load("ckpt.pt", map_location=device, weights_only=True)
+model.load_state_dict(ckpt["model"])</code></pre>
+  <p class="muted">Before serving: quantise or distil if latency or cost matter, test on realistic inputs, version the model with its preprocessing code, and monitor drift (see MLOps in the <a href="../ml/index.html#mlops">ML topic</a>).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="ecosystem">The PyTorch ecosystem</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Library</th><th>Purpose</th></tr>
+      <tr><td><strong>torchvision</strong></td><td>Datasets, image transforms, pre-trained models (ResNet, YOLO-style detectors, segmentation).</td></tr>
+      <tr><td><strong>torchaudio</strong></td><td>Audio loading, spectrograms, speech models.</td></tr>
+      <tr><td><strong>Hugging Face</strong> (Transformers, Datasets, Accelerate, PEFT, Diffusers)</td><td>Thousands of pre-trained language, vision, audio and diffusion models; fine-tuning and multi-GPU helpers.</td></tr>
+      <tr><td><strong>PyTorch Lightning / Fabric</strong></td><td>Removes training-loop boilerplate: logging, checkpoints, multi-GPU, mixed precision.</td></tr>
+      <tr><td><strong>timm</strong></td><td>Large collection of image model architectures and weights.</td></tr>
+      <tr><td><strong>PyTorch Geometric / DGL</strong></td><td>Graph neural networks.</td></tr>
+      <tr><td><strong>TorchRec, torchtune, TorchRL</strong></td><td>Recommendation systems, LLM fine-tuning recipes, reinforcement learning.</td></tr>
+      <tr><td><strong>TorchMetrics, Captum</strong></td><td>Metrics for training; model interpretability (attributions).</td></tr>
+      <tr><td><strong>TensorBoard / Weights &amp; Biases / MLflow</strong></td><td>Experiment tracking and visualisation.</td></tr>
+      <tr><td><strong>ONNX, TensorRT, ExecuTorch</strong></td><td>Export and optimised deployment.</td></tr>
+    </table>
+  </div>
+
+  <h2 id="compare">PyTorch vs TensorFlow vs JAX</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>PyTorch</th><th>TensorFlow / Keras</th><th>JAX</th></tr>
+      <tr><td>Style</td><td>Object-oriented, imperative, Pythonic</td><td>High-level Keras API; also graph-based tooling</td><td>Functional, NumPy-like with transformations (<code>grad</code>, <code>jit</code>, <code>vmap</code>)</td></tr>
+      <tr><td>Research share</td><td>Dominant</td><td>Declined</td><td>Strong at Google and in some labs</td></tr>
+      <tr><td>Production tooling</td><td>TorchServe, ExecuTorch, ONNX, torch.export</td><td>TF Serving, TFLite, TF.js: very mature</td><td>Less mature</td></tr>
+      <tr><td>Compilation</td><td>torch.compile (Inductor / Triton)</td><td>XLA, tf.function</td><td>XLA, built into the design</td></tr>
+      <tr><td>Strong points</td><td>Ecosystem, community, LLM tooling, debugging</td><td>Mobile and browser deployment, enterprise pipelines</td><td>Speed on TPUs, clean maths, large-scale research</td></tr>
+    </table>
+  </div>
+  <p class="muted">For most people today: learn PyTorch. The concepts transfer directly to the others.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="pitfalls">Common mistakes and debugging</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+      <tr><td>Loss does not go down</td><td>Learning rate too high or too low; forgot <code>zero_grad()</code> / <code>step()</code>; wrong labels; inputs not normalised</td><td>First <strong>overfit a single batch</strong>: if it cannot reach ~0 loss, there is a bug. Try lr from 1e-2 to 1e-5.</td></tr>
+      <tr><td>Loss becomes <code>NaN</code></td><td>Learning rate too high, <code>log(0)</code>, division by zero, bad data</td><td>Lower the lr, clip gradients, check inputs for NaN, <code>torch.autograd.set_detect_anomaly(True)</code>.</td></tr>
+      <tr><td>Gradients seem to "add up"</td><td>No <code>optimizer.zero_grad()</code></td><td>Call it every iteration, before <code>backward()</code>.</td></tr>
+      <tr><td>Great training accuracy, poor validation</td><td>Overfitting; or <code>model.eval()</code> forgotten</td><td>More data/augmentation, dropout, weight decay, early stopping; call <code>model.eval()</code> and use <code>no_grad()</code>.</td></tr>
+      <tr><td>Wrong loss with CrossEntropyLoss</td><td>Applied <code>softmax</code> before it, or gave one-hot labels</td><td>Pass raw logits and integer class ids.</td></tr>
+      <tr><td><code>Expected all tensors to be on the same device</code></td><td>Model on GPU, data on CPU (or the reverse)</td><td>Move both with <code>.to(device)</code>.</td></tr>
+      <tr><td><code>CUDA out of memory</code></td><td>Batch too large, storing the graph, big activations</td><td>Smaller batch, mixed precision, gradient accumulation, activation checkpointing, wrap evaluation in <code>no_grad()</code>.</td></tr>
+      <tr><td>Memory grows each iteration</td><td>Storing <code>loss</code> tensors in a list keeps their whole graphs alive</td><td>Log <code>loss.item()</code> or <code>loss.detach()</code>.</td></tr>
+      <tr><td><code>a leaf Variable that requires grad is being used in an in-place operation</code></td><td>Modifying a parameter or needed value in place</td><td>Use out-of-place operations, or do the update under <code>no_grad()</code>.</td></tr>
+      <tr><td>Shape errors (<code>mat1 and mat2 shapes cannot be multiplied</code>)</td><td>Wrong flatten size, missing batch dimension, channels-last data</td><td>Print shapes after each layer; <code>x.unsqueeze(0)</code>, <code>x.permute(0,3,1,2)</code>.</td></tr>
+      <tr><td>Training is slow, GPU idle</td><td>Data loading bottleneck, many <code>.item()</code> syncs, tiny batches</td><td>More <code>num_workers</code>, <code>pin_memory</code>, bigger batches, profile.</td></tr>
+      <tr><td>Results differ each run</td><td>Random seeds, non-deterministic GPU kernels</td><td><code>torch.manual_seed(0)</code>; report averages over several runs.</td></tr>
+    </table>
+  </div>
+  <div class="card note">
+    <h3>A sanity-check recipe for any new model</h3>
+    <ol>
+      <li>Check shapes and dtypes of a batch; look at actual inputs and labels (plot a few images, print some text).</li>
+      <li>Check the initial loss: for <em>C</em> balanced classes with cross-entropy it should be near <code>ln(C)</code> (about 2.3 for 10 classes).</li>
+      <li>Overfit one small batch until the loss is near zero.</li>
+      <li>Train on the full set with a simple baseline model, then add complexity.</li>
+      <li>Watch both training and validation curves; compare against a trivial baseline.</li>
+    </ol>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="install">Install and first run</h2>
+<pre><code># Pick the exact command for your OS and GPU at https://pytorch.org  ("Get Started")
+pip install torch torchvision torchaudio
+
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+# prints e.g.  2.x.x  True   (True = a CUDA GPU is usable; False = running on CPU)</code></pre>
+  <ul>
+    <li>No GPU? Use the CPU build for learning, or free notebooks (Google Colab, Kaggle) that provide GPUs.</li>
+    <li>Apple Silicon: use <code>device = "mps"</code>. AMD: ROCm builds.</li>
+    <li>Use a virtual environment (<code>python -m venv .venv</code>) so versions stay isolated.</li>
+  </ul>
+
+  <h2 id="quick">Quick reference and learning path</h2>
+  <div class="cols">
+    <div>
+      <h3>The PyTorch recipe</h3>
+      <ol>
+        <li>Put data in a <code>Dataset</code> and <code>DataLoader</code>.</li>
+        <li>Define the model as an <code>nn.Module</code>.</li>
+        <li>Pick a loss and an optimizer (<code>AdamW</code> is a good start).</li>
+        <li>Loop: forward &rarr; loss &rarr; <code>zero_grad</code> &rarr; <code>backward</code> &rarr; <code>step</code>.</li>
+        <li>Validate with <code>eval()</code> + <code>no_grad()</code>; save the best checkpoint.</li>
+        <li>Scale: GPU, mixed precision, <code>torch.compile</code>, DDP.</li>
+      </ol>
+    </div>
+    <div>
+      <h3>Which architecture?</h3>
+      <ul>
+        <li><strong>Tabular:</strong> gradient boosting first; MLP if needed.</li>
+        <li><strong>Images:</strong> fine-tune a pre-trained ResNet / EfficientNet / ViT.</li>
+        <li><strong>Text:</strong> fine-tune a pre-trained transformer; use an LLM for generation.</li>
+        <li><strong>Sequences / sensors:</strong> 1-D CNN, GRU/LSTM or transformer.</li>
+        <li><strong>Generate images:</strong> diffusion.</li>
+        <li><strong>Graphs:</strong> GNN.</li>
+        <li><strong>Decisions with rewards:</strong> reinforcement learning.</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Suggested learning path</h3>
+  <ol>
+    <li>Python and NumPy; the basics of linear algebra, derivatives and probability.</li>
+    <li>PyTorch tensors, autograd, and a hand-written training loop on a toy problem (like the demos above).</li>
+    <li>Train an MLP and a CNN on MNIST or CIFAR-10; add augmentation, schedulers, checkpoints.</li>
+    <li>Transfer learning with a pre-trained image model on your own small dataset.</li>
+    <li>Sequences and transformers: build the attention block above, then fine-tune a Hugging Face model.</li>
+    <li>Generative models: an autoencoder, then a small diffusion model.</li>
+    <li>Engineering: mixed precision, <code>torch.compile</code>, multi-GPU, exporting and serving a model.</li>
+    <li>Read papers alongside the code (Attention Is All You Need, ResNet, Adam, LoRA) and reproduce a result.</li>
+  </ol>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="playground.js"></script>
+  <script src="viz.js"></script>
+  <script src="steppers.js"></script>
+  <script src="page.js"></script>
+</body>
+</html>

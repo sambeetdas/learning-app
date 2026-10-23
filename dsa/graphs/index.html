@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graphs - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>8. Graphs</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../heaps/index.html">&larr; Heaps</a><a href="../graphs-advanced/index.html">Advanced graphs &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is a graph?</h2>
+  <p>
+    A <strong>graph</strong> is a set of <strong>vertices</strong> (nodes) connected by <strong>edges</strong>. It models anything with relationships: roads between cities, friendships, web links,
+    flights, dependencies between tasks, states of a puzzle. Trees and linked lists are special graphs. Many problems become easy once you see them as "find a path in a graph".
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td>Directed / undirected</td><td>Edges are one-way arrows (follows, depends on) or two-way (friendship, roads)</td></tr>
+      <tr><td>Weighted</td><td>Each edge has a cost: distance, time, price</td></tr>
+      <tr><td>Degree</td><td>Number of edges at a vertex (in-degree / out-degree when directed)</td></tr>
+      <tr><td>Path / cycle</td><td>A sequence of edges; a cycle returns to its start</td></tr>
+      <tr><td>Connected / components</td><td>Every vertex reachable from every other / the separate "islands"</td></tr>
+      <tr><td>DAG</td><td>Directed acyclic graph: dependencies, build systems, spreadsheets, course plans</td></tr>
+      <tr><td>Bipartite</td><td>Vertices split into two groups with edges only between groups (users &amp; products, workers &amp; jobs)</td></tr>
+      <tr><td>Dense / sparse</td><td>E close to V&sup2; / E close to V. Most real graphs are sparse.</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="representation">Representing a graph</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Representation</th><th>Memory</th><th>Is there an edge u&ndash;v?</th><th>List neighbours of u</th><th>Best for</th></tr>
+      <tr><td><strong>Adjacency list</strong> <code>{u: [v, ...]}</code></td><td>O(V + E)</td><td>O(deg u)</td><td>O(deg u)</td><td>Almost everything (sparse graphs)</td></tr>
+      <tr><td><strong>Adjacency matrix</strong> <code>M[u][v]</code></td><td>O(V&sup2;)</td><td>O(1)</td><td>O(V)</td><td>Dense graphs, Floyd-Warshall, small V</td></tr>
+      <tr><td><strong>Edge list</strong> <code>[(u, v, w)]</code></td><td>O(E)</td><td>O(E)</td><td>O(E)</td><td>Kruskal, Bellman-Ford, input format</td></tr>
+      <tr><td><strong>Implicit</strong></td><td>none</td><td>computed</td><td>computed</td><td>Grids, puzzle states, word ladders: neighbours generated on the fly</td></tr>
+    </table>
+  </div>
+<pre><code>from collections import defaultdict
+adj = defaultdict(list)
+for u, v, w in edges:
+    adj[u].append((v, w))
+    adj[v].append((u, w))        # omit this line for a directed graph
+
+# grid as an implicit graph
+def neighbours(r, c):
+    for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        nr, nc = r + dr, c + dc
+        if 0 &lt;= nr &lt; R and 0 &lt;= nc &lt; C and grid[nr][nc] != '#':
+            yield nr, nc</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="traversal">Breadth-first and depth-first search</h2>
+  <div class="cols">
+    <div class="card arch">
+      <h3>BFS (queue)</h3>
+      <p>Explores in rings: all nodes at distance 1, then 2, and so on. Finds <strong>shortest paths in unweighted graphs</strong>, levels, the minimum number of moves. O(V + E).</p>
+    </div>
+    <div class="card arch">
+      <h3>DFS (stack / recursion)</h3>
+      <p>Goes as deep as possible before backing up. Finds <strong>connectivity, cycles, topological order, components, bridges</strong>, and is the skeleton of backtracking. O(V + E).</p>
+    </div>
+  </div>
+  <div class="demo" id="gt-demo">
+    <h3>BFS and DFS step by step</h3>
+    <div class="bar">
+      <label>Algorithm <select id="gt-kind"><option value="bfs">BFS</option><option value="dfs">DFS</option></select></label>
+      <label>Start <select id="gt-start"><option>A</option><option>B</option><option>E</option><option>H</option></select></label>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Mark nodes as seen when you enqueue them</strong> (not when you dequeue), or the same node can enter the queue many times.</li>
+    <li><strong>Multi-source BFS:</strong> put all sources in the queue at distance 0 (rotting oranges, distance to the nearest exit).</li>
+    <li><strong>0-1 BFS:</strong> edges of weight 0 or 1; use a deque, pushing weight-0 neighbours to the front. Shortest paths in O(V + E).</li>
+    <li><strong>Bidirectional BFS:</strong> search from both ends and meet in the middle; explores about 2&middot;b<sup>d/2</sup> instead of b<sup>d</sup> nodes.</li>
+    <li><strong>Cycle detection:</strong> undirected: an edge to a visited node that is not your parent. Directed: an edge to a node currently on the DFS stack (colour nodes white/grey/black).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="dijkstra">Shortest paths with weights: Dijkstra</h2>
+  <p>
+    With weights, the path with the fewest edges is not necessarily the cheapest. <strong>Dijkstra's algorithm</strong> (1956) grows a set of settled nodes in order of distance, using a min-heap.
+    It requires <strong>non-negative</strong> weights: then the closest unsettled node can never be improved later.
+  </p>
+  <div class="demo" id="dj-demo">
+    <h3>Dijkstra's algorithm</h3>
+    <div class="bar"><label>Source <select id="dj-start"><option>A</option><option>D</option><option>H</option></select></label></div>
+    <div class="stage"></div>
+  </div>
+<pre><code>import heapq
+def dijkstra(adj, s):
+    dist = {s: 0}; pq = [(0, s)]
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d &gt; dist.get(u, float('inf')): continue        # stale
+        for v, w in adj[u]:
+            nd = d + w
+            if nd &lt; dist.get(v, float('inf')):
+                dist[v] = nd; heapq.heappush(pq, (nd, v))
+    return dist</code></pre>
+
+  <h3>Other shortest-path algorithms</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Handles</th><th>Time</th><th>Idea</th></tr>
+      <tr><td>BFS</td><td>Unweighted</td><td>O(V + E)</td><td>Rings of distance</td></tr>
+      <tr><td>Dijkstra</td><td>Non-negative weights, single source</td><td>O((V + E) log V)</td><td>Greedy, min-heap</td></tr>
+      <tr><td><strong>Bellman-Ford</strong></td><td>Negative weights; detects negative cycles</td><td>O(V&middot;E)</td><td>Relax every edge V-1 times; a further improvement means a negative cycle</td></tr>
+      <tr><td><strong>SPFA</strong></td><td>Negative weights</td><td>O(V&middot;E) worst, often faster</td><td>Bellman-Ford with a queue of changed nodes</td></tr>
+      <tr><td>DAG shortest path</td><td>Any weights, no cycles</td><td>O(V + E)</td><td>Relax edges in topological order</td></tr>
+      <tr><td><strong>Floyd-Warshall</strong></td><td>All pairs, negative edges (no negative cycles)</td><td>O(V&sup3;)</td><td>DP: allow intermediate nodes 1..k one at a time</td></tr>
+      <tr><td>Johnson</td><td>All pairs on sparse graphs</td><td>O(V E log V)</td><td>Re-weight with Bellman-Ford, then Dijkstra from every node</td></tr>
+      <tr><td><strong>A*</strong></td><td>Single pair with a good heuristic</td><td>Depends on the heuristic</td><td>Dijkstra ordered by g + h (see below)</td></tr>
+    </table>
+  </div>
+<pre><code>def bellman_ford(n, edges, s):
+    dist = [float('inf')] * n; dist[s] = 0
+    for _ in range(n - 1):
+        for u, v, w in edges:
+            if dist[u] + w &lt; dist[v]: dist[v] = dist[u] + w
+    for u, v, w in edges:                       # one more round
+        if dist[u] + w &lt; dist[v]: raise ValueError("negative cycle")
+    return dist
+
+def floyd_warshall(d):                          # d[i][j] = weight or inf, d[i][i] = 0
+    n = len(d)
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                if d[i][k] + d[k][j] &lt; d[i][j]: d[i][j] = d[i][k] + d[k][j]
+    return d</code></pre>
+  <p class="muted">Recent research: in 2025 Duan, Mao, Mao, Shu and Yin gave a deterministic algorithm for single-source shortest paths on directed graphs with non-negative weights that runs in O(m log<sup>2/3</sup> n), the first to beat Dijkstra's "sorting barrier" (STOC 2025 best paper). It is mainly of theoretical interest so far; Dijkstra with a binary heap remains the practical default.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="astar">A* search: pathfinding with a sense of direction</h2>
+  <p>
+    A* is Dijkstra that prefers nodes which look closer to the goal. It orders the frontier by <code>f = g + h</code>, where g is the cost so far and h is an <strong>admissible</strong> estimate of the remaining cost
+    (it must never over-estimate, e.g. straight-line or Manhattan distance). With such an h, A* still finds an optimal path, but usually explores far fewer nodes.
+  </p>
+  <div class="demo" id="pf-demo">
+    <h3>Maze: BFS vs A*</h3>
+    <div class="bar"><label>Algorithm <select id="pf-kind"><option value="bfs">BFS (no sense of direction)</option><option value="astar">A* (Manhattan heuristic)</option></select></label><span class="muted">purple = wall</span></div>
+    <div class="stage"></div>
+  </div>
+<pre class="pseudo">open = min-heap ordered by f = g + h;  push start with g = 0
+while open not empty:
+    u = pop lowest f
+    if u == goal: rebuild the path from parent links; done
+    for each neighbour v with edge cost w:
+        if g[u] + w &lt; g[v]:
+            g[v] = g[u] + w;  parent[v] = u
+            push v with f = g[v] + h(v)</pre>
+  <p class="muted">Used in games, robotics and route planners. Real map routing adds pre-processing (contraction hierarchies, hub labels) to answer continent-scale queries in milliseconds.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="topo">Topological sort</h2>
+  <p>A <strong>topological order</strong> of a DAG lists the vertices so that every edge points forward: every task comes after its prerequisites. It exists exactly when the graph has no cycle.</p>
+  <div class="demo" id="topo-demo">
+    <h3>Kahn's algorithm (BFS on in-degrees)</h3>
+    <div class="stage"></div>
+  </div>
+<pre><code>def topo_dfs(graph):                 # alternative: DFS, prepend each node when it finishes
+    order, state = [], {}            # state: 1 = on the stack, 2 = done
+    def dfs(u):
+        state[u] = 1
+        for v in graph[u]:
+            if state.get(v) == 1: raise ValueError("cycle")
+            if v not in state: dfs(v)
+        state[u] = 2; order.append(u)
+    for u in graph:
+        if u not in state: dfs(u)
+    return order[::-1]</code></pre>
+  <p class="muted">Used by build tools (make, MSBuild, Gradle), package managers (npm, pip resolving install order), spreadsheet recalculation, task schedulers (Airflow DAGs) and course planners.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="mst">Minimum spanning trees</h2>
+  <p>A <strong>spanning tree</strong> connects all vertices with V-1 edges and no cycles. The <strong>minimum</strong> spanning tree (MST) does it with the smallest total weight: the cheapest way to cable a network or pave roads between towns.</p>
+  <div class="demo" id="mst-demo">
+    <h3>Kruskal's algorithm</h3>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Idea</th><th>Time</th><th>Best for</th></tr>
+      <tr><td><strong>Kruskal</strong></td><td>Sort edges; add the cheapest that does not form a cycle (union-find)</td><td>O(E log E)</td><td>Sparse graphs, edge lists</td></tr>
+      <tr><td><strong>Prim</strong></td><td>Grow one tree; always add the cheapest edge leaving it (min-heap)</td><td>O(E log V)</td><td>Dense graphs, adjacency lists</td></tr>
+      <tr><td>Bor&#367;vka</td><td>Every component adds its cheapest outgoing edge, in rounds</td><td>O(E log V)</td><td>Parallel / distributed computation</td></tr>
+    </table>
+  </div>
+<pre><code>def prim(adj, start):
+    seen, pq, total = {start}, [(w, v) for v, w in adj[start]], 0
+    heapq.heapify(pq)
+    while pq and len(seen) &lt; len(adj):
+        w, v = heapq.heappop(pq)
+        if v in seen: continue
+        seen.add(v); total += w
+        for x, wx in adj[v]:
+            if x not in seen: heapq.heappush(pq, (wx, x))
+    return total</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="other">More essential graph techniques</h2>
+  <ul>
+    <li><strong>Connected components:</strong> run BFS/DFS from every unvisited node, or use union-find (great when edges arrive one at a time).</li>
+    <li><strong>Bipartite check:</strong> 2-colour with BFS; an edge between two nodes of the same colour means an odd cycle, so it is not bipartite.</li>
+    <li><strong>Flood fill / islands:</strong> DFS or BFS on a grid, marking cells as visited.</li>
+    <li><strong>State-space search:</strong> nodes are configurations (a lock combination, a puzzle board, a word); BFS gives the minimum number of moves.</li>
+    <li><strong>Advanced topics:</strong> strongly connected components, bridges and articulation points, maximum flow, matching, Euler paths, LCA and more are on the <a href="../graphs-advanced/index.html">advanced graphs page</a>.</li>
+  </ul>
+
+  <h2 id="choose">Which algorithm should I use?</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Question</th><th>Algorithm</th></tr>
+      <tr><td>Fewest steps / moves, all edges equal</td><td>BFS</td></tr>
+      <tr><td>Cheapest path, non-negative weights</td><td>Dijkstra (A* if you have a good heuristic and one target)</td></tr>
+      <tr><td>Negative weights, or detect a negative cycle (arbitrage)</td><td>Bellman-Ford</td></tr>
+      <tr><td>Distances between all pairs, V &le; ~400</td><td>Floyd-Warshall</td></tr>
+      <tr><td>Order tasks with dependencies / detect a dependency cycle</td><td>Topological sort</td></tr>
+      <tr><td>Connect everything as cheaply as possible</td><td>MST (Kruskal or Prim)</td></tr>
+      <tr><td>Are these two in the same group? (online)</td><td>Union-find</td></tr>
+      <tr><td>Can I get from a to b at all?</td><td>BFS or DFS</td></tr>
+    </table>
+  </div>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Navigation:</strong> Google Maps, Waze and logistics planners run Dijkstra/A* variants on road networks with live traffic weights.</li>
+    <li><strong>Networking:</strong> OSPF routing uses Dijkstra; BGP is path-vector routing; spanning-tree protocol prevents loops in Ethernet.</li>
+    <li><strong>Social networks:</strong> friend suggestions ("friends of friends" = BFS depth 2), influence and community detection.</li>
+    <li><strong>Web:</strong> crawlers traverse links (BFS); PageRank scores pages by the link graph.</li>
+    <li><strong>Software:</strong> dependency resolution, build order, garbage collectors (mark phase is a graph traversal from roots), deadlock detection (cycles in wait-for graphs).</li>
+    <li><strong>Fraud and security:</strong> rings of linked accounts, attack graphs.</li>
+    <li><strong>Knowledge graphs and recommendations:</strong> entities and relations; graph neural networks.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Number of islands <span class="diff med">medium</span> <span class="tag">flood fill</span></summary>
+<pre><code>def num_islands(grid):
+    R, C, count = len(grid), len(grid[0]), 0
+    def sink(r, c):
+        if 0 &lt;= r &lt; R and 0 &lt;= c &lt; C and grid[r][c] == "1":
+            grid[r][c] = "0"
+            sink(r + 1, c); sink(r - 1, c); sink(r, c + 1); sink(r, c - 1)
+    for r in range(R):
+        for c in range(C):
+            if grid[r][c] == "1": count += 1; sink(r, c)
+    return count</code></pre>
+    <p><span class="big g">O(R&middot;C)</span>. Use BFS or an explicit stack for very large grids (recursion depth).</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Clone a graph <span class="diff med">medium</span> <span class="tag">DFS + hash map</span></summary>
+    <p>DFS from the given node; a map <code>old &rarr; copy</code> both prevents infinite loops on cycles and lets you wire neighbours to existing copies. O(V + E).</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Course schedule (can all courses be finished?) <span class="diff med">medium</span> <span class="tag">cycle detection</span></summary>
+    <p>Build the prerequisite graph and run Kahn's algorithm (animated above). All courses can be finished exactly when the produced order contains every course; otherwise there is a cycle. <strong>Course schedule II</strong> asks for the order itself. O(V + E).</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Rotting oranges <span class="diff med">medium</span> <span class="tag">multi-source BFS</span></summary>
+    <p class="q">Each minute, rotten oranges rot their fresh neighbours. Minutes until all are rotten (or -1)?</p>
+<pre><code>from collections import deque
+def oranges(g):
+    R, C = len(g), len(g[0]); q = deque(); fresh = 0
+    for r in range(R):
+        for c in range(C):
+            if g[r][c] == 2: q.append((r, c))
+            elif g[r][c] == 1: fresh += 1
+    minutes = 0
+    while q and fresh:
+        for _ in range(len(q)):                     # one BFS level = one minute
+            r, c = q.popleft()
+            for nr, nc in ((r+1,c),(r-1,c),(r,c+1),(r,c-1)):
+                if 0 &lt;= nr &lt; R and 0 &lt;= nc &lt; C and g[nr][nc] == 1:
+                    g[nr][nc] = 2; fresh -= 1; q.append((nr, nc))
+        minutes += 1
+    return -1 if fresh else minutes</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q5. Word ladder <span class="diff hard">hard</span> <span class="tag">BFS on implicit graph</span></summary>
+    <p class="q">Change one letter at a time, every intermediate word must be in the dictionary. Fewest steps from start to end?</p>
+    <h4>Approach</h4><p>Words are nodes; neighbours differ by one letter. BFS from the start. To find neighbours fast, map patterns like <code>h*t</code> to the words that match them, or try all 26 letters at each position against a set. Bidirectional BFS speeds it up a lot.</p>
+    <p><span class="big g">O(N &middot; L&sup2;)</span> for N words of length L (with the pattern map).</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Network delay time <span class="diff med">medium</span> <span class="tag">Dijkstra</span></summary>
+    <p class="q">A signal starts at node k; edges have travel times. How long until every node receives it?</p>
+    <p>Run Dijkstra from k; the answer is the largest finite distance, or -1 if some node is unreachable. O(E log V).</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Cheapest flights within K stops <span class="diff med">medium</span> <span class="tag">Bellman-Ford rounds</span></summary>
+    <p>Run Bellman-Ford for exactly K+1 rounds, each round relaxing from a <em>copy</em> of the previous round's distances, so paths use at most K+1 edges. O(K&middot;E). (Dijkstra on (node, stops) states also works.)</p>
+<pre><code>def cheapest(n, flights, src, dst, k):
+    d = [float('inf')] * n; d[src] = 0
+    for _ in range(k + 1):
+        nd = d[:]
+        for u, v, w in flights:
+            if d[u] + w &lt; nd[v]: nd[v] = d[u] + w
+        d = nd
+    return -1 if d[dst] == float('inf') else d[dst]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q8. Redundant connection <span class="diff med">medium</span> <span class="tag">union-find</span></summary>
+    <p class="q">A tree with one extra edge added. Which edge creates the cycle?</p>
+    <p>Process edges in order with union-find; the first edge whose endpoints are already in the same set is the answer. Nearly O(E). See <a href="../advanced/index.html#union-find">union-find</a>.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Min cost to connect all points <span class="diff med">medium</span> <span class="tag">MST</span></summary>
+    <p>Points are a complete graph with Manhattan-distance weights. Prim's algorithm with an O(V&sup2;) array scan (no heap needed for a dense graph) or Kruskal on all V&sup2;/2 edges.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Is the graph bipartite? <span class="diff med">medium</span> <span class="tag">2-colouring</span></summary>
+<pre><code>def bipartite(adj):
+    color = {}
+    for s in adj:
+        if s in color: continue
+        color[s] = 0; q = deque([s])
+        while q:
+            u = q.popleft()
+            for v in adj[u]:
+                if v not in color: color[v] = 1 - color[u]; q.append(v)
+                elif color[v] == color[u]: return False
+    return True</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q11. Pacific Atlantic water flow <span class="diff med">medium</span> <span class="tag">reverse BFS</span></summary>
+    <p class="q">Which cells can drain to both oceans (water flows to equal or lower neighbours)?</p>
+    <p>Think backwards: BFS/DFS <em>uphill</em> from each ocean's border cells, collecting the cells each ocean can reach. Return the intersection. O(R&middot;C) instead of a search from every cell.</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Path with minimum effort <span class="diff med">medium</span> <span class="tag">Dijkstra on a grid</span></summary>
+    <p class="q">A path's effort is its largest height difference between neighbouring cells. Minimise it from top-left to bottom-right.</p>
+    <p>Dijkstra where the "distance" is the maximum edge on the path: <code>nd = max(d, |h[u] - h[v]|)</code>. Also solvable with binary search on the answer + BFS, or union-find adding edges in order of weight.</p>
+  </details>
+
+  <details class="prob"><summary>Q13. Alien dictionary <span class="diff hard">hard</span> <span class="tag">topological sort</span></summary>
+    <p class="q">Words are sorted in an unknown alphabet. Recover a valid letter order.</p>
+    <p>Compare each adjacent pair of words: the first differing letter gives an edge <code>a &rarr; b</code>. (If a word is followed by its own prefix, the input is invalid.) Topologically sort the letters; a cycle means no valid order.</p>
+  </details>
+
+  <details class="prob"><summary>Q14. Shortest path in a binary matrix <span class="diff med">medium</span> <span class="tag">BFS, 8 directions</span></summary>
+    <p>BFS from (0, 0) over cells with value 0, moving in 8 directions; the BFS level at which you reach the corner is the answer. O(n&sup2;).</p>
+  </details>
+
+  <div class="pager"><a href="../heaps/index.html">&larr; Heaps</a><a href="../graphs-advanced/index.html">Next: Advanced graph algorithms &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

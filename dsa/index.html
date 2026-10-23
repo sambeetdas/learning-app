@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Structures and Algorithms - Learning App</title>
+  <link rel="stylesheet" href="assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Data Structures and Algorithms</h1>
+    <nav><a href="../index.html">&larr; All topics</a><a href="complexity/index.html">Start: Complexity &rarr;</a></nav>
+  </header>
+
+  <p>
+    A <strong>data structure</strong> is a way of organising data so the operations you need are fast: an array, a hash map, a tree, a graph.
+    An <strong>algorithm</strong> is a precise step-by-step procedure for solving a problem: sorting, searching, finding the shortest route.
+    Choosing the right pair is the difference between a program that answers in a millisecond and one that never finishes.
+  </p>
+  <p>
+    Each page below covers one area with <strong>animated step-through demos</strong>, <strong>pseudocode</strong>, <strong>Python code</strong>, complexity tables, real-world <strong>use cases</strong>,
+    and a set of <strong>solved practice questions</strong> showing how to recognise and solve typical problems. Work through them in order, or jump to what you need.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="pages">The pages</h2>
+
+  <h3>1. Foundations</h3>
+  <div class="hub">
+    <a href="complexity/index.html"><b>1. Complexity and Big-O</b><span>Time and space cost, Big-O / Omega / Theta, growth rates, amortised analysis, recurrences and the Master theorem.</span><small>Animation: growth-rate race, operation counter</small></a>
+    <a href="arrays/index.html"><b>2. Arrays, strings and core techniques</b><span>Static and dynamic arrays, strings, prefix sums, two pointers, sliding window, Kadane, difference arrays, matrix traversal.</span><small>Animations: dynamic array growth, two pointers, sliding window, Kadane</small></a>
+    <a href="linked-lists/index.html"><b>3. Linked lists</b><span>Singly, doubly and circular lists; insert, delete, reverse; fast and slow pointers; cycle detection; merge.</span><small>Animations: reversal, cycle detection (Floyd)</small></a>
+    <a href="stacks-queues/index.html"><b>4. Stacks and queues</b><span>Stack, queue, deque, circular buffer, monotonic stack and queue; bracket matching, expression evaluation.</span><small>Animations: bracket matcher, next greater element, sliding max</small></a>
+    <a href="hashing/index.html"><b>5. Hashing</b><span>Hash functions, hash maps and sets, chaining vs open addressing, load factor, resizing, Swiss tables, common hashing patterns.</span><small>Animations: chaining vs linear probing</small></a>
+  </div>
+
+  <h3>2. Trees and graphs</h3>
+  <div class="hub">
+    <a href="trees/index.html"><b>6. Trees and binary search trees</b><span>Traversals, BST insert/search/delete, AVL and red-black balancing, B-trees and B+ trees, LCA, serialisation.</span><small>Animations: traversals, BST operations, AVL rotations</small></a>
+    <a href="heaps/index.html"><b>7. Heaps and priority queues</b><span>Binary heap push/pop, heapify, heap sort, top-K, running median, d-ary and Fibonacci heaps.</span><small>Animations: heap insert and extract (tree + array)</small></a>
+    <a href="graphs/index.html"><b>8. Graphs</b><span>Representations, BFS, DFS, topological sort, Dijkstra, Bellman-Ford, Floyd-Warshall, MST (Kruskal, Prim), A*.</span><small>Animations: BFS/DFS, Dijkstra, Kruskal, topological sort</small></a>
+    <a href="graphs-advanced/index.html"><b>9. Advanced graph algorithms</b><span>Strongly connected components, bridges, max flow (Ford-Fulkerson, Edmonds-Karp, Dinic), matching, 2-SAT, Euler paths, LCA, recent breakthroughs.</span><small>Animations: Tarjan SCC, max flow augmenting paths</small></a>
+  </div>
+
+  <h3>3. Core algorithms</h3>
+  <div class="hub">
+    <a href="sorting/index.html"><b>10. Sorting</b><span>Bubble, selection, insertion, shell, merge, quick, heap, counting, radix, bucket; Timsort/Powersort, introsort, pdqsort; stability; external sorting.</span><small>Animation: every sort, step by step, side by side</small></a>
+    <a href="searching/index.html"><b>11. Searching</b><span>Linear, binary (all variants), binary search on the answer, rotated arrays, exponential, interpolation, ternary search, quickselect.</span><small>Animations: binary search, lower/upper bound, search on answer</small></a>
+    <a href="recursion/index.html"><b>12. Recursion and backtracking</b><span>Call stack, recursion trees, memoisation, subsets, permutations, combinations, N-Queens, Sudoku, pruning.</span><small>Animations: call tree, N-Queens backtracking</small></a>
+    <a href="dp/index.html"><b>13. Dynamic programming</b><span>Memoisation vs tabulation, 1-D, 2-D, knapsack, LCS, edit distance, LIS, intervals, bitmask, tree and digit DP, optimisations.</span><small>Animations: Fibonacci memo, LCS table, 0/1 knapsack table</small></a>
+    <a href="greedy-dc/index.html"><b>14. Greedy and divide and conquer</b><span>Exchange arguments, interval scheduling, Huffman coding, fractional knapsack; merge sort, closest pair, Karatsuba, Strassen.</span><small>Animations: interval scheduling, Huffman tree</small></a>
+  </div>
+
+  <h3>4. Advanced and modern</h3>
+  <div class="hub">
+    <a href="advanced/index.html"><b>15. Advanced data structures</b><span>Trie, union-find, segment tree (lazy), Fenwick tree, sparse table, skip list, LRU/LFU cache, B-trees, LSM trees, persistent and succinct structures.</span><small>Animations: trie, union-find, segment tree query</small></a>
+    <a href="strings/index.html"><b>16. String algorithms</b><span>KMP, Z-algorithm, Rabin-Karp, Boyer-Moore, Aho-Corasick, Manacher, suffix arrays and automata, edit distance, tries for text.</span><small>Animations: KMP matching, Rabin-Karp rolling hash</small></a>
+    <a href="math/index.html"><b>17. Math, bits and geometry</b><span>GCD, primes and sieves, modular arithmetic, fast power, matrix exponentiation, combinatorics, bit tricks, FFT, convex hull, sweep line.</span><small>Animations: sieve of Eratosthenes, convex hull</small></a>
+    <a href="modern/index.html"><b>18. Probabilistic, big-data and latest algorithms</b><span>Bloom and cuckoo filters, HyperLogLog, Count-Min sketch, MinHash, LSH, HNSW vector search, consistent hashing, reservoir sampling, rate limiters, learned indexes, recent research.</span><small>Animations: Bloom filter, consistent hashing ring, reservoir sampling</small></a>
+    <a href="patterns/index.html"><b>19. Problem-solving patterns</b><span>How to recognise which technique a problem needs, a pattern catalogue, an interview playbook, and a self-test quiz.</span><small>Interactive: pattern quiz</small></a>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="ops">Cheat sheet: operation costs</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Structure</th><th>Access by index</th><th>Search</th><th>Insert</th><th>Delete</th><th>Notes</th></tr>
+      <tr><td>Array (static)</td><td><span class="big g">O(1)</span></td><td><span class="big y">O(n)</span></td><td><span class="big y">O(n)</span></td><td><span class="big y">O(n)</span></td><td>Contiguous, cache-friendly</td></tr>
+      <tr><td>Dynamic array (list, vector)</td><td><span class="big g">O(1)</span></td><td><span class="big y">O(n)</span></td><td><span class="big g">O(1)</span> amortised at end</td><td><span class="big g">O(1)</span> at end, <span class="big y">O(n)</span> middle</td><td>Doubles capacity when full</td></tr>
+      <tr><td>Sorted array</td><td><span class="big g">O(1)</span></td><td><span class="big g">O(log n)</span></td><td><span class="big y">O(n)</span></td><td><span class="big y">O(n)</span></td><td>Binary search</td></tr>
+      <tr><td>Linked list</td><td><span class="big y">O(n)</span></td><td><span class="big y">O(n)</span></td><td><span class="big g">O(1)</span> at a known node</td><td><span class="big g">O(1)</span> at a known node</td><td>No random access</td></tr>
+      <tr><td>Stack / queue / deque</td><td>-</td><td><span class="big y">O(n)</span></td><td><span class="big g">O(1)</span></td><td><span class="big g">O(1)</span></td><td>Only at the ends</td></tr>
+      <tr><td>Hash map / set</td><td>-</td><td><span class="big g">O(1)</span> avg</td><td><span class="big g">O(1)</span> avg</td><td><span class="big g">O(1)</span> avg</td><td><span class="big r">O(n)</span> worst; unordered</td></tr>
+      <tr><td>Balanced BST (AVL, red-black)</td><td><span class="big g">O(log n)</span>*</td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(log n)</span></td><td>Ordered; range queries. *with size augmentation</td></tr>
+      <tr><td>Unbalanced BST</td><td>-</td><td><span class="big y">O(n)</span> worst</td><td><span class="big y">O(n)</span> worst</td><td><span class="big y">O(n)</span> worst</td><td>Degrades on sorted input</td></tr>
+      <tr><td>Binary heap</td><td>-</td><td><span class="big y">O(n)</span></td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(log n)</span> (min/max)</td><td>Peek min/max <span class="big g">O(1)</span></td></tr>
+      <tr><td>Trie</td><td>-</td><td><span class="big g">O(L)</span></td><td><span class="big g">O(L)</span></td><td><span class="big g">O(L)</span></td><td>L = key length; prefix queries</td></tr>
+      <tr><td>Union-find</td><td>-</td><td>find <span class="big g">&asymp;O(1)</span></td><td>union <span class="big g">&asymp;O(1)</span></td><td>-</td><td>Inverse Ackermann, amortised</td></tr>
+      <tr><td>Segment / Fenwick tree</td><td>-</td><td>range query <span class="big g">O(log n)</span></td><td>point update <span class="big g">O(log n)</span></td><td>-</td><td>Range sums, min, max</td></tr>
+      <tr><td>Skip list</td><td>-</td><td><span class="big g">O(log n)</span> expected</td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(log n)</span></td><td>Randomised ordered structure</td></tr>
+      <tr><td>B-tree / B+ tree</td><td>-</td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(log n)</span></td><td>Few disk reads; database indexes</td></tr>
+    </table>
+  </div>
+
+  <h2 id="limits">Cheat sheet: what complexity fits the input size?</h2>
+  <p>A typical machine does roughly 10<sup>8</sup> simple operations per second. Use the input size to guess the intended solution.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Input size n</th><th>Acceptable complexity</th><th>Typical techniques</th></tr>
+      <tr><td>n &le; 10-12</td><td><span class="big r">O(n!)</span></td><td>All permutations, brute force</td></tr>
+      <tr><td>n &le; 20-25</td><td><span class="big r">O(2<sup>n</sup>)</span>, O(2<sup>n</sup>&middot;n)</td><td>Subsets, bitmask DP, backtracking, meet in the middle (n &le; 40)</td></tr>
+      <tr><td>n &le; 500</td><td><span class="big y">O(n&sup3;)</span></td><td>Floyd-Warshall, interval DP</td></tr>
+      <tr><td>n &le; 5,000</td><td><span class="big y">O(n&sup2;)</span></td><td>2-D DP, all pairs, simple nested loops</td></tr>
+      <tr><td>n &le; 10<sup>6</sup></td><td><span class="big g">O(n log n)</span></td><td>Sorting, heaps, binary search, segment trees, divide and conquer</td></tr>
+      <tr><td>n &le; 10<sup>8</sup></td><td><span class="big g">O(n)</span></td><td>Single pass, two pointers, hashing, prefix sums, linear DP</td></tr>
+      <tr><td>n &gt; 10<sup>9</sup></td><td><span class="big g">O(log n)</span> or <span class="big g">O(1)</span></td><td>Math formula, binary search, fast exponentiation</td></tr>
+    </table>
+  </div>
+
+  <h2 id="choose">Which data structure do I need?</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>If you need to...</th><th>Use</th></tr>
+      <tr><td>Access items by position, iterate fast</td><td>Array / dynamic array</td></tr>
+      <tr><td>Look up by key, count, de-duplicate, check membership</td><td>Hash map / hash set</td></tr>
+      <tr><td>Keep items sorted with fast insert/delete, or answer "next larger", range queries</td><td>Balanced BST (TreeMap, SortedList), skip list</td></tr>
+      <tr><td>Repeatedly take the smallest/largest/most urgent item</td><td>Heap / priority queue</td></tr>
+      <tr><td>Undo, matching brackets, depth-first processing, "most recent first"</td><td>Stack</td></tr>
+      <tr><td>Process in arrival order, breadth-first search, buffering</td><td>Queue / deque / ring buffer</td></tr>
+      <tr><td>Insert/delete in the middle of a sequence given the node</td><td>(Doubly) linked list</td></tr>
+      <tr><td>Prefix searches, autocomplete, dictionaries of words</td><td>Trie</td></tr>
+      <tr><td>Group items into connected sets, merge groups</td><td>Union-find</td></tr>
+      <tr><td>Range sums / min / max with updates</td><td>Fenwick tree or segment tree</td></tr>
+      <tr><td>Model relationships, routes, dependencies</td><td>Graph (adjacency list)</td></tr>
+      <tr><td>Approximate membership or counting at huge scale with tiny memory</td><td>Bloom filter, HyperLogLog, Count-Min sketch</td></tr>
+      <tr><td>Find similar vectors (embeddings) fast</td><td>HNSW, IVF, LSH (approximate nearest neighbour)</td></tr>
+    </table>
+  </div>
+
+  <h2 id="study">How to study and solve problems</h2>
+  <ol>
+    <li><strong>Understand the problem:</strong> restate it, write down inputs, outputs, constraints, and two or three examples including edge cases (empty, one element, duplicates, negatives, huge values).</li>
+    <li><strong>Brute force first:</strong> say the simplest correct solution and its complexity. It gives a baseline and often reveals the structure.</li>
+    <li><strong>Find the bottleneck:</strong> which repeated work can be avoided? Look for a pattern (see <a href="patterns/index.html">page 19</a>): sorted input &rarr; binary search or two pointers; "contiguous subarray" &rarr; sliding window or prefix sums; "all combinations" &rarr; backtracking; overlapping sub-problems &rarr; DP; "shortest" in an unweighted graph &rarr; BFS.</li>
+    <li><strong>Choose structures</strong> that make the frequent operation cheap (lookup &rarr; hash map, min &rarr; heap).</li>
+    <li><strong>Write pseudocode</strong>, then code. Dry-run it on an example by hand, exactly like the animations do.</li>
+    <li><strong>Analyse time and space</strong>, then test edge cases.</li>
+  </ol>
+  <div class="card note">
+    <h3>Suggested learning order</h3>
+    <p>Complexity &rarr; arrays and hashing &rarr; two pointers, sliding window &rarr; stacks and queues &rarr; linked lists &rarr; binary search &rarr; sorting &rarr; recursion and backtracking &rarr; trees &rarr; heaps &rarr; graphs &rarr; dynamic programming &rarr; greedy &rarr; advanced structures, strings, math &rarr; advanced graphs and modern algorithms. Solve 5-10 problems per topic before moving on, and revisit old ones after a week.</p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced Data Structures - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>15. Advanced data structures</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../greedy-dc/index.html">&larr; Greedy</a><a href="../strings/index.html">String algorithms &rarr;</a></nav>
+  </header>
+
+  <p>
+    These structures appear whenever the basic ones are not fast enough for a specific question: prefix lookups, merging groups, range queries with updates, ordered data under heavy writes,
+    or keeping old versions. Each section explains the idea, gives code, and lists where it is used in real systems.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Structure</th><th>Answers fast</th><th>Cost</th></tr>
+      <tr><td>Trie</td><td>Prefix search, autocomplete, dictionary</td><td>O(L) per word</td></tr>
+      <tr><td>Union-find</td><td>"Are a and b connected?" while merging groups</td><td>&asymp;O(1) amortised</td></tr>
+      <tr><td>Fenwick tree</td><td>Prefix sums with point updates</td><td>O(log n)</td></tr>
+      <tr><td>Segment tree</td><td>Any associative range query (sum, min, max, gcd) with updates, lazy range updates</td><td>O(log n)</td></tr>
+      <tr><td>Sparse table</td><td>Range min/max on static data</td><td>O(1) query, O(n log n) build</td></tr>
+      <tr><td>Skip list</td><td>Ordered set operations, concurrency-friendly</td><td>O(log n) expected</td></tr>
+      <tr><td>LRU / LFU cache</td><td>Evict the least recently / least frequently used</td><td>O(1)</td></tr>
+      <tr><td>B+ tree / LSM tree</td><td>Disk-based indexes for reads / for writes</td><td>O(log n) I/Os</td></tr>
+      <tr><td>Persistent structures</td><td>Query any old version</td><td>O(log n) per change</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="trie">Trie (prefix tree)</h2>
+  <p>Each edge is a character; each path from the root spells a prefix. Looking up or inserting a word costs O(length of the word), regardless of how many words are stored, and all words with a given prefix sit in one subtree.</p>
+  <div class="demo" id="trie-demo">
+    <h3>Insert words, then search a prefix</h3>
+    <div class="bar">
+      <label>Words <input type="text" class="wide" id="trie-words" value="car, cat, cart, care, dog, dot, do"></label>
+      <label>search <input type="text" id="trie-q" value="ca" style="width:6rem"></label>
+      <button type="button" id="trie-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre><code>class Trie:
+    def __init__(self): self.root = {}
+    def insert(self, word):
+        node = self.root
+        for ch in word: node = node.setdefault(ch, {})
+        node["$"] = True                       # end-of-word marker
+    def _walk(self, s):
+        node = self.root
+        for ch in s:
+            if ch not in node: return None
+            node = node[ch]
+        return node
+    def search(self, word): n = self._walk(word); return bool(n and "$" in n)
+    def starts_with(self, prefix): return self._walk(prefix) is not None</code></pre>
+  <ul>
+    <li><strong>Variants:</strong> compressed tries / radix trees (merge single-child chains; used in IP routing tables and the Linux kernel), ternary search trees (less memory), <strong>binary tries</strong> on the bits of integers (maximum XOR queries), and suffix tries/trees for substring search.</li>
+    <li><strong>Uses:</strong> autocomplete and search suggestions, spell checkers, T9 keyboards, longest-prefix match in routers, Aho-Corasick multi-pattern matching (see <a href="../strings/index.html#aho">strings</a>), word games (Boggle, Word Search II).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="union-find">Union-find (disjoint set union)</h2>
+  <p>Keeps a collection of disjoint sets with two operations: <strong>find(x)</strong> returns the representative of x's set, and <strong>union(a, b)</strong> merges two sets. Each set is a tree whose root is the representative.</p>
+  <div class="demo" id="uf-demo">
+    <h3>Union by rank and path compression</h3>
+    <div class="bar"><label>Operations <input type="text" class="wide" id="uf-ops" value="union 1 2; union 3 4; union 2 4; union 5 6; union 7 8; union 6 8; union 4 8; find 3; union 1 3; find 7"></label><button type="button" id="uf-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+<pre><code>class DSU:
+    def __init__(self, n): self.p, self.r = list(range(n)), [0] * n
+    def find(self, x):
+        while self.p[x] != x:
+            self.p[x] = self.p[self.p[x]]         # path halving (iterative compression)
+            x = self.p[x]
+        return x
+    def union(self, a, b):
+        a, b = self.find(a), self.find(b)
+        if a == b: return False
+        if self.r[a] &lt; self.r[b]: a, b = b, a
+        self.p[b] = a
+        if self.r[a] == self.r[b]: self.r[a] += 1
+        return True</code></pre>
+  <p><strong>Uses:</strong> Kruskal's MST, connected components when edges arrive over time, detecting cycles in undirected graphs, image segmentation and percolation, grouping duplicate accounts or entities ("these emails belong to the same person"), and type inference (unification) in compilers.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="segment-tree">Segment tree</h2>
+  <p>A binary tree over the array where each node stores a summary (sum, min, max, gcd...) of its range. Any range splits into O(log n) stored nodes, so both queries and updates are O(log n).</p>
+  <div class="demo" id="seg-demo">
+    <h3>Range sum query and point update</h3>
+    <div class="bar">
+      <label>Operation <select id="seg-op"><option value="query">Range sum query</option><option value="update">Point update</option></select></label>
+      <label>Array <input type="text" class="wide" id="seg-arr" value="5, 2, 6, 1, 7, 3, 8, 4"></label>
+      <label><span id="seg-x-lbl">l</span> <input type="number" id="seg-x" value="2" style="width:4rem"></label>
+      <label><span id="seg-y-lbl">r</span> <input type="number" id="seg-y" value="6" style="width:4rem"></label>
+      <button type="button" id="seg-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Lazy propagation:</strong> to add v to a whole range, store "pending add v" on the covering nodes and push it down only when a child is visited. Range updates and range queries both stay O(log n).</li>
+    <li><strong>Iterative (bottom-up) segment trees</strong> in an array of size 2n are short and very fast.</li>
+    <li><strong>Merge sort tree, persistent segment tree, segment tree beats</strong> handle harder queries (k-th smallest in a range, historical versions, chmin updates).</li>
+  </ul>
+
+  <h2 id="fenwick">Fenwick tree (binary indexed tree)</h2>
+  <p>A compact alternative for prefix sums with updates. Index i is responsible for a range whose length is the lowest set bit of i; moving by <code>i &amp; -i</code> jumps between responsible nodes. Same O(log n) bounds, a quarter of the code.</p>
+<pre><code>class BIT:
+    def __init__(self, n): self.t = [0] * (n + 1)
+    def add(self, i, v):                 # a[i] += v   (1-indexed)
+        while i &lt; len(self.t): self.t[i] += v; i += i &amp; -i
+    def prefix(self, i):                 # a[1] + ... + a[i]
+        s = 0
+        while i &gt; 0: s += self.t[i]; i -= i &amp; -i
+        return s
+    def range(self, l, r): return self.prefix(r) - self.prefix(l - 1)</code></pre>
+  <p class="muted">Classic use: counting inversions or "how many smaller elements appear after me" by sweeping and querying counts of values seen so far.</p>
+
+  <h2 id="sparse-table">Sparse table</h2>
+  <p>For data that never changes, pre-compute the minimum of every range of length 2<sup>k</sup>. Any range [l, r] is covered by two overlapping power-of-two ranges, and min is idempotent, so a query is O(1).</p>
+<pre><code>def build(a):
+    st = [a[:]]
+    k = 1
+    while (1 &lt;&lt; k) &lt;= len(a):
+        prev = st[-1]; half = 1 &lt;&lt; (k - 1)
+        st.append([min(prev[i], prev[i + half]) for i in range(len(a) - (1 &lt;&lt; k) + 1)])
+        k += 1
+    return st
+def query(st, l, r):                     # inclusive
+    k = (r - l + 1).bit_length() - 1
+    return min(st[k][l], st[k][r - (1 &lt;&lt; k) + 1])</code></pre>
+  <p class="muted">Also: <strong>sqrt decomposition</strong> (blocks of size &radic;n, simple O(&radic;n) queries and updates) and <strong>Mo's algorithm</strong> (answer many offline range queries by sorting them cleverly, O((n + q)&radic;n)).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="skip-list">Skip list</h2>
+  <p>A sorted linked list with extra "express lanes": each node is promoted to the next level with probability &frac12;. Searching starts at the top lane and drops down when the next node would overshoot, like taking an express train then a local one. Expected O(log n) for search, insert and delete, with simple code and easy lock-free concurrency.</p>
+<pre class="pseudo">level 3:  head ----------------------------&gt; 50 -----------------&gt; nil
+level 2:  head --------&gt; 20 ---------------&gt; 50 -------&gt; 70 ----&gt; nil
+level 1:  head -&gt; 10 -&gt; 20 -&gt; 30 -&gt; 40 -&gt; 50 -&gt; 60 -&gt; 70 -&gt; 80 -&gt; nil
+
+search(x): node = head at the top level
+    repeat: move right while next.key &lt; x; then go down one level
+    at level 1, the next node is x if x is present</pre>
+  <p><strong>Used in:</strong> Redis sorted sets (leaderboards), LevelDB/RocksDB memtables, Java's <code>ConcurrentSkipListMap</code>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="caches">Cache structures: LRU and LFU</h2>
+  <ul>
+    <li><strong>LRU</strong> (least recently used): hash map + doubly linked list; move an item to the front on every access, evict from the back. Full code on the <a href="../linked-lists/index.html#lru">linked lists page</a>.</li>
+    <li><strong>LFU</strong> (least frequently used): hash map from key to (value, count), plus a map from count to an ordered set of keys, plus the current minimum count. All operations O(1).</li>
+    <li><strong>Modern policies:</strong> ARC, 2Q, TinyLFU / W-TinyLFU (Caffeine for Java) and the 2023 SIEVE algorithm combine recency and frequency for better hit rates than plain LRU, with less overhead.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="lsm">Storage engine structures: B+ trees vs LSM trees</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>B+ tree</th><th>LSM tree (log-structured merge)</th></tr>
+      <tr><td>Writes</td><td>Update pages in place (random I/O)</td><td>Append to an in-memory table (memtable), flush sorted files (SSTables) sequentially, merge them in the background ("compaction")</td></tr>
+      <tr><td>Reads</td><td>One root-to-leaf path: very fast</td><td>May check several files; Bloom filters skip files that cannot contain the key</td></tr>
+      <tr><td>Best for</td><td>Read-heavy, transactional workloads</td><td>Write-heavy workloads, time series, logs</td></tr>
+      <tr><td>Used by</td><td>PostgreSQL, MySQL InnoDB, SQL Server, SQLite</td><td>Cassandra, RocksDB, LevelDB, ScyllaDB, HBase, InfluxDB</td></tr>
+    </table>
+  </div>
+
+  <h2 id="more">More structures worth knowing</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Structure</th><th>Idea</th><th>Used for</th></tr>
+      <tr><td><strong>Persistent data structures</strong></td><td>Updates create a new version sharing most of the old one (path copying)</td><td>Functional languages (Clojure, Scala, Haskell), undo history, version control, time-travel queries</td></tr>
+      <tr><td><strong>Rope</strong></td><td>A balanced tree of string pieces</td><td>Text editors handling huge files; fast insert/delete in the middle</td></tr>
+      <tr><td><strong>Interval tree</strong></td><td>BST of intervals augmented with the max end in each subtree</td><td>"Which bookings overlap this time?", genome annotations</td></tr>
+      <tr><td><strong>Order-statistic tree</strong></td><td>BST storing subtree sizes</td><td>k-th smallest and rank in O(log n)</td></tr>
+      <tr><td><strong>Treap / splay tree</strong></td><td>Randomised or self-adjusting BSTs with easy split and merge</td><td>Implicit arrays with fast cut and paste</td></tr>
+      <tr><td><strong>k-d tree, R-tree, quadtree</strong></td><td>Partition space</td><td>Nearest neighbour, map and GIS queries (see <a href="../math/index.html#geometry">geometry</a>)</td></tr>
+      <tr><td><strong>Succinct / compressed structures</strong></td><td>Wavelet trees, rank/select bitvectors, FM-index</td><td>Search inside compressed genomes and text indexes in almost no extra space</td></tr>
+      <tr><td><strong>Probabilistic structures</strong></td><td>Bloom filter, HyperLogLog, Count-Min sketch</td><td>See the <a href="../modern/index.html">modern algorithms page</a></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Implement a trie <span class="diff med">medium</span> <span class="tag">trie</span></summary>
+    <p>insert, search and starts_with as in the code above. Each operation is O(L). Space is O(total characters) in the worst case.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Word Search II (many words in a grid) <span class="diff hard">hard</span> <span class="tag">trie + DFS</span></summary>
+    <p>Insert all words into a trie. DFS from every cell, walking the trie in parallel; stop as soon as the current path is not a prefix of any word. Remove found words (or leaves) from the trie to avoid repeats and speed up later searches.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Number of provinces (connected components) <span class="diff med">medium</span> <span class="tag">union-find</span></summary>
+    <p>Union every connected pair; the answer is the number of distinct roots (start with n and decrement on every successful union). Nearly O(n&sup2;) for an adjacency matrix, dominated by reading it.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Accounts merge <span class="diff med">medium</span> <span class="tag">union-find on emails</span></summary>
+    <p>Union all emails within one account. Then group emails by root, sort each group, and attach the account name. O(N &alpha;(N) + N log N).</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Number of islands II (land added over time) <span class="diff hard">hard</span> <span class="tag">online union-find</span></summary>
+    <p>Each new land cell starts a new island (count + 1); union it with each neighbouring land cell, and each successful union reduces the count by 1. Report the count after each addition. O(k &alpha;(n)).</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Range sum query, mutable <span class="diff med">medium</span> <span class="tag">Fenwick / segment tree</span></summary>
+    <p>Fenwick tree: update = add the difference; sumRange = prefix(r) - prefix(l - 1). Both O(log n). (Prefix sums alone would need O(n) per update.)</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Count of smaller numbers after self <span class="diff hard">hard</span> <span class="tag">Fenwick tree</span></summary>
+    <p>Compress values to ranks 1..k. Walk from the right; for each value, the answer is <code>prefix(rank - 1)</code> (how many smaller values were already seen), then <code>add(rank, 1)</code>. O(n log n). A modified merge sort also works.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Range minimum queries on a static array <span class="diff med">medium</span> <span class="tag">sparse table</span></summary>
+    <p>Sparse table (code above): O(n log n) build, O(1) per query. If the array changes, use a segment tree instead.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Maximum XOR of two numbers <span class="diff med">medium</span> <span class="tag">binary trie</span></summary>
+    <p>Insert every number's 31 bits (most significant first) into a binary trie. For each number, walk the trie greedily choosing the opposite bit whenever possible; that builds the maximum XOR partner. O(31&middot;n).</p>
+  </details>
+
+  <details class="prob"><summary>Q10. LFU cache <span class="diff hard">hard</span> <span class="tag">design</span></summary>
+<pre><code>from collections import defaultdict, OrderedDict
+class LFU:
+    def __init__(self, cap):
+        self.cap, self.kv, self.freq = cap, {}, {}
+        self.by_f = defaultdict(OrderedDict); self.min_f = 0
+    def _touch(self, k):
+        f = self.freq[k]; del self.by_f[f][k]
+        if not self.by_f[f] and self.min_f == f: self.min_f += 1
+        self.freq[k] = f + 1; self.by_f[f + 1][k] = None
+    def get(self, k):
+        if k not in self.kv: return -1
+        self._touch(k); return self.kv[k]
+    def put(self, k, v):
+        if self.cap == 0: return
+        if k in self.kv: self.kv[k] = v; self._touch(k); return
+        if len(self.kv) == self.cap:
+            old, _ = self.by_f[self.min_f].popitem(last=False)   # least frequent, then least recent
+            del self.kv[old], self.freq[old]
+        self.kv[k], self.freq[k], self.min_f = v, 1, 1
+        self.by_f[1][k] = None</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q11. My calendar (no double booking) <span class="diff med">medium</span> <span class="tag">sorted structure</span></summary>
+    <p>Keep booked intervals in a sorted list (or balanced BST / <code>SortedList</code>). For a new [s, e), find the neighbour before and after with binary search and check overlap. O(log n) per booking (O(n) insert with a plain list).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Longest word built one letter at a time <span class="diff med">medium</span> <span class="tag">trie / BFS</span></summary>
+    <p>Insert all words; DFS/BFS from the root visiting only nodes that mark the end of a word; the deepest such node (smallest lexicographically on ties) gives the answer.</p>
+  </details>
+
+  <div class="pager"><a href="../greedy-dc/index.html">&larr; Greedy</a><a href="../strings/index.html">Next: String algorithms &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

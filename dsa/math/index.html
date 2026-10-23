@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Math, Bits and Geometry - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>17. Math, bits and geometry</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../strings/index.html">&larr; Strings</a><a href="../modern/index.html">Modern algorithms &rarr;</a></nav>
+  </header>
+
+  <p>
+    A surprising number of problems have a mathematical shortcut: a formula instead of a loop, modular arithmetic instead of giant numbers, a bit trick instead of a set, a cross product instead of trigonometry.
+    This page collects the essential number theory, combinatorics, bit manipulation and computational geometry for programmers.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="primes">Primes and the sieve</h2>
+  <ul>
+    <li><strong>Trial division:</strong> n is prime if no number from 2 to &radic;n divides it. O(&radic;n). Factorising works the same way.</li>
+    <li><strong>Sieve of Eratosthenes:</strong> all primes up to n in O(n log log n).</li>
+    <li><strong>Miller-Rabin:</strong> a fast probabilistic primality test (deterministic for 64-bit numbers with a fixed set of bases); used to generate RSA keys. <strong>AKS</strong> (2002) proved primality testing is in P.</li>
+    <li><strong>Pollard's rho:</strong> factorises large numbers far faster than trial division.</li>
+  </ul>
+  <div class="demo" id="sv-demo">
+    <h3>Sieve of Eratosthenes</h3>
+    <div class="bar"><label>Up to <select id="sv-n"><option>50</option><option selected>100</option><option>120</option></select></label></div>
+    <div class="stage"></div>
+  </div>
+<pre><code>def sieve(n):
+    is_p = bytearray([1]) * (n + 1); is_p[0:2] = b"\x00\x00"
+    for p in range(2, int(n ** 0.5) + 1):
+        if is_p[p]: is_p[p*p::p] = bytearray(len(range(p*p, n + 1, p)))
+    return [i for i in range(n + 1) if is_p[i]]
+# Variants: segmented sieve (primes in a range [L, R] with little memory), linear sieve (also gives smallest prime factors).</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="number-theory">GCD, modular arithmetic and fast power</h2>
+  <div class="demo" id="nt-demo">
+    <h3>Euclid and binary exponentiation</h3>
+    <div class="bar">
+      <label>Algorithm <select id="nt-kind"><option value="gcd">GCD (Euclid)</option><option value="pow">Fast power a^b mod m</option></select></label>
+      <label>a <input type="number" id="nt-a" value="1071" style="width:6rem"></label>
+      <label>b <input type="number" id="nt-b" value="462" style="width:6rem"></label>
+      <span id="nt-mod-wrap" style="display:none"><label>m <input type="number" id="nt-mod" value="1000000007" style="width:9rem"></label></span>
+      <button type="button" id="nt-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Fact</th><th>Use</th></tr>
+      <tr><td><code>lcm(a, b) = a / gcd(a, b) * b</code></td><td>Divide first to avoid overflow</td></tr>
+      <tr><td><code>(a + b) mod m</code>, <code>(a &middot; b) mod m</code> can be reduced at every step</td><td>Keep huge counts small: "answer modulo 10<sup>9</sup>+7"</td></tr>
+      <tr><td>Subtraction: <code>(a - b) % m</code> may be negative in C#/Java/C++</td><td>Use <code>((a - b) % m + m) % m</code>; Python's % is already non-negative</td></tr>
+      <tr><td>Extended Euclid finds x, y with <code>a&middot;x + b&middot;y = gcd(a, b)</code></td><td>Modular inverse when gcd(a, m) = 1; solving linear Diophantine equations</td></tr>
+      <tr><td>Fermat: <code>a<sup>p-1</sup> &equiv; 1 (mod p)</code> for prime p</td><td>Inverse <code>a<sup>-1</sup> = a<sup>p-2</sup> mod p</code>; division under a prime modulus</td></tr>
+      <tr><td>Chinese remainder theorem</td><td>Combine answers modulo coprime numbers into one answer modulo their product</td></tr>
+      <tr><td>Euler's totient &phi;(n)</td><td>Count of numbers coprime to n; RSA's key relation</td></tr>
+    </table>
+  </div>
+<pre><code>def ext_gcd(a, b):                      # returns (g, x, y) with a*x + b*y = g
+    if b == 0: return a, 1, 0
+    g, x, y = ext_gcd(b, a % b)
+    return g, y, x - (a // b) * y
+
+def mod_inverse(a, m):
+    g, x, _ = ext_gcd(a, m)
+    if g != 1: raise ValueError("no inverse")
+    return x % m                         # Python 3.8+: pow(a, -1, m)
+
+pow(3, 200, 10**9 + 7)                   # built-in fast modular power</code></pre>
+
+  <h3 id="matrix">Matrix exponentiation</h3>
+  <p>Any linear recurrence can be written as a matrix times a vector; raising the matrix to the n-th power by repeated squaring gives the n-th term in O(k&sup3; log n). Fibonacci: <code>[[1,1],[1,0]]<sup>n</sup> = [[F(n+1), F(n)], [F(n), F(n-1)]]</code>.</p>
+<pre><code>def mat_mul(A, B, m):
+    return [[sum(A[i][k] * B[k][j] for k in range(len(B))) % m for j in range(len(B[0]))] for i in range(len(A))]
+def mat_pow(M, n, m):
+    R = [[int(i == j) for j in range(len(M))] for i in range(len(M))]
+    while n:
+        if n &amp; 1: R = mat_mul(R, M, m)
+        M = mat_mul(M, M, m); n &gt;&gt;= 1
+    return R
+fib = lambda n: mat_pow([[1, 1], [1, 0]], n, 10**9 + 7)[0][1]     # F(10^18) in about 60 steps</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="combinatorics">Combinatorics and probability</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Count</th><th>Formula</th><th>Example</th></tr>
+      <tr><td>Arrangements of n items</td><td>n!</td><td>Orders of a playlist</td></tr>
+      <tr><td>Choose k of n, order matters</td><td>n! / (n-k)!</td><td>Gold, silver, bronze</td></tr>
+      <tr><td>Choose k of n, order does not matter</td><td>C(n, k) = n! / (k!(n-k)!)</td><td>Lottery tickets; Pascal: C(n,k) = C(n-1,k-1) + C(n-1,k)</td></tr>
+      <tr><td>Stars and bars</td><td>C(n + k - 1, k - 1)</td><td>Ways to split n identical items into k groups</td></tr>
+      <tr><td>Catalan numbers</td><td>C(2n, n) / (n + 1)</td><td>Valid bracket strings, binary tree shapes, triangulations</td></tr>
+      <tr><td>Inclusion-exclusion</td><td>|A &cup; B| = |A| + |B| - |A &cap; B|</td><td>Numbers up to N divisible by 2, 3 or 5</td></tr>
+      <tr><td>Derangements</td><td>D(n) = (n-1)(D(n-1) + D(n-2))</td><td>Nobody gets their own gift</td></tr>
+    </table>
+  </div>
+<pre><code>MOD = 10**9 + 7                          # nCr mod p for many queries: pre-compute factorials
+N = 10**6
+fact = [1] * (N + 1)
+for i in range(1, N + 1): fact[i] = fact[i - 1] * i % MOD
+inv_fact = [1] * (N + 1); inv_fact[N] = pow(fact[N], MOD - 2, MOD)
+for i in range(N, 0, -1): inv_fact[i - 1] = inv_fact[i] * i % MOD
+def nCr(n, r): return 0 if r &lt; 0 or r &gt; n else fact[n] * inv_fact[r] % MOD * inv_fact[n - r] % MOD</code></pre>
+  <p class="muted"><strong>Expected value</strong> is linear: E[X + Y] = E[X] + E[Y] even for dependent variables, which solves many puzzles ("expected number of fixed points of a random permutation is 1"). The <strong>birthday paradox</strong> explains hash collisions: with N possible values, a collision is likely after about &radic;N items.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="bits">Bit manipulation</h2>
+  <p>Integers are arrays of bits; bitwise operators work on all bits at once. Bit tricks give compact sets (a 64-bit word holds a subset of 64 items), fast arithmetic, and elegant solutions.</p>
+  <div class="demo">
+    <h3>Bit trick playground</h3>
+    <div class="bar">
+      <label>x <input type="number" id="bit-x" value="44" min="0" max="255" style="width:5rem"></label>
+      <label>operation <select id="bit-op"></select></label>
+      <span id="bit-k-wrap"><label>k <input type="number" id="bit-k" value="0" min="0" max="7" style="width:4rem"></label></span>
+    </div>
+    <div id="bit-stage" class="stage"></div>
+    <div class="readout" id="bit-note"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Trick</th><th>Code</th></tr>
+      <tr><td>Is x a power of two?</td><td><code>x &gt; 0 and x &amp; (x - 1) == 0</code></td></tr>
+      <tr><td>Count set bits</td><td><code>bin(x).count("1")</code>, <code>x.bit_count()</code> (Python 3.10+), <code>BitOperations.PopCount</code> (.NET)</td></tr>
+      <tr><td>Find the single non-duplicated number</td><td>XOR everything: pairs cancel (a ^ a = 0)</td></tr>
+      <tr><td>Swap without a temporary</td><td><code>a ^= b; b ^= a; a ^= b</code> (a curiosity; just use a tuple swap)</td></tr>
+      <tr><td>Enumerate all subsets of n items</td><td><code>for mask in range(1 &lt;&lt; n)</code>; item i is in the subset if <code>mask &gt;&gt; i &amp; 1</code></td></tr>
+      <tr><td>Enumerate the sub-masks of a mask</td><td><code>s = mask; while s: ...; s = (s - 1) &amp; mask</code> (all masks' submasks together: O(3<sup>n</sup>))</td></tr>
+      <tr><td>Gray code (neighbours differ in one bit)</td><td><code>i ^ (i &gt;&gt; 1)</code></td></tr>
+      <tr><td>Sign and absolute value tricks, average without overflow</td><td><code>(a &amp; b) + ((a ^ b) &gt;&gt; 1)</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Real uses: permissions and feature flags, bitmap indexes in databases, Bloom filters, chess engines (bitboards), compression, checksums and CRC, graphics, and network masks (<code>ip &amp; netmask</code>).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="geometry">Computational geometry</h2>
+  <p>The workhorse is the <strong>cross product</strong> of vectors OA and OB: <code>(A.x - O.x)(B.y - O.y) - (A.y - O.y)(B.x - O.x)</code>. Positive means B is counter-clockwise (a left turn) from A around O, negative clockwise, zero collinear. It replaces angles and trigonometry in almost every geometric test, using only integer arithmetic.</p>
+  <div class="demo" id="hull-demo">
+    <h3>Convex hull (Andrew's monotone chain)</h3>
+    <div class="bar">
+      <label>Points <select id="hull-n"><option>8</option><option selected>14</option><option>20</option></select></label>
+      <button type="button" id="hull-new">New random points</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre><code>def cross(o, a, b): return (a[0]-o[0]) * (b[1]-o[1]) - (a[1]-o[1]) * (b[0]-o[0])
+
+def polygon_area(p):                     # shoelace formula; positive if counter-clockwise
+    return sum(p[i-1][0] * p[i][1] - p[i][0] * p[i-1][1] for i in range(len(p))) / 2
+
+def segments_intersect(p1, p2, p3, p4):  # proper intersection test (no collinear cases)
+    d1, d2 = cross(p3, p4, p1), cross(p3, p4, p2)
+    d3, d4 = cross(p1, p2, p3), cross(p1, p2, p4)
+    return d1 * d2 &lt; 0 and d3 * d4 &lt; 0
+
+def point_in_polygon(pt, poly):          # ray casting: count edge crossings to the right
+    x, y, inside = pt[0], pt[1], False
+    for i in range(len(poly)):
+        (x1, y1), (x2, y2) = poly[i - 1], poly[i]
+        if (y1 &gt; y) != (y2 &gt; y) and x &lt; x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            inside = not inside
+    return inside</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Technique</th><th>Idea</th><th>Used for</th></tr>
+      <tr><td>Convex hull (Graham scan, monotone chain)</td><td>Sort, then keep only left turns</td><td>Collision shapes, outlier detection, the basis of many other algorithms</td></tr>
+      <tr><td>Sweep line</td><td>Move a line across the plane processing events in order, keeping active objects in a balanced BST</td><td>All segment intersections (Bentley-Ottmann), rectangle union area, skyline</td></tr>
+      <tr><td>Rotating calipers</td><td>Walk two pointers around the hull</td><td>Diameter (farthest pair), minimum-width bounding box</td></tr>
+      <tr><td>Closest pair</td><td>Divide and conquer, O(n log n)</td><td>See <a href="../greedy-dc/index.html#dc">divide and conquer</a></td></tr>
+      <tr><td>k-d tree</td><td>Split space alternately by x and y</td><td>Nearest-neighbour queries in low dimensions</td></tr>
+      <tr><td>Quadtree / octree</td><td>Recursively split into 4 / 8 regions</td><td>Map tiles, image compression, game collision detection</td></tr>
+      <tr><td>R-tree</td><td>B-tree of bounding rectangles</td><td>Spatial databases (PostGIS, SQL Server spatial), GIS</td></tr>
+      <tr><td>Voronoi diagram / Delaunay triangulation</td><td>Regions closest to each site / the dual triangulation (Fortune's sweep, O(n log n))</td><td>Nearest-facility maps, mesh generation, terrain</td></tr>
+      <tr><td>Geohash / S2 cells / H3</td><td>Map 2-D coordinates to 1-D keys on a space-filling curve</td><td>Location indexes in databases and ride-hailing (H3 is Uber's hexagonal grid)</td></tr>
+    </table>
+  </div>
+  <div class="card note">
+    <h3>Floating point pitfalls</h3>
+    <p><code>0.1 + 0.2 != 0.3</code>. Compare with a tolerance (<code>abs(a - b) &lt; 1e-9</code>), prefer integer cross products when coordinates are integers, use <code>decimal</code> for money, and beware of catastrophic cancellation when subtracting nearly equal numbers.</p>
+  </div>
+
+  <h2 id="fft">FFT and fast multiplication</h2>
+  <p>
+    Multiplying two polynomials of degree n naively takes O(n&sup2;). The <strong>fast Fourier transform</strong> evaluates them at special points (complex roots of unity) by divide and conquer in O(n log n), multiplies the values pointwise,
+    and transforms back. The <strong>number theoretic transform</strong> (NTT) does the same with modular arithmetic, so the results are exact. Uses: big-integer multiplication, signal and image processing, audio (MP3, spectrograms), convolution in neural networks, and string matching with wildcards.
+  </p>
+  <p class="muted">Recent progress: integer multiplication in O(n log n) (Harvey and van der Hoeven, 2019); the matrix multiplication exponent &omega; keeps creeping down (about 2.371 as of 2024, from Strassen's 2.807 in 1969); and AI systems have discovered new small matrix-multiplication algorithms: DeepMind's AlphaTensor (2022), and AlphaEvolve (2025), which multiplies 4&times;4 complex matrices with 48 scalar multiplications instead of Strassen's 49.</p>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Cryptography:</strong> RSA (fast modular exponentiation, modular inverses, primes), elliptic-curve cryptography, Diffie-Hellman key exchange.</li>
+    <li><strong>Hashing and checksums:</strong> modular arithmetic, CRC with bit operations.</li>
+    <li><strong>Graphics and games:</strong> cross and dot products, collision detection, spatial partitioning.</li>
+    <li><strong>Maps and logistics:</strong> point-in-polygon for geofencing, nearest neighbours, routing on spatial grids.</li>
+    <li><strong>Signal processing and ML:</strong> FFT, convolution, linear algebra.</li>
+    <li><strong>Probability:</strong> load balancing, randomised algorithms, A/B test statistics.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Count primes less than n <span class="diff med">medium</span> <span class="tag">sieve</span></summary>
+    <p>Sieve of Eratosthenes (animated above): <span class="big g">O(n log log n)</span>. Testing each number by trial division would be O(n&radic;n).</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Single number (every other number appears twice) <span class="diff easy">easy</span> <span class="tag">XOR</span></summary>
+    <p><code>functools.reduce(operator.xor, nums)</code>: duplicates cancel. O(n), O(1). Variant "every other appears three times": count each bit position modulo 3.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Missing number in 0..n <span class="diff easy">easy</span> <span class="tag">math / XOR</span></summary>
+    <p><code>n*(n+1)//2 - sum(nums)</code>, or XOR all indexes and values together. O(n), O(1).</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Counting bits for every number up to n <span class="diff easy">easy</span> <span class="tag">bit DP</span></summary>
+    <p><code>bits[i] = bits[i &gt;&gt; 1] + (i &amp; 1)</code>, or <code>bits[i] = bits[i &amp; (i - 1)] + 1</code>. O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Power of two / power of four <span class="diff easy">easy</span> <span class="tag">bit tricks</span></summary>
+    <p>Power of two: <code>n &gt; 0 and n &amp; (n - 1) == 0</code>. Power of four: also require the single bit at an even position: <code>n &amp; 0x55555555 != 0</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Add two integers without + or - <span class="diff med">medium</span> <span class="tag">bits</span></summary>
+    <p>Sum without carry = <code>a ^ b</code>; carry = <code>(a &amp; b) &lt;&lt; 1</code>. Repeat until the carry is 0. (In Python, mask to 32 bits to emulate fixed-width integers.)</p>
+  </details>
+
+  <details class="prob"><summary>Q7. GCD of strings <span class="diff easy">easy</span> <span class="tag">gcd</span></summary>
+    <p class="q">Largest string x such that both s and t are repetitions of x.</p>
+    <p>If <code>s + t != t + s</code> there is none; otherwise the answer is <code>s[:gcd(len(s), len(t))]</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. The n-th Fibonacci number for n = 10<sup>18</sup> (mod p) <span class="diff hard">hard</span> <span class="tag">matrix power</span></summary>
+    <p>Matrix exponentiation (code above): O(log n) 2&times;2 multiplications. (Fast doubling identities F(2k) and F(2k+1) do the same with less work.)</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Number of paths in a grid modulo 10<sup>9</sup>+7 <span class="diff med">medium</span> <span class="tag">combinatorics</span></summary>
+    <p>An r &times; c grid moving only right/down needs (r-1)+(c-1) moves, of which r-1 are down: <code>C(r + c - 2, r - 1)</code>, computed with factorials and modular inverses (code above). O(1) per query after pre-computation.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Max points on a line <span class="diff hard">hard</span> <span class="tag">gcd slopes + hash</span></summary>
+    <p>For each anchor point, normalise the direction to every other point as <code>(dx/g, dy/g)</code> with a consistent sign (g = gcd), and count equal directions in a hash map. Integer slopes avoid floating-point errors. O(n&sup2;).</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Erect the fence (convex hull including collinear points) <span class="diff hard">hard</span> <span class="tag">monotone chain</span></summary>
+    <p>Monotone chain (animated) but pop only when the cross product is strictly negative, so collinear boundary points stay; remove duplicates at the end. O(n log n).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Rectangle overlap and area <span class="diff easy">easy</span> <span class="tag">intervals in 2-D</span></summary>
+    <p>Two axis-aligned rectangles overlap if their x-intervals and y-intervals both overlap. Intersection area = <code>max(0, min(x2, X2) - max(x1, X1)) * max(0, min(y2, Y2) - max(y1, Y1))</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q13. Excel column title (1 &rarr; A, 28 &rarr; AB) <span class="diff easy">easy</span> <span class="tag">base conversion</span></summary>
+<pre><code>def title(n):
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)          # bijective base 26: no zero digit
+        s = chr(65 + r) + s
+    return s</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q14. Reverse the bits of a 32-bit integer <span class="diff easy">easy</span> <span class="tag">bits</span></summary>
+    <p>Loop 32 times: <code>res = (res &lt;&lt; 1) | (n &amp; 1); n &gt;&gt;= 1</code>. A faster version swaps halves, then quarters, and so on, with masks (5 steps).</p>
+  </details>
+
+  <div class="pager"><a href="../strings/index.html">&larr; Strings</a><a href="../modern/index.html">Next: Probabilistic, big-data and latest algorithms &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

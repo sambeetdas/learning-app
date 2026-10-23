@@ -1,0 +1,135 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1c1c1e;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --panel: #f8f9fb;
+  --accent: #2563eb;
+  --good: #1f7a3a;
+  --bad: #b00020;
+  --code-bg: #f3f4f6;
+  --on-color: #ffffff;   /* text drawn on accent/good/muted fills */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --fg: #e6e7ea;
+    --muted: #9aa0aa;
+    --line: #2a2e35;
+    --panel: #1b1e24;
+    --accent: #6ea0ff;
+    --good: #5cc67d;
+    --bad: #ff6b81;
+    --code-bg: #20242b;
+    --on-color: #0d0f12;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+a { color: var(--accent); }
+h1 { margin: 0; font-size: 1.6rem; }
+h2 { margin-top: 2.5rem; padding-top: .5rem; border-top: 1px solid var(--line); }
+h3 { margin-bottom: .25rem; }
+
+header.top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+header.top nav a { margin-left: 1rem; }
+
+.muted { color: var(--muted); }
+code, pre { font-family: ui-monospace, Consolas, monospace; font-size: .88rem; }
+code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: .75rem 1rem; border-radius: 8px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+
+/* ---------- demo page ---------- */
+.controls { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.controls label { font-weight: 600; }
+select, input[type=text], button {
+  font: inherit; color: inherit; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: .45rem .6rem;
+}
+button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+button.danger { background: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+#hint { margin: .35rem 0 1rem; font-size: .9rem; }
+
+form#form { display: flex; gap: .5rem; }
+#text { flex: 1; }
+#error { color: var(--bad); min-height: 1.3em; font-size: .9rem; }
+#sendvia { font-size: .8rem; }
+
+.panels { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 1rem; margin: 1rem 0; }
+@media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }  /* stack before the table gets squeezed */
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .75rem 1rem; }
+.panel h3 { margin: 0 0 .5rem; font-size: .95rem; }
+.panel p { margin: .5rem 0 0; font-size: .78rem; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+td, th { padding: .25rem 0; text-align: left; border-bottom: 1px solid var(--line); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-left: .75rem; }
+.panel th, .panel td:first-child { white-space: nowrap; }   /* labels stay on one line */
+.panel th { font-size: .82rem; }
+@media (max-width: 600px) {                                 /* phones: let labels wrap rather than overflow */
+  .panel th, .panel td:first-child { white-space: normal; }
+}
+tr.current td { font-weight: 700; color: var(--accent); }
+.live { color: var(--good); font-weight: 600; }
+
+ul#messages { list-style: none; padding: 0; margin: 0; }
+#messages li { padding: .5rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+#messages li small { color: var(--muted); margin-right: .5rem; }
+
+/* ---------- help page ---------- */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .25rem 1rem 1rem; margin: 1rem 0; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+/* ---------- animated diagrams (help-anim.js) ---------- */
+figure.anim { margin: 1rem 0 1.25rem; padding: .5rem .75rem .6rem; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+figure.anim svg { display: block; width: 100%; max-width: 680px; height: auto; margin: 0 auto; }
+figure.anim text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+figure.anim .lane { stroke: var(--line); stroke-dasharray: 4 5; }
+figure.anim .box { fill: var(--bg); stroke: var(--muted); stroke-width: 1.5; }
+figure.anim .box-label { fill: var(--fg); font-size: 15px; font-weight: 600; }
+figure.anim .tube { fill: var(--accent); fill-opacity: .08; stroke: var(--accent); stroke-opacity: .55; stroke-width: 1.5; }
+figure.anim .tube.twoway { stroke-width: 3.5; }
+figure.anim .tube.held { stroke-dasharray: 7 5; animation: anim-pulse 1.3s ease-in-out infinite; }
+figure.anim .tube-label { fill: var(--muted); font-size: 11.5px; }
+figure.anim .pkt-text { fill: var(--on-color); font: 12px ui-monospace, Consolas, monospace; }
+figure.anim .k-req rect { fill: var(--accent); }
+figure.anim .k-empty rect { fill: var(--muted); }
+figure.anim .k-data rect { fill: var(--good); }
+figure.anim .k-ping rect { fill: var(--bg); stroke: var(--muted); stroke-dasharray: 3 3; }
+figure.anim .k-ping .pkt-text { fill: var(--muted); }
+figure.anim .badge rect { fill: var(--bg); stroke: var(--good); stroke-width: 1.5; }
+figure.anim .badge.client rect { stroke: var(--accent); }
+figure.anim .badge-text { fill: var(--fg); font-size: 12px; }
+figure.anim .break rect { fill: var(--bg); stroke: var(--bad); stroke-width: 1.5; }
+figure.anim .break-text { fill: var(--bad); font-size: 12.5px; font-weight: 600; }
+figure.anim .caption { fill: var(--fg); font-size: 13.5px; }
+figure.anim.paused * { animation-play-state: paused; }
+.anim-controls { display: flex; gap: .5rem; justify-content: center; margin-top: .35rem; }
+.anim-controls button { background: var(--bg); color: var(--fg); border-color: var(--line); font-size: .85rem; padding: .2rem .7rem; }
+@keyframes anim-pulse { 50% { stroke-opacity: .15; } }
+
+.card.arch { border-left: 4px solid var(--accent); }
+.card.arch h3 { margin-top: .75rem; }
+.card.arch li { margin-bottom: .35rem; }
+.pro { color: var(--good); }
+.con { color: var(--bad); }
+.table-wrap { overflow-x: auto; }
+.table-wrap table td, .table-wrap table th { padding: .4rem .6rem; border: 1px solid var(--line); vertical-align: top; }
+.table-wrap th { background: var(--panel); }
+
+/* ---------- learning-app additions ---------- */
+#toc { margin-top: 1rem; }
+#toc h3 { margin: .75rem 0 .25rem; }
+#toc ul { margin: 0; padding-left: 0; list-style: none; columns: 2; column-gap: 2rem; }
+#toc li { break-inside: avoid; }
+@media (max-width: 700px) { #toc ol { columns: 1; } }

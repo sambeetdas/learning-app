@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sorting - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>10. Sorting</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../graphs-advanced/index.html">&larr; Advanced graphs</a><a href="../searching/index.html">Searching &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Why sorting matters</h2>
+  <p>
+    Sorting puts items in order. It is one of the most studied problems in computer science because so much else becomes easy once data is sorted: binary search, finding duplicates,
+    merging, medians and percentiles, grouping, range queries, and greedy algorithms. Databases sort for <code>ORDER BY</code>, joins and index builds; every language ships a highly tuned sort.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Property</th><th>Meaning</th></tr>
+      <tr><td><strong>Stable</strong></td><td>Equal keys keep their original relative order. Needed when sorting by several keys in turn (sort by name, then stably by department).</td></tr>
+      <tr><td><strong>In place</strong></td><td>Uses O(1) (or O(log n)) extra memory.</td></tr>
+      <tr><td><strong>Adaptive</strong></td><td>Faster on input that is already partly sorted.</td></tr>
+      <tr><td><strong>Online</strong></td><td>Can sort items as they arrive (insertion sort).</td></tr>
+      <tr><td><strong>Comparison-based</strong></td><td>Only uses "is a &lt; b?". Any such sort needs &Omega;(n log n) comparisons in the worst case: there are n! possible orders, and each comparison at best halves them, so you need log&#8322;(n!) &asymp; n log n comparisons.</td></tr>
+      <tr><td><strong>Non-comparison</strong></td><td>Counting, radix and bucket sort use the values themselves (digits, ranges) and can beat n log n for suitable data.</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="visualiser">Sorting visualiser</h2>
+  <div class="demo" id="so-demo">
+    <h3>Watch any algorithm sort</h3>
+    <div class="bar">
+      <label>Algorithm
+        <select id="so-algo">
+          <option value="bubble">Bubble sort</option><option value="selection">Selection sort</option><option value="insertion" selected>Insertion sort</option>
+          <option value="shell">Shell sort</option><option value="merge">Merge sort</option><option value="quick">Quick sort</option>
+          <option value="heap">Heap sort</option><option value="counting">Counting sort</option><option value="radix">Radix sort (LSD)</option>
+        </select>
+      </label>
+      <label>Size <select id="so-n"><option>8</option><option selected>12</option><option>20</option><option>32</option></select></label>
+      <label>Input <select id="so-shape"><option value="random">Random</option><option value="nearly">Nearly sorted</option><option value="reversed">Reversed</option><option value="sorted">Already sorted</option><option value="few">Few unique values</option><option value="custom">Custom (below)</option></select></label>
+      <button type="button" id="so-new">New random</button>
+    </div>
+    <div class="bar"><label>Values <input type="text" class="wide" id="so-custom"></label><button type="button" id="so-use">Use these</button><button type="button" id="so-compare" class="run">Compare all algorithms on this input</button></div>
+    <div class="stage"></div>
+    <div id="so-legend"></div>
+    <div class="table-wrap"><table id="so-table" style="display:none;margin-top:.6rem"><thead><tr><th>Algorithm</th><th>Comparisons</th><th>Writes</th><th>Animation steps</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <div class="legend"><span><span class="sw m-b"></span>comparing</span><span><span class="sw m-c"></span>swapping / writing</span><span><span class="sw m-p"></span>pivot / minimum / max</span><span><span class="sw m-a"></span>active range or key</span><span><span class="sw m-ok"></span>in final position / sorted</span></div>
+  <p class="muted">Try insertion sort on "nearly sorted" (very few steps), quick sort on "already sorted" (its worst case with a last-element pivot), and the comparison table on 32 random values.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="table">Algorithms at a glance</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Best</th><th>Average</th><th>Worst</th><th>Extra space</th><th>Stable</th><th>When to use</th></tr>
+      <tr><td>Bubble</td><td>O(n)</td><td>O(n&sup2;)</td><td>O(n&sup2;)</td><td>O(1)</td><td>Yes</td><td>Teaching only</td></tr>
+      <tr><td>Selection</td><td>O(n&sup2;)</td><td>O(n&sup2;)</td><td>O(n&sup2;)</td><td>O(1)</td><td>No</td><td>When writes are very expensive (at most n swaps)</td></tr>
+      <tr><td>Insertion</td><td>O(n)</td><td>O(n&sup2;)</td><td>O(n&sup2;)</td><td>O(1)</td><td>Yes</td><td>Small arrays (&lt; ~20-50), nearly sorted data; inside hybrid sorts</td></tr>
+      <tr><td>Shell</td><td>O(n log n)</td><td>~O(n<sup>1.3</sup>)</td><td>O(n<sup>1.5</sup>) (gap-dependent)</td><td>O(1)</td><td>No</td><td>Embedded systems: simple and decent</td></tr>
+      <tr><td>Merge</td><td>O(n log n)</td><td>O(n log n)</td><td>O(n log n)</td><td>O(n)</td><td>Yes</td><td>Linked lists, external sorting, when stability and guarantees matter</td></tr>
+      <tr><td>Quick</td><td>O(n log n)</td><td>O(n log n)</td><td>O(n&sup2;)</td><td>O(log n)</td><td>No</td><td>General in-memory sorting (with good pivots)</td></tr>
+      <tr><td>Heap</td><td>O(n log n)</td><td>O(n log n)</td><td>O(n log n)</td><td>O(1)</td><td>No</td><td>Guaranteed O(n log n) in place; fallback in introsort</td></tr>
+      <tr><td>Counting</td><td>O(n + k)</td><td>O(n + k)</td><td>O(n + k)</td><td>O(k)</td><td>Yes</td><td>Small integer ranges</td></tr>
+      <tr><td>Radix</td><td>O(d(n + b))</td><td>O(d(n + b))</td><td>O(d(n + b))</td><td>O(n + b)</td><td>Yes</td><td>Integers, fixed-length keys, GPUs</td></tr>
+      <tr><td>Bucket</td><td>O(n + k)</td><td>O(n) for uniform data</td><td>O(n&sup2;)</td><td>O(n)</td><td>Yes*</td><td>Uniformly distributed floats</td></tr>
+      <tr><td>Timsort / Powersort</td><td>O(n)</td><td>O(n log n)</td><td>O(n log n)</td><td>O(n)</td><td>Yes</td><td>Real-world data with existing order (Python, Java objects)</td></tr>
+      <tr><td>Introsort / pdqsort</td><td>O(n) (pdq)</td><td>O(n log n)</td><td>O(n log n)</td><td>O(log n)</td><td>No</td><td>Fast general unstable sort (C++, Rust, Go, .NET)</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="details">The algorithms explained</h2>
+
+  <div class="card arch">
+    <h3>Insertion sort</h3>
+    <p>Like sorting playing cards in your hand: take the next card and slide it left past bigger cards. Each item moves at most as far as it is out of place, so nearly sorted input takes almost linear time.</p>
+<pre class="pseudo">for i = 1 .. n-1:
+    key = a[i];  j = i - 1
+    while j &ge; 0 and a[j] &gt; key:  a[j+1] = a[j];  j = j - 1
+    a[j+1] = key</pre>
+  </div>
+
+  <div class="card arch">
+    <h3>Merge sort (divide and conquer)</h3>
+    <p>Split the array in half, sort each half recursively, then merge two sorted lists by repeatedly taking the smaller front element. T(n) = 2T(n/2) + O(n) = O(n log n), in every case.</p>
+<pre><code>def merge_sort(a):
+    if len(a) &lt;= 1: return a
+    mid = len(a) // 2
+    left, right = merge_sort(a[:mid]), merge_sort(a[mid:])
+    out, i, j = [], 0, 0
+    while i &lt; len(left) and j &lt; len(right):
+        if left[i] &lt;= right[j]: out.append(left[i]); i += 1     # &lt;= keeps it stable
+        else: out.append(right[j]); j += 1
+    return out + left[i:] + right[j:]</code></pre>
+    <p class="muted">Merging is the basis of external sorting (data larger than memory), parallel sorting and counting inversions.</p>
+  </div>
+
+  <div class="card arch">
+    <h3>Quick sort (divide and conquer)</h3>
+    <p>Pick a pivot, partition so smaller items go left and larger right, then sort both sides recursively. No merging needed: after partitioning, the pivot is in its final place.</p>
+<pre><code>import random
+def quick_sort(a, lo=0, hi=None):
+    if hi is None: hi = len(a) - 1
+    if lo &gt;= hi: return
+    r = random.randint(lo, hi); a[r], a[hi] = a[hi], a[r]     # random pivot avoids the O(n^2) trap
+    p, i = a[hi], lo
+    for j in range(lo, hi):
+        if a[j] &lt; p: a[i], a[j] = a[j], a[i]; i += 1
+    a[i], a[hi] = a[hi], a[i]
+    quick_sort(a, lo, i - 1); quick_sort(a, i + 1, hi)</code></pre>
+    <ul>
+      <li><strong>Pivot choice:</strong> first/last element degrades to O(n&sup2;) on sorted input; random or median-of-three makes that astronomically unlikely.</li>
+      <li><strong>Hoare partition</strong> (two pointers moving inwards) does fewer swaps than Lomuto. <strong>Three-way partition</strong> (&lt;, =, &gt;) handles many duplicates in linear time.</li>
+      <li><strong>Why it is fast:</strong> tight inner loop, sequential memory access, in place. Recurse on the smaller side first to keep the stack O(log n).</li>
+    </ul>
+  </div>
+
+  <div class="card arch">
+    <h3>Heap sort</h3>
+    <p>Build a max-heap in O(n), then n times swap the root (maximum) to the end and sift down. Guaranteed O(n log n) with O(1) extra memory, but it jumps around memory, so it is usually slower than quicksort in practice. See <a href="../heaps/index.html">heaps</a>.</p>
+  </div>
+
+  <div class="card arch">
+    <h3>Counting, radix and bucket sort (non-comparison)</h3>
+<pre><code>def counting_sort(a, k):                  # values in 0..k, stable version
+    count = [0] * (k + 1)
+    for x in a: count[x] += 1
+    for v in range(1, k + 1): count[v] += count[v - 1]      # prefix sums = end positions
+    out = [0] * len(a)
+    for x in reversed(a):                 # reverse keeps equal keys in order
+        count[x] -= 1; out[count[x]] = x
+    return out
+
+def radix_sort(a):                        # non-negative integers, base 10
+    exp = 1
+    while max(a) // exp &gt; 0:
+        buckets = [[] for _ in range(10)]
+        for x in a: buckets[(x // exp) % 10].append(x)
+        a = [x for b in buckets for x in b]
+        exp *= 10
+    return a</code></pre>
+    <p><strong>Bucket sort:</strong> spread values in [0, 1) into n buckets by <code>int(x * n)</code>, sort each bucket (usually tiny) with insertion sort, and concatenate. O(n) on average for uniform data.</p>
+  </div>
+
+  <div class="card arch">
+    <h3>Shell sort</h3>
+    <p>Insertion sort is slow because items move one step at a time. Shell sort first sorts items far apart (large gaps), so they make big jumps, then reduces the gap down to 1. Better gap sequences (Ciura: 1, 4, 10, 23, 57, 132, ...) give good practical performance.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="real-world">What real libraries use (and recent advances)</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Language / library</th><th>Algorithm</th></tr>
+      <tr><td>Python <code>sorted</code>, <code>list.sort</code></td><td><strong>Timsort</strong>: finds already-sorted "runs" and merges them, with insertion sort for short runs. Since Python 3.11 it uses the <strong>Powersort</strong> merge policy (Munro and Wild), which chooses near-optimal merge orders. Stable.</td></tr>
+      <tr><td>Java</td><td>Objects: Timsort (stable). Primitives: <strong>dual-pivot quicksort</strong> (Yaroslavskiy), two pivots and three partitions.</td></tr>
+      <tr><td>C++ <code>std::sort</code></td><td><strong>Introsort</strong>: quicksort that switches to heap sort if recursion gets too deep, and to insertion sort for small ranges. <code>std::stable_sort</code> is a merge sort.</td></tr>
+      <tr><td>.NET <code>Array.Sort</code></td><td>Introsort (unstable); use LINQ <code>OrderBy</code> for a stable sort.</td></tr>
+      <tr><td>Go (since 1.19)</td><td><strong>pdqsort</strong> (pattern-defeating quicksort, Orson Peters 2016): detects patterns, adapts to sorted or few-unique input, guarantees O(n log n).</td></tr>
+      <tr><td>Rust (since 1.81)</td><td>New implementations: <strong>driftsort</strong> for stable sort and <strong>ipnsort</strong> for unstable sort, both adaptive and faster than the previous ones.</td></tr>
+      <tr><td>GPUs, databases</td><td>Radix sort and bitonic / merge networks run thousands of threads in parallel; vectorised (SIMD) sorts such as Google's vqsort / Highway and Intel's x86-simd-sort speed up CPU sorting several times.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>External sorting:</strong> when data exceeds memory, sort chunks that fit, write them as sorted "runs", then k-way merge the runs with a heap (see <a href="../heaps/index.html#patterns">heaps</a>). This is how databases sort huge tables.</li>
+    <li><strong>Partial sorting:</strong> need only the top k? Use a heap (O(n log k)) or quickselect (O(n) average, <code>std::nth_element</code>, <code>numpy.partition</code>).</li>
+    <li><strong>Sorting by key:</strong> <code>sorted(people, key=lambda p: (p.dept, -p.salary))</code>. Prefer key functions over comparison functions; they are computed once per item.</li>
+  </ul>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Databases:</strong> ORDER BY, sort-merge joins, building B-tree indexes in bulk, GROUP BY.</li>
+    <li><strong>Search engines and feeds:</strong> ranking results by score (usually a partial sort / top-k).</li>
+    <li><strong>Data analysis:</strong> medians, percentiles, removing duplicates, run-length encoding.</li>
+    <li><strong>Computational geometry:</strong> sweep-line algorithms and convex hulls start by sorting points.</li>
+    <li><strong>Compression:</strong> the Burrows-Wheeler transform (bzip2) is built on sorting rotations of the text.</li>
+    <li><strong>Scheduling:</strong> greedy algorithms sort jobs by deadline, start or end time first.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Sort colours (0s, 1s and 2s) in one pass <span class="diff med">medium</span> <span class="tag">three-way partition</span></summary>
+    <p>Dutch national flag partition with low / mid / high pointers (animated on the <a href="../arrays/index.html#two-pointers">arrays page</a>). <span class="big g">O(n)</span>, O(1). Counting sort with two passes also works.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Merge two sorted arrays in place <span class="diff easy">easy</span> <span class="tag">merge from the back</span></summary>
+    <p class="q">nums1 has room at the end for nums2.</p>
+<pre><code>def merge(a, m, b, n):
+    i, j, k = m - 1, n - 1, m + n - 1
+    while j &gt;= 0:
+        if i &gt;= 0 and a[i] &gt; b[j]: a[k] = a[i]; i -= 1
+        else: a[k] = b[j]; j -= 1
+        k -= 1</code></pre>
+    <p>Filling from the back never overwrites unread data. <span class="big g">O(m + n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Sort a linked list <span class="diff med">medium</span> <span class="tag">merge sort</span></summary>
+    <p>Split with fast/slow pointers, sort both halves recursively, merge (see linked lists). <span class="big g">O(n log n)</span> time, O(log n) stack. Merge sort is the natural choice for lists: no random access needed.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Largest number from a list <span class="diff med">medium</span> <span class="tag">custom comparator</span></summary>
+    <p class="q">Arrange numbers to form the largest number: [3, 30, 34, 5, 9] &rarr; "9534330".</p>
+<pre><code>from functools import cmp_to_key
+def largest_number(nums):
+    s = [str(x) for x in nums]
+    s.sort(key=cmp_to_key(lambda a, b: (b + a &gt; a + b) - (b + a &lt; a + b)))
+    return "0" if s[0] == "0" else "".join(s)</code></pre>
+    <p>a goes before b if "a+b" is bigger than "b+a". This comparison is transitive, so sorting works.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Count inversions <span class="diff hard">hard</span> <span class="tag">merge sort</span></summary>
+    <p class="q">How many pairs i &lt; j have a[i] &gt; a[j]? (A measure of how unsorted an array is.)</p>
+    <p>During the merge step, whenever an element from the right half is taken before remaining left-half elements, it forms an inversion with every one of them: add <code>len(left) - i</code>. <span class="big g">O(n log n)</span> instead of O(n&sup2;). A Fenwick tree also works.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. H-index <span class="diff med">medium</span> <span class="tag">sorting / counting</span></summary>
+    <p class="q">The largest h such that h papers have at least h citations each.</p>
+    <p>Sort descending and find the last i with <code>citations[i] &ge; i + 1</code>: O(n log n). Or counting sort into buckets 0..n (anything above n goes into bucket n), then scan from the top: O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Maximum gap between consecutive sorted elements in O(n) <span class="diff hard">hard</span> <span class="tag">buckets / pigeonhole</span></summary>
+    <p>With n numbers between min and max, the maximum gap is at least (max - min)/(n - 1). Use n - 1 buckets of that width; the answer is never inside a bucket, so track only each bucket's min and max, and compare each bucket's min with the previous non-empty bucket's max.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Sort characters by frequency <span class="diff med">medium</span> <span class="tag">count + bucket sort</span></summary>
+    <p><code>"".join(c * f for c, f in Counter(s).most_common())</code>: O(n log k), or bucket by frequency for O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Minimum swaps to sort a permutation <span class="diff med">medium</span> <span class="tag">cycle decomposition</span></summary>
+    <p>Map each value to its target index; the permutation splits into cycles. A cycle of length L needs L - 1 swaps, so the answer is n - (number of cycles). <span class="big g">O(n log n)</span> (for the sort that gives targets).</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Wiggle sort (a[0] &le; a[1] &ge; a[2] &le; a[3] ...) <span class="diff med">medium</span> <span class="tag">greedy swaps</span></summary>
+    <p>One pass: at even i, if a[i] &gt; a[i+1] swap; at odd i, if a[i] &lt; a[i+1] swap. Each swap fixes the current pair without breaking the previous one. <span class="big g">O(n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Is sorting stable? Why does it matter? <span class="diff easy">easy</span> <span class="tag">concept</span></summary>
+    <p>Sort orders by date, then stably by customer: each customer's orders stay in date order. With an unstable sort the second pass may scramble them. To sort by several keys in one go, use a tuple key: <code>key=lambda o: (o.customer, o.date)</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Sort an almost-sorted array (each element at most k from its place) <span class="diff med">medium</span> <span class="tag">heap of size k+1</span></summary>
+    <p>Keep the next k+1 elements in a min-heap; the smallest of them must be the next output. <span class="big g">O(n log k)</span>. Insertion sort is O(n&middot;k), also fine for small k.</p>
+  </details>
+
+  <div class="pager"><a href="../graphs-advanced/index.html">&larr; Advanced graphs</a><a href="../searching/index.html">Next: Searching &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

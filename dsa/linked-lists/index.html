@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Linked Lists - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>3. Linked lists</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../arrays/index.html">&larr; Arrays</a><a href="../stacks-queues/index.html">Stacks and queues &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is a linked list?</h2>
+  <p>
+    A <strong>linked list</strong> is a chain of <strong>nodes</strong>. Each node holds a value and a <strong>pointer</strong> (reference) to the next node. The list itself only remembers the first node, the <code>head</code>.
+    Nodes can live anywhere in memory, so the list can grow and shrink one node at a time, and inserting or deleting next to a node you already hold is O(1).
+    The price: there is no index arithmetic, so reaching the k-th element means walking k steps.
+  </p>
+<pre><code>class Node:
+    def __init__(self, val, next=None):
+        self.val = val
+        self.next = next
+
+head = Node(1, Node(2, Node(3)))       # 1 -&gt; 2 -&gt; 3 -&gt; None
+
+def traverse(head):
+    cur = head
+    while cur:
+        print(cur.val)
+        cur = cur.next</code></pre>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="kinds">Kinds of linked list</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Kind</th><th>Structure</th><th>Good for</th></tr>
+      <tr><td><strong>Singly linked</strong></td><td>Each node has <code>next</code></td><td>Stacks, simple queues, hash-table chains. Least memory.</td></tr>
+      <tr><td><strong>Doubly linked</strong></td><td><code>prev</code> and <code>next</code></td><td>Delete a node in O(1) given only the node; iterate both ways. LRU caches, browser history, text editors.</td></tr>
+      <tr><td><strong>Circular</strong></td><td>The last node points back to the first</td><td>Round-robin scheduling, ring buffers, games where turns cycle.</td></tr>
+      <tr><td><strong>With sentinel / dummy node</strong></td><td>A fake node before the head (and after the tail)</td><td>Removes special cases for empty lists and for changing the head.</td></tr>
+      <tr><td><strong>Skip list</strong></td><td>Extra "express lane" pointers on random levels</td><td>Ordered sets with O(log n) search (Redis sorted sets). See <a href="../advanced/index.html#skip-list">advanced structures</a>.</td></tr>
+    </table>
+  </div>
+
+  <h3>Linked list vs array</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Operation</th><th>Array / dynamic array</th><th>Linked list</th></tr>
+      <tr><td>Access k-th element</td><td><span class="big g">O(1)</span></td><td><span class="big y">O(k)</span></td></tr>
+      <tr><td>Insert / delete at the front</td><td><span class="big y">O(n)</span></td><td><span class="big g">O(1)</span></td></tr>
+      <tr><td>Insert / delete at the end</td><td><span class="big g">O(1)</span> amortised</td><td><span class="big g">O(1)</span> with a tail pointer (delete needs doubly linked)</td></tr>
+      <tr><td>Insert / delete next to a known node</td><td><span class="big y">O(n)</span> (shifting)</td><td><span class="big g">O(1)</span></td></tr>
+      <tr><td>Memory per element</td><td>Just the value</td><td>Value + 1 or 2 pointers</td></tr>
+      <tr><td>Cache friendliness</td><td>Excellent (contiguous)</td><td>Poor (nodes scattered)</td></tr>
+    </table>
+  </div>
+  <p class="muted">In practice dynamic arrays win most of the time because of the cache. Linked lists win when you hold references to nodes and splice them often (LRU cache, intrusive lists in operating-system kernels, free lists in memory allocators).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="operations">Inserting and deleting</h2>
+  <div class="demo" id="ll-demo">
+    <h3>Pointer surgery, step by step</h3>
+    <div class="bar">
+      <label>Operation <select id="ll-op"><option value="head">Insert at head</option><option value="at" selected>Insert at position</option><option value="del">Delete by value</option></select></label>
+      <label>List <input type="text" id="ll-vals" value="10, 20, 30, 40, 50"></label>
+      <label>value <input type="number" id="ll-x" value="25" style="width:5rem"></label>
+      <span id="ll-pos-wrap"><label>position <input type="number" id="ll-pos" value="2" style="width:4rem"></label></span>
+      <button type="button" id="ll-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre><code>def insert_after(node, x):           # O(1)
+    node.next = Node(x, node.next)
+
+def delete_value(head, x):           # O(n) to find, O(1) to unlink
+    dummy = Node(0, head); prev = dummy
+    while prev.next and prev.next.val != x:
+        prev = prev.next
+    if prev.next:
+        prev.next = prev.next.next
+    return dummy.next</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="reverse">Reversing a list</h2>
+  <p>The classic linked-list exercise: walk once, flipping each <code>next</code> pointer to point backwards. Three pointers are enough.</p>
+  <div class="demo" id="rev-demo">
+    <h3>In-place reversal</h3>
+    <div class="bar"><label>List <input type="text" id="rev-vals" value="1, 2, 3, 4, 5"></label><button type="button" id="rev-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+<pre><code>def reverse_recursive(head):         # O(n) time, O(n) stack
+    if not head or not head.next:
+        return head
+    new_head = reverse_recursive(head.next)
+    head.next.next = head            # the node after me points back to me
+    head.next = None
+    return new_head</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="fast-slow">Fast and slow pointers</h2>
+  <p>
+    Two pointers moving at different speeds solve several problems with O(1) memory: <strong>find the middle</strong> (when fast reaches the end, slow is halfway),
+    <strong>detect a cycle</strong> (inside a loop the fast one must eventually lap the slow one), and <strong>find the cycle start</strong>. This is <strong>Floyd's tortoise and hare</strong> algorithm.
+  </p>
+  <div class="demo" id="cy-demo">
+    <h3>Floyd's cycle detection</h3>
+    <div class="bar">
+      <label>List <input type="text" id="cy-vals" value="3, 7, 1, 9, 4, 6, 8"></label>
+      <label>last node links to index <input type="number" id="cy-to" value="2" style="width:4rem"></label>
+      <span class="muted">(-1 = no cycle)</span>
+      <button type="button" id="cy-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <div class="card note">
+    <h3>Why phase 2 finds the start</h3>
+    <p>Let the distance from head to the cycle start be <em>a</em>, and let the pointers meet <em>b</em> steps into the cycle of length <em>c</em>. Slow walked a + b, fast walked 2(a + b), and fast's extra distance is a whole number of loops: a + b = k&middot;c. So a = k&middot;c - b: walking a steps from head, or a steps from the meeting point, both land on the cycle start.</p>
+  </div>
+<pre><code>def middle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+    return slow                      # second middle for even lengths</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="techniques">Techniques that come up again and again</h2>
+  <ul>
+    <li><strong>Dummy head:</strong> <code>dummy = Node(0, head)</code> lets you treat the first node like any other; return <code>dummy.next</code>.</li>
+    <li><strong>Two pointers with a gap:</strong> to remove the n-th node from the end, move one pointer n steps ahead, then move both until the first hits the end.</li>
+    <li><strong>Split, process, merge:</strong> find the middle, reverse the second half, then compare or weave (palindrome check, reorder list).</li>
+    <li><strong>Merge two sorted lists</strong> by repeatedly taking the smaller head; this is the heart of merge sort on lists (O(n log n), no extra arrays).</li>
+    <li><strong>Hash map from old node to new node</strong> to deep-copy lists with extra pointers.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="lru">Use case: LRU cache (hash map + doubly linked list)</h2>
+  <p>
+    A Least-Recently-Used cache must return a value by key in O(1) and evict the oldest item in O(1). A hash map gives O(1) lookup; a doubly linked list keeps items in usage order
+    and lets you move any node to the front, or drop the tail, in O(1). Browsers, CDNs, databases (buffer pools) and operating systems (page caches) all use this idea.
+  </p>
+<pre><code>class LRU:
+    def __init__(self, cap):
+        self.cap, self.map = cap, {}
+        self.head, self.tail = Node(0), Node(0)        # sentinels: head.next = most recent
+        self.head.next, self.tail.prev = self.tail, self.head
+
+    def _remove(self, n): n.prev.next, n.next.prev = n.next, n.prev
+    def _add_front(self, n):
+        n.prev, n.next = self.head, self.head.next
+        self.head.next.prev = n; self.head.next = n
+
+    def get(self, key):
+        if key not in self.map: return -1
+        n = self.map[key]; self._remove(n); self._add_front(n)
+        return n.val
+
+    def put(self, key, val):
+        if key in self.map: self._remove(self.map[key])
+        n = Node(val); n.key = key
+        self.map[key] = n; self._add_front(n)
+        if len(self.map) &gt; self.cap:
+            lru = self.tail.prev; self._remove(lru); del self.map[lru.key]
+# (Node here needs .prev as well as .next.)  In Python, collections.OrderedDict with move_to_end() does all of this for you.</code></pre>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Operating systems:</strong> the Linux kernel's process lists and many queues are intrusive doubly linked lists.</li>
+    <li><strong>Memory allocators:</strong> free blocks are chained in "free lists".</li>
+    <li><strong>Hash tables with chaining:</strong> each bucket is a short linked list (see <a href="../hashing/index.html">hashing</a>).</li>
+    <li><strong>Undo / redo and browser history:</strong> doubly linked lists of states.</li>
+    <li><strong>Music playlists and round-robin schedulers:</strong> circular lists.</li>
+    <li><strong>Functional languages:</strong> immutable linked lists share their tails safely between versions (persistent data structures).</li>
+    <li><strong>Blockchains</strong> are, conceptually, linked lists where each block holds the hash of the previous one.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Reverse a linked list <span class="diff easy">easy</span> <span class="tag">pointers</span></summary>
+    <h4>Approach</h4><p>Iterate with prev / cur / next, flipping each arrow (animated above). Recursive version shown above too.</p>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space (iterative).</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Merge two sorted lists <span class="diff easy">easy</span> <span class="tag">dummy head</span></summary>
+<pre><code>def merge(a, b):
+    dummy = tail = Node(0)
+    while a and b:
+        if a.val &lt;= b.val: tail.next, a = a, a.next
+        else:              tail.next, b = b, b.next
+        tail = tail.next
+    tail.next = a or b
+    return dummy.next</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(n + m)</span> time, O(1) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Middle of the list <span class="diff easy">easy</span> <span class="tag">fast/slow</span></summary>
+    <p>Move slow by 1 and fast by 2; when fast reaches the end, slow is in the middle (code above). <span class="big g">O(n)</span>, O(1).</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Linked list cycle I and II <span class="diff med">medium</span> <span class="tag">Floyd</span></summary>
+    <p class="q">Does the list have a cycle? If yes, where does it start?</p>
+    <h4>Approach</h4><p>Floyd's algorithm, both phases (animated above). A hash set of visited nodes also works but uses O(n) memory.</p>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Remove the n-th node from the end <span class="diff med">medium</span> <span class="tag">gap pointers</span></summary>
+<pre><code>def remove_nth_from_end(head, n):
+    dummy = Node(0, head); fast = slow = dummy
+    for _ in range(n + 1): fast = fast.next        # open a gap of n nodes
+    while fast: fast, slow = fast.next, slow.next
+    slow.next = slow.next.next                     # slow is just before the target
+    return dummy.next</code></pre>
+    <h4>Complexity</h4><p>One pass: <span class="big g">O(n)</span>, O(1).</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Palindrome linked list <span class="diff med">medium</span> <span class="tag">middle + reverse</span></summary>
+    <h4>Approach</h4><ol><li>Find the middle with fast/slow.</li><li>Reverse the second half.</li><li>Compare the two halves node by node.</li><li>(Optionally reverse back to restore the list.)</li></ol>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space (copying into an array is O(n) space).</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Intersection of two lists <span class="diff easy">easy</span> <span class="tag">two pointers</span></summary>
+    <p class="q">Two lists merge at some node. Find it.</p>
+    <h4>Approach</h4><p>Walk pointer A through list A then list B, and pointer B through B then A. Both travel lenA + lenB, so they arrive at the intersection at the same time (or both reach null).</p>
+<pre><code>def intersection(a, b):
+    p, q = a, b
+    while p is not q:
+        p = p.next if p else b
+        q = q.next if q else a
+    return p</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q8. Add two numbers stored as lists <span class="diff med">medium</span> <span class="tag">carry</span></summary>
+    <p class="q">Digits are stored in reverse order (2 &rarr; 4 &rarr; 3 is 342). Return the sum as a list.</p>
+<pre><code>def add(a, b):
+    dummy = tail = Node(0); carry = 0
+    while a or b or carry:
+        s = carry + (a.val if a else 0) + (b.val if b else 0)
+        carry, d = divmod(s, 10)
+        tail.next = Node(d); tail = tail.next
+        a = a.next if a else None; b = b.next if b else None
+    return dummy.next</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(max(n, m))</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Copy a list with random pointers <span class="diff med">medium</span> <span class="tag">hash map</span></summary>
+    <p class="q">Each node also has a <code>random</code> pointer to any node (or null). Deep-copy the list.</p>
+    <h4>Approach</h4><p>Pass 1: create a copy of every node and store <code>old &rarr; new</code> in a map. Pass 2: set <code>new.next = map[old.next]</code> and <code>new.random = map[old.random]</code>. An O(1)-space trick interleaves copies between originals, then splits them apart.</p>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(n) space (map version).</p>
+  </details>
+
+  <details class="prob"><summary>Q10. LRU cache <span class="diff med">medium</span> <span class="tag">hash map + doubly linked list</span></summary>
+    <p>See the full implementation above. Both <code>get</code> and <code>put</code> are <span class="big g">O(1)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Merge k sorted lists <span class="diff hard">hard</span> <span class="tag">heap</span></summary>
+    <h4>Approach</h4><p>Push the head of every list into a min-heap. Repeatedly pop the smallest node, append it to the result, and push its successor.</p>
+<pre><code>import heapq
+def merge_k(lists):
+    h = [(l.val, i, l) for i, l in enumerate(lists) if l]
+    heapq.heapify(h)
+    dummy = tail = Node(0)
+    while h:
+        _, i, node = heapq.heappop(h)
+        tail.next = node; tail = node
+        if node.next: heapq.heappush(h, (node.next.val, i, node.next))
+    return dummy.next</code></pre>
+    <h4>Complexity</h4><p><span class="big g">O(N log k)</span> for N total nodes. (Pairwise divide-and-conquer merging has the same bound.)</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Reverse nodes in k-groups <span class="diff hard">hard</span> <span class="tag">reversal + bookkeeping</span></summary>
+    <p class="q">Reverse every consecutive block of k nodes; a final block shorter than k stays as it is.</p>
+    <h4>Approach</h4><p>Keep <code>group_prev</code> (the node before the block). Check that k nodes exist; reverse exactly those k with the standard three-pointer loop; reconnect: <code>group_prev.next</code> becomes the block's new first node, and the old first node (now last) points to the next block. Advance <code>group_prev</code> to that node and repeat.</p>
+<pre class="pseudo">dummy.next = head; group_prev = dummy
+loop:
+    kth = walk k steps from group_prev;  if none: break
+    group_next = kth.next
+    reverse nodes from group_prev.next up to kth (stop at group_next)
+    old_first = group_prev.next
+    group_prev.next = kth;  old_first.next = group_next
+    group_prev = old_first
+return dummy.next</pre>
+    <h4>Complexity</h4><p><span class="big g">O(n)</span> time, O(1) space.</p>
+  </details>
+
+  <div class="pager"><a href="../arrays/index.html">&larr; Arrays</a><a href="../stacks-queues/index.html">Next: Stacks and queues &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

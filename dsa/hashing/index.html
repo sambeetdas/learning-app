@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hashing - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>5. Hashing: hash maps and hash sets</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../stacks-queues/index.html">&larr; Stacks and queues</a><a href="../trees/index.html">Trees &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">The idea</h2>
+  <p>
+    Searching an unsorted array takes O(n). A <strong>hash table</strong> does better by computing <em>where</em> a key should live. A <strong>hash function</strong> turns the key into a number,
+    and <code>hash(key) % m</code> picks one of m slots. To find the key later, compute the same slot and look only there. On average, insert, lookup and delete are all <span class="big g">O(1)</span>.
+  </p>
+  <ul>
+    <li><strong>Hash map / dictionary:</strong> key &rarr; value (<code>dict</code>, <code>Dictionary&lt;K,V&gt;</code>, <code>HashMap</code>, JavaScript <code>Map</code>).</li>
+    <li><strong>Hash set:</strong> keys only, for membership (<code>set</code>, <code>HashSet&lt;T&gt;</code>).</li>
+    <li><strong>Counter / multiset:</strong> key &rarr; count (<code>collections.Counter</code>).</li>
+  </ul>
+<pre><code>ages = {"ana": 31, "bo": 25}
+ages["cy"] = 40                  # insert / update   O(1) average
+"bo" in ages                     # lookup            O(1) average
+del ages["ana"]                  # delete            O(1) average
+seen = set([3, 1, 4]); 4 in seen # True</code></pre>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="functions">Hash functions</h2>
+  <p>A good hash function for tables is:</p>
+  <ol>
+    <li><strong>Deterministic:</strong> the same key always gives the same hash.</li>
+    <li><strong>Uniform:</strong> spreads keys evenly over the slots, so few keys collide.</li>
+    <li><strong>Fast:</strong> it runs on every operation.</li>
+    <li><strong>Consistent with equality:</strong> if <code>a == b</code> then <code>hash(a) == hash(b)</code>. Override both together (<code>__eq__</code>/<code>__hash__</code>, <code>Equals</code>/<code>GetHashCode</code>). Mutable objects such as lists cannot be keys, because changing them would change their hash.</li>
+  </ol>
+<pre class="pseudo">// integers:  h(k) = k mod m          (choose m prime, or use a multiplicative hash: (k * A) &gt;&gt; shift)
+// strings:   polynomial rolling hash
+h = 0
+for each character c in s:
+    h = (h * 31 + code(c)) mod BIG_PRIME
+slot = h mod m</pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Family</th><th>Examples</th><th>Used for</th></tr>
+      <tr><td>Fast non-cryptographic</td><td>MurmurHash3, xxHash, FNV-1a, CityHash, wyhash</td><td>Hash tables, Bloom filters, partitioning data</td></tr>
+      <tr><td>Keyed, DoS-resistant</td><td>SipHash</td><td>Default in Python, Rust and others: a secret random key stops attackers crafting colliding keys ("hash flooding")</td></tr>
+      <tr><td>Cryptographic</td><td>SHA-256, SHA-3, BLAKE3</td><td>Integrity checks, signatures, passwords (with a slow KDF like Argon2/bcrypt), content addressing (Git)</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="collisions">Collisions: chaining vs open addressing</h2>
+  <p>
+    With more possible keys than slots, two keys will eventually land in the same slot: a <strong>collision</strong>. (By the birthday paradox, with only 23 people the chance that two share a birthday is already over 50%.)
+    There are two main strategies:
+  </p>
+  <div class="cols">
+    <div class="card arch">
+      <h3>Separate chaining</h3>
+      <p>Each slot holds a small list of all keys that hash there. Simple; tolerates high load. Java's <code>HashMap</code> does this, and turns long chains into red-black trees.</p>
+    </div>
+    <div class="card arch">
+      <h3>Open addressing</h3>
+      <p>All keys live in the array itself. On a collision, probe other slots: <strong>linear</strong> (i+1, i+2...), <strong>quadratic</strong> (i+1&sup2;, i+2&sup2;...), or <strong>double hashing</strong>. Cache-friendly; needs a lower load factor. Python's <code>dict</code> and modern "Swiss tables" use open addressing.</p>
+    </div>
+  </div>
+
+  <div class="demo" id="ht-demo">
+    <h3>Build a hash table</h3>
+    <div class="bar">
+      <label>Strategy <select id="ht-mode"><option value="chain">Separate chaining</option><option value="probe">Linear probing</option></select></label>
+      <label>Keys <input type="text" class="wide" id="ht-keys" value="15, 22, 8, 29, 4, 36, 11, 43"></label>
+      <label>slots <input type="number" id="ht-m" value="7" min="2" max="13" style="width:4rem"></label>
+      <label><input type="checkbox" id="ht-resize"> resize when &alpha; &gt; 0.75</label>
+      <label>then look up <input type="text" id="ht-find" value="36" style="width:5rem"></label>
+      <button type="button" id="ht-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">The default keys (15, 22, 8, 29, 36, 43 are all 1 mod 7) were chosen to collide badly, showing why a good hash function and resizing matter. Try words instead, such as <code>apple, kiwi, plum, fig, lime, pear</code>.</p>
+
+  <h3>Load factor and resizing</h3>
+  <ul>
+    <li><strong>Load factor &alpha; = keys / slots.</strong> Expected chain length (or probe count) grows with &alpha;. With chaining, a lookup costs about 1 + &alpha;; with linear probing, an unsuccessful lookup costs about &frac12;(1 + 1/(1-&alpha;)&sup2;), which explodes as &alpha; &rarr; 1.</li>
+    <li>Tables resize (usually doubling) when &alpha; passes a threshold (0.75 in Java, about 2/3 in Python, 0.875 in Swiss tables). Every key is re-hashed into the bigger table. Like dynamic arrays, the cost is amortised O(1) per insert.</li>
+    <li><strong>Worst case is O(n)</strong> when many keys collide (bad hash function or a deliberate attack). Java's tree-ified buckets cap it at O(log n).</li>
+    <li><strong>Deleting with open addressing</strong> must leave a "tombstone" marker, otherwise later lookups would stop early at the hole.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="modern">Inside modern hash tables</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Design</th><th>Idea</th><th>Where</th></tr>
+      <tr><td><strong>Python compact dict</strong></td><td>A small sparse index array points into a dense array of entries in insertion order. Less memory, and dicts remember insertion order (guaranteed since Python 3.7).</td><td>CPython</td></tr>
+      <tr><td><strong>Swiss tables</strong></td><td>Open addressing in groups of 16 slots with one byte of metadata each (7 bits of the hash). SIMD instructions compare all 16 metadata bytes at once, so most lookups touch one cache line.</td><td>Abseil (C++), Rust <code>HashMap</code> (hashbrown), Go 1.24 maps</td></tr>
+      <tr><td><strong>Robin Hood hashing</strong></td><td>On a collision, the key that is further from its home slot gets the slot ("take from the rich"). Probe lengths become very even.</td><td>Many high-performance libraries</td></tr>
+      <tr><td><strong>Cuckoo hashing</strong></td><td>Two hash functions, two possible slots; inserting may kick an existing key to its other slot. Lookups check at most two slots: worst-case O(1).</td><td>Network hardware, cuckoo filters</td></tr>
+      <tr><td><strong>Perfect hashing</strong></td><td>For a fixed, known key set, build a hash function with no collisions at all.</td><td>Compilers (keyword tables), static dictionaries</td></tr>
+      <tr><td><strong>Concurrent maps</strong></td><td>Lock striping or lock-free buckets so many threads can read and write.</td><td><code>ConcurrentDictionary</code>, <code>ConcurrentHashMap</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Recent theory: in 2025, Farach-Colton, Krapivin and Kuszmaul showed that open addressing <em>without reordering</em> can achieve much better expected probe counts than the long-standing conjecture by Yao predicted. Related hashing ideas (consistent hashing, Bloom filters, HyperLogLog, MinHash) are on the <a href="../modern/index.html">modern algorithms page</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="patterns">Hashing patterns for problem solving</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Pattern</th><th>What you store</th><th>Example problem</th></tr>
+      <tr><td><strong>Complement lookup</strong></td><td>Values seen so far</td><td>Two Sum: is <code>target - x</code> already seen?</td></tr>
+      <tr><td><strong>Frequency counting</strong></td><td>value &rarr; count</td><td>Anagrams, top-K frequent, first unique character, majority</td></tr>
+      <tr><td><strong>Canonical key grouping</strong></td><td>normalised form &rarr; list</td><td>Group anagrams (key = sorted letters), group shifted strings</td></tr>
+      <tr><td><strong>De-duplication / membership</strong></td><td>A set</td><td>Contains duplicate, visited states in BFS, happy number</td></tr>
+      <tr><td><strong>Prefix-sum map</strong></td><td>prefix sum &rarr; count or first index</td><td>Subarray sum equals k, longest subarray with sum 0</td></tr>
+      <tr><td><strong>Index map</strong></td><td>value &rarr; last index</td><td>Longest substring without repeats, contains nearby duplicate</td></tr>
+      <tr><td><strong>Memoisation</strong></td><td>arguments &rarr; result</td><td>Any recursive DP (<code>@functools.cache</code>)</td></tr>
+      <tr><td><strong>Bijection check</strong></td><td>Two maps (a&rarr;b and b&rarr;a)</td><td>Isomorphic strings, word pattern</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Caches:</strong> memcached, Redis, CDN and browser caches are giant hash maps (often combined with LRU lists).</li>
+    <li><strong>Databases:</strong> hash indexes for equality lookups, and hash joins that build a table on one side and probe it with the other.</li>
+    <li><strong>Compilers and interpreters:</strong> symbol tables; object attributes in Python and JavaScript are dictionaries.</li>
+    <li><strong>Distributed systems:</strong> sharding by <code>hash(key) % N</code>, or with consistent hashing to limit movement when servers change.</li>
+    <li><strong>Deduplication:</strong> backup systems and Git store content by its cryptographic hash.</li>
+    <li><strong>Security:</strong> password storage (salted slow hashes), message authentication (HMAC), checksums.</li>
+    <li><strong>Data processing:</strong> group-by, distinct counts, joins in Spark and SQL engines.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Two Sum (unsorted) <span class="diff easy">easy</span> <span class="tag">complement lookup</span></summary>
+<pre><code>def two_sum(a, target):
+    seen = {}                            # value -&gt; index
+    for i, x in enumerate(a):
+        if target - x in seen: return [seen[target - x], i]
+        seen[x] = i</code></pre>
+    <p><span class="big g">O(n)</span> time and space, versus O(n&sup2;) for checking all pairs.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Contains duplicate <span class="diff easy">easy</span> <span class="tag">set</span></summary>
+    <p><code>return len(set(a)) != len(a)</code>, or stop early when an element is already in the set. <span class="big g">O(n)</span>. Sorting first is O(n log n) with O(1) extra space.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Valid anagram <span class="diff easy">easy</span> <span class="tag">counting</span></summary>
+    <p>Compare character counts (<code>Counter(s) == Counter(t)</code>, or a 26-slot array for lowercase). <span class="big g">O(n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Group anagrams <span class="diff med">medium</span> <span class="tag">canonical key</span></summary>
+<pre><code>from collections import defaultdict
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for w in words:
+        groups[''.join(sorted(w))].append(w)     # or a tuple of 26 letter counts
+    return list(groups.values())</code></pre>
+    <p><span class="big g">O(n &middot; L log L)</span> with sorted keys, or O(n&middot;L) with count keys.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Top K frequent elements <span class="diff med">medium</span> <span class="tag">count + bucket</span></summary>
+    <h4>Approach</h4><p>Count with a hash map. Then either use a heap of size k (O(n log k)), or <strong>bucket sort by frequency</strong>: bucket[f] lists values seen f times; walk buckets from high to low.</p>
+<pre><code>from collections import Counter
+def top_k(a, k):
+    cnt = Counter(a)
+    buckets = [[] for _ in range(len(a) + 1)]
+    for x, f in cnt.items(): buckets[f].append(x)
+    out = []
+    for f in range(len(buckets) - 1, 0, -1):
+        for x in buckets[f]:
+            out.append(x)
+            if len(out) == k: return out</code></pre>
+    <p><span class="big g">O(n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Longest consecutive sequence <span class="diff med">medium</span> <span class="tag">set</span></summary>
+    <p class="q">Length of the longest run of consecutive integers (in any order), in O(n).</p>
+    <h4>Approach</h4><p>Put everything in a set. Only start counting from numbers that begin a run (<code>x - 1</code> not in the set), then extend while <code>x + 1</code> is present. Each number is visited at most twice.</p>
+<pre><code>def longest_consecutive(a):
+    s, best = set(a), 0
+    for x in s:
+        if x - 1 not in s:
+            y = x
+            while y + 1 in s: y += 1
+            best = max(best, y - x + 1)
+    return best</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q7. Subarray sum equals k <span class="diff med">medium</span> <span class="tag">prefix-sum map</span></summary>
+    <p>Count prefix sums seen so far; for each new prefix s, add the count of <code>s - k</code>. Full code on the <a href="../arrays/index.html#questions">arrays page</a>. <span class="big g">O(n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Isomorphic strings <span class="diff easy">easy</span> <span class="tag">two maps</span></summary>
+    <p class="q">Can the characters of s be replaced to get t, with a one-to-one mapping?</p>
+<pre><code>def isomorphic(s, t):
+    a, b = {}, {}
+    for x, y in zip(s, t):
+        if a.setdefault(x, y) != y or b.setdefault(y, x) != x: return False
+    return len(s) == len(t)</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q9. 4Sum II (count tuples summing to zero) <span class="diff med">medium</span> <span class="tag">meet in the middle</span></summary>
+    <p class="q">Given four lists A, B, C, D of length n, count (i, j, k, l) with A[i]+B[j]+C[k]+D[l] = 0.</p>
+    <p>Count all sums a+b in a map (n&sup2; entries), then for every c+d add the count of <code>-(c+d)</code>. <span class="big y">O(n&sup2;)</span> instead of O(n&#8308;).</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Design a hash map <span class="diff med">medium</span> <span class="tag">chaining</span></summary>
+<pre><code>class MyHashMap:
+    def __init__(self, m=1024): self.b = [[] for _ in range(m)]
+    def _bucket(self, k): return self.b[hash(k) % len(self.b)]
+    def put(self, k, v):
+        bk = self._bucket(k)
+        for pair in bk:
+            if pair[0] == k: pair[1] = v; return
+        bk.append([k, v])
+    def get(self, k):
+        for kk, v in self._bucket(k):
+            if kk == k: return v
+        return -1
+    def remove(self, k):
+        bk = self._bucket(k); bk[:] = [p for p in bk if p[0] != k]</code></pre>
+    <p>Add resizing when count / buckets &gt; 0.75 for guaranteed O(1) average.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Happy number <span class="diff easy">easy</span> <span class="tag">cycle detection with a set</span></summary>
+    <p class="q">Repeatedly replace n by the sum of the squares of its digits. Does it reach 1?</p>
+    <p>Either it reaches 1 or it loops. Store seen values in a set (or use Floyd's fast/slow pointers for O(1) space).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Longest substring with at most k distinct characters <span class="diff med">medium</span> <span class="tag">window + counts</span></summary>
+<pre><code>def longest_k_distinct(s, k):
+    cnt, l, best = {}, 0, 0
+    for r, c in enumerate(s):
+        cnt[c] = cnt.get(c, 0) + 1
+        while len(cnt) &gt; k:
+            cnt[s[l]] -= 1
+            if cnt[s[l]] == 0: del cnt[s[l]]
+            l += 1
+        best = max(best, r - l + 1)
+    return best</code></pre>
+    <p><span class="big g">O(n)</span>.</p>
+  </details>
+
+  <div class="pager"><a href="../stacks-queues/index.html">&larr; Stacks and queues</a><a href="../trees/index.html">Next: Trees &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

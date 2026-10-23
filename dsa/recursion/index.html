@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recursion and Backtracking - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>12. Recursion and backtracking</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../searching/index.html">&larr; Searching</a><a href="../dp/index.html">Dynamic programming &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Recursion: solving a problem with a smaller copy of itself</h2>
+  <p>
+    A <strong>recursive</strong> function calls itself on a smaller input. Every recursive solution has two parts:
+  </p>
+  <ol>
+    <li><strong>Base case:</strong> a small input answered directly (an empty list, n = 0, a leaf). Without it the recursion never stops.</li>
+    <li><strong>Recursive case:</strong> express the answer using answers to smaller inputs, and trust that the recursive call works (the "recursive leap of faith").</li>
+  </ol>
+<pre><code>def factorial(n):
+    if n &lt;= 1: return 1                 # base case
+    return n * factorial(n - 1)         # recursive case
+
+def sum_list(a):
+    return 0 if not a else a[0] + sum_list(a[1:])</code></pre>
+  <p>Recursion is the natural way to handle <strong>recursive structures</strong> (trees, nested folders, JSON, grammars) and <strong>divide-and-conquer</strong> algorithms (merge sort, quicksort, binary search).</p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="call-tree">The call tree and the call stack</h2>
+  <p>Each call gets its own <strong>stack frame</strong> with its own local variables. Drawing every call as a node gives the <strong>recursion tree</strong>; the number of nodes is the time, and its height is the stack space.</p>
+  <div class="demo" id="ct-demo">
+    <h3>Watch the recursion unfold</h3>
+    <div class="bar">
+      <label>Function <select id="ct-kind"><option value="fib">Fibonacci (naive)</option><option value="memo">Fibonacci with memo</option><option value="subsets">Subsets (include / exclude)</option></select></label>
+      <label>n <select id="ct-n"><option>3</option><option>4</option><option selected>5</option><option>6</option></select></label>
+    </div>
+    <div class="stage"></div>
+    <div class="legend"><span><span class="sw m-a"></span>current call</span><span><span class="sw m-b"></span>waiting on the stack</span><span><span class="sw m-ok"></span>returned</span><span><span class="sw m-p"></span>memo hit</span></div>
+  </div>
+  <div class="card note">
+    <h3>Recursion pitfalls</h3>
+    <ul>
+      <li><strong>Stack overflow:</strong> each call uses stack memory. Python stops at about 1000 levels by default (<code>sys.setrecursionlimit</code> raises it, carefully); C#/Java threads have around 1 MB of stack. Deep recursion on big inputs (a 100,000-node linked list, a skewed tree) should be converted to a loop with an explicit stack.</li>
+      <li><strong>Repeated work:</strong> naive Fibonacci recomputes the same values exponentially often. Memoise (see <a href="../dp/index.html">DP</a>).</li>
+      <li><strong>Hidden copying:</strong> <code>a[1:]</code> copies the list each call, turning O(n) into O(n&sup2;). Pass indexes instead.</li>
+      <li><strong>Tail calls:</strong> Python, Java and C# do not optimise tail recursion, so a tail-recursive function still uses O(n) stack. (Scheme, Scala with <code>@tailrec</code>, and some C++ compilers do.)</li>
+    </ul>
+  </div>
+<pre><code># the same DFS, recursive and with an explicit stack
+def dfs_rec(node):
+    visit(node)
+    for child in node.children: dfs_rec(child)
+
+def dfs_iter(root):
+    stack = [root]
+    while stack:
+        node = stack.pop(); visit(node)
+        stack.extend(reversed(node.children))   # reversed keeps the same order</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="backtracking">Backtracking</h2>
+  <p>
+    <strong>Backtracking</strong> builds a solution one choice at a time and abandons ("backtracks" from) a partial solution as soon as it cannot lead to a valid answer.
+    It explores the tree of all possible choices, but <strong>prunes</strong> whole branches early. It solves puzzles, combinatorial search and constraint problems.
+  </p>
+<pre class="pseudo">backtrack(state):
+    if state is a complete solution:
+        record it;  return
+    for each choice available in this state:
+        if the choice is valid (prune otherwise):
+            make the choice             // choose
+            backtrack(new state)        // explore
+            undo the choice             // un-choose
+</pre>
+
+  <div class="demo" id="nq-demo">
+    <h3>N-Queens</h3>
+    <div class="bar">
+      <label>Board size <select id="nq-n"><option>4</option><option selected>5</option><option>6</option><option>8</option></select></label>
+      <label><input type="checkbox" id="nq-all"> find all solutions</label>
+    </div>
+    <div class="stage"></div>
+  </div>
+
+  <h2 id="templates">The core backtracking templates</h2>
+  <div class="cols">
+    <div>
+      <h3>Subsets (power set)</h3>
+<pre><code>def subsets(nums):
+    res, path = [], []
+    def go(i):
+        if i == len(nums): res.append(path[:]); return
+        path.append(nums[i]); go(i + 1)   # include
+        path.pop();           go(i + 1)   # exclude
+    go(0); return res                     # 2^n subsets</code></pre>
+    </div>
+    <div>
+      <h3>Permutations</h3>
+<pre><code>def permutations(nums):
+    res, path, used = [], [], [False] * len(nums)
+    def go():
+        if len(path) == len(nums): res.append(path[:]); return
+        for i, x in enumerate(nums):
+            if used[i]: continue
+            used[i] = True; path.append(x)
+            go()
+            path.pop(); used[i] = False
+    go(); return res                      # n! permutations</code></pre>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <h3>Combinations (choose k)</h3>
+<pre><code>def combine(n, k):
+    res, path = [], []
+    def go(start):
+        if len(path) == k: res.append(path[:]); return
+        for x in range(start, n + 1):
+            if n - x + 1 &lt; k - len(path): break   # prune: not enough left
+            path.append(x); go(x + 1); path.pop()
+    go(1); return res                     # C(n, k)</code></pre>
+    </div>
+    <div>
+      <h3>Combination sum (reuse allowed)</h3>
+<pre><code>def combination_sum(cands, target):
+    cands.sort(); res, path = [], []
+    def go(start, rem):
+        if rem == 0: res.append(path[:]); return
+        for i in range(start, len(cands)):
+            if cands[i] &gt; rem: break      # sorted: everything after is too big
+            path.append(cands[i]); go(i, rem - cands[i]); path.pop()
+    go(0, target); return res</code></pre>
+    </div>
+  </div>
+  <ul>
+    <li><strong>Duplicates in the input:</strong> sort first, and skip <code>nums[i] == nums[i-1]</code> at the same depth (<code>i &gt; start</code>) to avoid repeated answers.</li>
+    <li><strong>Pruning</strong> is where backtracking gets its speed: check constraints as early as possible, order choices so likely ones come first, and stop when the remaining options cannot help.</li>
+    <li><strong>Complexity</strong> is usually exponential (2<sup>n</sup>, n!, k<sup>n</sup>); backtracking is for small n or heavily constrained problems.</li>
+    <li><strong>Branch and bound</strong> adds a bound on the best possible result of a branch and skips branches that cannot beat the best solution found so far (used for travelling salesman, knapsack, integer programming).</li>
+  </ul>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Parsers and compilers:</strong> recursive-descent parsing follows the grammar's recursion; regular-expression engines backtrack on alternatives.</li>
+    <li><strong>File systems and documents:</strong> walking folders, rendering nested UI components, processing JSON/XML.</li>
+    <li><strong>Puzzles and games:</strong> Sudoku and crossword solvers, chess engines (minimax with alpha-beta pruning).</li>
+    <li><strong>Constraint satisfaction:</strong> timetabling, configuration tools, SAT solvers (DPLL/CDCL are backtracking with learning).</li>
+    <li><strong>Generating test cases</strong> and combinations of options.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Fast power: compute x<sup>n</sup> <span class="diff med">medium</span> <span class="tag">divide and conquer</span></summary>
+<pre><code>def power(x, n):
+    if n &lt; 0: return 1 / power(x, -n)
+    if n == 0: return 1
+    half = power(x, n // 2)              # compute once, use twice
+    return half * half * (x if n % 2 else 1)</code></pre>
+    <p><span class="big g">O(log n)</span> instead of O(n). The same idea powers modular exponentiation in cryptography.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Towers of Hanoi <span class="diff easy">easy</span> <span class="tag">recursion</span></summary>
+<pre><code>def hanoi(n, src, dst, via):
+    if n == 0: return
+    hanoi(n - 1, src, via, dst)          # move n-1 out of the way
+    print(f"move disk {n}: {src} -&gt; {dst}")
+    hanoi(n - 1, via, dst, src)          # put them back on top</code></pre>
+    <p>T(n) = 2T(n-1) + 1 = 2<sup>n</sup> - 1 moves: provably optimal.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Subsets and subsets with duplicates <span class="diff med">medium</span> <span class="tag">backtracking</span></summary>
+    <p>Include/exclude recursion (template above, animated in the call tree). With duplicates: sort, and in the loop-based version skip <code>nums[i] == nums[i-1]</code> when <code>i &gt; start</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Permutations with duplicates <span class="diff med">medium</span> <span class="tag">used[] + skip rule</span></summary>
+    <p>Sort; skip <code>nums[i]</code> if it equals <code>nums[i-1]</code> and <code>nums[i-1]</code> is not currently used. That ensures equal values are always placed in the same relative order, so each distinct permutation appears once.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Generate all valid parentheses <span class="diff med">medium</span> <span class="tag">constrained generation</span></summary>
+<pre><code>def gen(n):
+    res = []
+    def go(s, open_, close):
+        if len(s) == 2 * n: res.append(s); return
+        if open_ &lt; n: go(s + "(", open_ + 1, close)
+        if close &lt; open_: go(s + ")", open_, close + 1)   # never close more than opened
+    go("", 0, 0); return res</code></pre>
+    <p>Produces the Catalan number C(n) of strings; the constraints prune every invalid prefix.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Letter combinations of a phone number <span class="diff med">medium</span> <span class="tag">product of choices</span></summary>
+    <p>For each digit choose one of its letters: recursion depth = number of digits, branching 3-4. O(4<sup>n</sup>&middot;n). <code>itertools.product</code> does the same.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Word search in a grid <span class="diff med">medium</span> <span class="tag">DFS + backtracking</span></summary>
+<pre><code>def exist(board, word):
+    R, C = len(board), len(board[0])
+    def dfs(r, c, i):
+        if i == len(word): return True
+        if not (0 &lt;= r &lt; R and 0 &lt;= c &lt; C) or board[r][c] != word[i]: return False
+        tmp, board[r][c] = board[r][c], "#"          # mark as used
+        found = any(dfs(r + dr, c + dc, i + 1) for dr, dc in ((1,0),(-1,0),(0,1),(0,-1)))
+        board[r][c] = tmp                            # restore (backtrack)
+        return found
+    return any(dfs(r, c, 0) for r in range(R) for c in range(C))</code></pre>
+    <p>For many words at once, put the words in a trie and walk the grid once (Word Search II).</p>
+  </details>
+
+  <details class="prob"><summary>Q8. N-Queens: count solutions fast <span class="diff hard">hard</span> <span class="tag">sets / bitmasks</span></summary>
+    <p>Track used columns, diagonals (<code>r - c</code>) and anti-diagonals (<code>r + c</code>) in sets for O(1) safety checks. Bitmasks make it faster still: <code>free = ~(cols | d1 | d2) &amp; full</code>, and take the lowest bit with <code>free &amp; -free</code>. There are 92 solutions for n = 8.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Sudoku solver <span class="diff hard">hard</span> <span class="tag">constraint backtracking</span></summary>
+    <p>Keep sets of used digits per row, column and box. Pick the empty cell with the <em>fewest</em> candidates (the "minimum remaining values" heuristic), try each candidate, recurse, undo on failure. The heuristic makes hard puzzles take milliseconds.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Palindrome partitioning <span class="diff med">medium</span> <span class="tag">backtracking + DP check</span></summary>
+    <p class="q">Return all ways to split a string into palindromes.</p>
+    <p>At position i, try every end j where <code>s[i..j]</code> is a palindrome (pre-compute a palindrome table with DP in O(n&sup2;)), recurse from j+1, then undo.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Restore IP addresses <span class="diff med">medium</span> <span class="tag">bounded choices</span></summary>
+    <p>Choose 4 segments of length 1-3, each 0-255 with no leading zeros. Prune when the remaining length cannot fill the remaining segments (more than 3 &times; segments left, or fewer than 1 &times;).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Flatten a nested list <span class="diff easy">easy</span> <span class="tag">recursion on structure</span></summary>
+<pre><code>def flatten(x):
+    if not isinstance(x, list): return [x]
+    return [y for item in x for y in flatten(item)]</code></pre>
+  </details>
+
+  <div class="pager"><a href="../searching/index.html">&larr; Searching</a><a href="../dp/index.html">Next: Dynamic programming &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

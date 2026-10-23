@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Problem-Solving Patterns - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>19. Problem-solving patterns</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../modern/index.html">&larr; Modern algorithms</a></nav>
+  </header>
+
+  <p>
+    Most problems are variations of a few dozen patterns. The skill that matters is <strong>recognising</strong> which pattern a new problem needs, from clues in its wording and constraints.
+    This page collects the patterns from every other page into one place, with templates, a recognition tool and a quiz.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="finder">Pattern finder</h2>
+  <div class="demo">
+    <h3>What does your problem look like?</h3>
+    <div class="cols"><div id="pf-clues"></div><div><div class="caption" id="pf-out" style="min-height:6rem"></div><p class="muted">The suggestions are ranked by how strongly each clue points to a technique. Several clues together usually narrow it down to one or two candidates.</p></div></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="catalogue">Pattern catalogue</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Pattern</th><th>Signals in the problem</th><th>Typical complexity</th><th>Learn it on</th></tr>
+      <tr><td>Hash map / set</td><td>"find", "count", "duplicate", "seen before", pair with a sum</td><td>O(n)</td><td><a href="../hashing/index.html">Hashing</a></td></tr>
+      <tr><td>Two pointers</td><td>Sorted array, pairs, palindromes, in-place partition</td><td>O(n)</td><td><a href="../arrays/index.html#two-pointers">Arrays</a></td></tr>
+      <tr><td>Sliding window</td><td>Contiguous subarray/substring, "longest / shortest with property"</td><td>O(n)</td><td><a href="../arrays/index.html#sliding-window">Arrays</a></td></tr>
+      <tr><td>Prefix sums / difference array</td><td>Range sums, "subarray sum equals k", many range updates</td><td>O(n) build, O(1) query</td><td><a href="../arrays/index.html#prefix-sums">Arrays</a></td></tr>
+      <tr><td>Fast and slow pointers</td><td>Cycle in a list, middle element, duplicate number</td><td>O(n), O(1) space</td><td><a href="../linked-lists/index.html#fast-slow">Linked lists</a></td></tr>
+      <tr><td>Stack / monotonic stack</td><td>Brackets, undo, "next greater", histogram areas</td><td>O(n)</td><td><a href="../stacks-queues/index.html">Stacks and queues</a></td></tr>
+      <tr><td>Binary search (incl. on the answer)</td><td>Sorted data, "minimum X such that...", monotonic yes/no</td><td>O(log n) &times; check</td><td><a href="../searching/index.html">Searching</a></td></tr>
+      <tr><td>Sorting first</td><td>Intervals, greedy choices, grouping, deduplication</td><td>O(n log n)</td><td><a href="../sorting/index.html">Sorting</a></td></tr>
+      <tr><td>Heap / top-k</td><td>"k largest", "k closest", running median, scheduling</td><td>O(n log k)</td><td><a href="../heaps/index.html">Heaps</a></td></tr>
+      <tr><td>Tree DFS template</td><td>Height, diameter, path sums, validation, LCA</td><td>O(n)</td><td><a href="../trees/index.html">Trees</a></td></tr>
+      <tr><td>BFS</td><td>Shortest steps, levels, spreading over time, grids</td><td>O(V + E)</td><td><a href="../graphs/index.html#traversal">Graphs</a></td></tr>
+      <tr><td>DFS / flood fill</td><td>Islands, connectivity, path existence</td><td>O(V + E)</td><td><a href="../graphs/index.html#traversal">Graphs</a></td></tr>
+      <tr><td>Topological sort</td><td>Order with prerequisites, detect dependency cycles</td><td>O(V + E)</td><td><a href="../graphs/index.html#topo">Graphs</a></td></tr>
+      <tr><td>Shortest paths with weights</td><td>Costs, times, prices on edges</td><td>O(E log V)</td><td><a href="../graphs/index.html#dijkstra">Graphs</a></td></tr>
+      <tr><td>Union-find</td><td>Merging groups, connectivity online, Kruskal</td><td>&asymp;O(1) per operation</td><td><a href="../advanced/index.html#union-find">Advanced</a></td></tr>
+      <tr><td>Backtracking</td><td>"All" solutions, permutations, subsets, puzzles</td><td>Exponential (prune!)</td><td><a href="../recursion/index.html#backtracking">Recursion</a></td></tr>
+      <tr><td>Dynamic programming</td><td>"Number of ways", "min/max cost", choices with overlap</td><td>states &times; transitions</td><td><a href="../dp/index.html">DP</a></td></tr>
+      <tr><td>Greedy</td><td>Intervals, deadlines, "always take the best available"</td><td>O(n log n)</td><td><a href="../greedy-dc/index.html">Greedy</a></td></tr>
+      <tr><td>Trie</td><td>Prefixes, dictionary of words, XOR maximisation</td><td>O(L)</td><td><a href="../advanced/index.html#trie">Advanced</a></td></tr>
+      <tr><td>Segment / Fenwick tree</td><td>Range queries plus updates</td><td>O(log n)</td><td><a href="../advanced/index.html#segment-tree">Advanced</a></td></tr>
+      <tr><td>String matching</td><td>Find pattern(s) in text, periods, palindromes</td><td>O(n + m)</td><td><a href="../strings/index.html">Strings</a></td></tr>
+      <tr><td>Math / bits</td><td>Huge n, modulo answers, XOR, parity, geometry</td><td>often O(1) or O(log n)</td><td><a href="../math/index.html">Math</a></td></tr>
+      <tr><td>Sketches and ANN</td><td>Billions of items, approximate answers, similarity</td><td>sub-linear memory</td><td><a href="../modern/index.html">Modern</a></td></tr>
+    </table>
+  </div>
+
+  <h3>Let the constraints guide you</h3>
+  <p>The input size often reveals the intended complexity (full table on the <a href="../index.html#limits">DSA home page</a>): n &le; 20 suggests exponential/bitmask, n &le; 5,000 allows O(n&sup2;), n up to 10<sup>5</sup>-10<sup>6</sup> needs O(n log n) or O(n), and n around 10<sup>9</sup> or more needs O(log n) or a formula.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="templates">Templates to know by heart</h2>
+  <div class="cols">
+    <div>
+      <h3>Sliding window (variable)</h3>
+<pre><code>left = 0
+for right, x in enumerate(a):
+    add(x)
+    while not valid():
+        remove(a[left]); left += 1
+    best = max(best, right - left + 1)</code></pre>
+    </div>
+    <div>
+      <h3>Binary search (first true)</h3>
+<pre><code>lo, hi = 0, n            # answer in [lo, hi]
+while lo &lt; hi:
+    mid = (lo + hi) // 2
+    if ok(mid): hi = mid
+    else: lo = mid + 1
+return lo</code></pre>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <h3>BFS (shortest steps)</h3>
+<pre><code>q = deque([start]); dist = {start: 0}
+while q:
+    u = q.popleft()
+    for v in neighbours(u):
+        if v not in dist:
+            dist[v] = dist[u] + 1
+            q.append(v)</code></pre>
+    </div>
+    <div>
+      <h3>Backtracking</h3>
+<pre><code>def go(state):
+    if done(state): record(state); return
+    for choice in choices(state):
+        if valid(choice):
+            apply(choice)
+            go(state)
+            undo(choice)</code></pre>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <h3>Tree DFS (return what the parent needs)</h3>
+<pre><code>def dfs(node):
+    if not node: return BASE
+    l, r = dfs(node.left), dfs(node.right)
+    update_global(node, l, r)
+    return combine(node, l, r)</code></pre>
+    </div>
+    <div>
+      <h3>DP (top-down)</h3>
+<pre><code>@functools.cache
+def f(i, state):
+    if base_case(i): return BASE
+    return best(f(next_i, next_state)
+                for each choice)</code></pre>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <h3>Monotonic stack</h3>
+<pre><code>st = []
+for i, x in enumerate(a):
+    while st and a[st[-1]] &lt; x:
+        answer[st.pop()] = x
+    st.append(i)</code></pre>
+    </div>
+    <div>
+      <h3>Top-k with a heap</h3>
+<pre><code>h = []
+for x in stream:
+    heapq.heappush(h, x)
+    if len(h) &gt; k: heapq.heappop(h)
+return h        # the k largest</code></pre>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="playbook">Interview and problem-solving playbook</h2>
+  <ol>
+    <li><strong>Clarify (2-3 minutes):</strong> restate the problem; ask about input sizes, value ranges, duplicates, negatives, empty input, sortedness, and what to return on failure. Write two examples, including an edge case.</li>
+    <li><strong>Brute force first:</strong> state the obvious solution and its complexity. It proves you understand the problem and gives a fallback.</li>
+    <li><strong>Optimise:</strong> name the bottleneck ("for each element we scan the rest"). Ask: what structure makes that lookup cheap? Is there a monotonic property? Is work repeated (DP)? Can sorting help?</li>
+    <li><strong>Agree on the approach</strong> before coding; mention time and space complexity.</li>
+    <li><strong>Code cleanly:</strong> meaningful names, small helper functions, handle edge cases explicitly.</li>
+    <li><strong>Test by hand:</strong> walk through your example step by step (as the animations on these pages do), then the edge cases. Look for off-by-one errors, empty inputs, overflow and infinite loops.</li>
+    <li><strong>Discuss trade-offs and follow-ups:</strong> what if the data does not fit in memory, arrives as a stream, or must be served concurrently?</li>
+  </ol>
+  <div class="card note">
+    <h3>Common mistakes</h3>
+    <ul>
+      <li>Coding before understanding; missing a constraint that rules out the approach.</li>
+      <li>Off-by-one errors in loops and binary search bounds; forgetting the empty case.</li>
+      <li>Modifying a collection while iterating over it; mutable default arguments in Python.</li>
+      <li>Marking BFS nodes visited when dequeued instead of when enqueued (duplicates in the queue).</li>
+      <li>Greedy without proof; DP with a state that misses information.</li>
+      <li>Hidden O(n) operations inside loops: <code>list.pop(0)</code>, <code>x in list</code>, string concatenation, slicing.</li>
+      <li>Recursion depth limits on large inputs.</li>
+    </ul>
+  </div>
+
+  <h2 id="roadmap">A practice roadmap</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Weeks</th><th>Focus</th><th>Goal</th></tr>
+      <tr><td>1-2</td><td>Complexity, arrays, strings, hashing, two pointers, sliding window, prefix sums</td><td>Solve easy/medium array problems in O(n)</td></tr>
+      <tr><td>3</td><td>Stacks, queues, linked lists, monotonic stack</td><td>Pointer manipulation without bugs</td></tr>
+      <tr><td>4</td><td>Binary search (all variants), sorting, intervals</td><td>Binary search on the answer with confidence</td></tr>
+      <tr><td>5-6</td><td>Recursion, backtracking, trees, heaps</td><td>Write the tree DFS template from memory</td></tr>
+      <tr><td>7-8</td><td>Graphs: BFS, DFS, topological sort, Dijkstra, union-find</td><td>Model problems as graphs</td></tr>
+      <tr><td>9-10</td><td>Dynamic programming: 1-D, 2-D, knapsack, strings, intervals</td><td>Define state and transition before coding</td></tr>
+      <tr><td>11-12</td><td>Greedy, tries, segment/Fenwick trees, string algorithms, bits, math</td><td>Pick the right advanced tool</td></tr>
+      <tr><td>Ongoing</td><td>Mixed practice under time limits; revisit old problems; system-design structures (modern page)</td><td>Recognise patterns quickly</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="quiz-section">Self-test: which technique?</h2>
+  <p>Decide on the approach before revealing it, then score yourself honestly. Revisit the ones you missed on the linked topic page.</p>
+  <div class="readout" id="quiz-score"></div>
+  <div id="quiz"></div>
+
+  <div class="pager"><a href="../modern/index.html">&larr; Modern algorithms</a><a href="../index.html">DSA home &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

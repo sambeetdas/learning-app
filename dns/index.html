@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DNS - Learning App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>DNS: the Domain Name System</h1>
+    <nav><a href="../index.html">&larr; All topics</a><a href="../cdn/index.html">Next: CDN &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is DNS and why does it exist?</h2>
+  <p>
+    Computers talk to each other using IP addresses (<code>203.0.113.10</code>, <code>2001:db8::1</code>), but people remember names (<code>example.com</code>).
+    DNS is the distributed, hierarchical database that turns names into the data needed to reach a service: mostly IP addresses, but also mail servers, verification tokens, security policies and more.
+  </p>
+  <p>
+    It is often called "the phone book of the internet", but a better picture is a <strong>delegated directory</strong>:
+    no single server knows everything. Each level knows only who is responsible for the level below, and every answer can be cached for a stated time.
+    That design is why DNS has scaled from a few thousand hosts to billions of names.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Idea</th><th>In one line</th></tr>
+      <tr><td>Hierarchy</td><td>Root &rarr; top-level domain (<code>.com</code>) &rarr; your domain (<code>example.com</code>) &rarr; your hosts (<code>www</code>).</td></tr>
+      <tr><td>Delegation</td><td>Each level points to the servers responsible for the next one (NS records).</td></tr>
+      <tr><td>Caching</td><td>Every answer carries a TTL; resolvers, operating systems and browsers reuse it until it expires.</td></tr>
+      <tr><td>Redundancy</td><td>Every zone has several name servers, spread out using anycast.</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="players">The players</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Who</th><th>Role</th><th>Examples</th></tr>
+      <tr><td><strong>Stub resolver</strong></td><td>The tiny client in your OS or browser. It does not walk the hierarchy; it asks a recursive resolver and caches the answer.</td><td>Windows DNS Client, <code>systemd-resolved</code>, browser's own cache</td></tr>
+      <tr><td><strong>Recursive resolver</strong></td><td>Does the work on behalf of clients: walks root &rarr; TLD &rarr; authoritative, follows CNAMEs, validates DNSSEC, and caches heavily.</td><td>ISP resolver, corporate DNS, <code>8.8.8.8</code>, <code>1.1.1.1</code>, <code>9.9.9.9</code></td></tr>
+      <tr><td><strong>Root servers</strong></td><td>Know only who runs each top-level domain. 13 named identities (A to M), run by 12 organizations, served from well over a thousand anycast instances worldwide.</td><td><code>a.root-servers.net</code> ... <code>m.root-servers.net</code></td></tr>
+      <tr><td><strong>TLD servers</strong></td><td>Run by a <em>registry</em>. Know which name servers are responsible for each domain registered under the TLD.</td><td>Verisign for <code>.com</code>, country registries for <code>.de</code>, <code>.in</code></td></tr>
+      <tr><td><strong>Authoritative servers</strong></td><td>Hold the real records for a zone and give the final answer. They never guess and never go looking elsewhere.</td><td>Route 53, Azure DNS, Cloud DNS, Cloudflare, your own BIND/PowerDNS</td></tr>
+      <tr><td><strong>Registrar / registry / registrant</strong></td><td>Registrant owns the domain; the registrar is the shop that sells it and submits changes; the registry operates the TLD and publishes the delegation.</td><td>GoDaddy, Namecheap, Azure/AWS domain registration</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="resolution">How a lookup works (step through it)</h2>
+  <p>
+    You type <code>www.example.com</code>. The browser and OS check their own caches first. On a miss, the stub resolver asks the configured recursive resolver,
+    which then does the walk. Use the stepper to see the full path, and how caching shortens it.
+  </p>
+
+  <div class="demo" id="dns-demo">
+    <h3>Resolution stepper</h3>
+    <div class="bar">
+      <label for="dns-scenario">Resolver cache state:</label>
+      <select id="dns-scenario">
+        <option value="cold">Cold (nothing cached)</option>
+        <option value="ns">Warm: it already knows who runs .com and example.com</option>
+        <option value="hit">Hot: it has the answer cached</option>
+      </select>
+    </div>
+    <div class="nodes" id="dns-nodes"></div>
+    <div class="stepno" id="dns-stepno"></div>
+    <div class="msg" id="dns-msg"></div>
+    <div class="bar">
+      <button type="button" id="dns-prev">&larr; Back</button>
+      <button type="button" id="dns-next" class="primary">Next &rarr;</button>
+      <button type="button" id="dns-reset">Reset</button>
+    </div>
+  </div>
+
+<pre><code>Browser/OS            Recursive resolver        Root        .com TLD        example.com NS
+   | www.example.com? ---&gt; |                       |              |                |
+   |                       | www.example.com? ---&gt; |              |                |
+   |                       | &lt;--- "ask .com servers"              |                |
+   |                       | www.example.com? --------------&gt;    |                |
+   |                       | &lt;--- "ask ns1.example.net" ---------|                |
+   |                       | www.example.com? ---------------------------------&gt;  |
+   |                       | &lt;--- A 203.0.113.10, TTL 300 ---------------------- |
+   | &lt;--- 203.0.113.10 ----|   (cached for 300 s)</code></pre>
+
+  <div class="card arch">
+    <h3>Details worth knowing</h3>
+    <ul>
+      <li><strong>Recursive vs iterative:</strong> the client-to-resolver hop is <em>recursive</em> ("get me the final answer"); the resolver-to-server hops are <em>iterative</em> ("tell me who to ask next").</li>
+      <li><strong>Glue records:</strong> if <code>example.com</code> is served by <code>ns1.example.com</code>, the TLD must also hand out that server's IP, otherwise resolving the name server would require resolving the domain it serves. These IPs are "glue".</li>
+      <li><strong>CNAME chains:</strong> if <code>www</code> is an alias to <code>d123.cdn.net</code>, the resolver restarts the walk for the target name. Long chains add latency.</li>
+      <li><strong>Query minimization:</strong> modern resolvers send only the part of the name each server needs (the root sees <code>.com</code>, not the full hostname), which improves privacy.</li>
+      <li><strong>Cost:</strong> a cold lookup can take 100 ms or more; a cached one takes about a millisecond. Most lookups on a busy resolver are cache hits.</li>
+    </ul>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="records">Record types</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Type</th><th>Purpose</th><th>Example</th></tr>
+      <tr><td><code>A</code></td><td>Name &rarr; IPv4 address</td><td><code>www  300  A  203.0.113.10</code></td></tr>
+      <tr><td><code>AAAA</code></td><td>Name &rarr; IPv6 address</td><td><code>www  300  AAAA  2001:db8::10</code></td></tr>
+      <tr><td><code>CNAME</code></td><td>Alias to another name. Cannot coexist with other records on the same name, so not allowed at the zone apex.</td><td><code>www  300  CNAME  site.example.net.</code></td></tr>
+      <tr><td><code>ALIAS</code> / <code>ANAME</code></td><td>Provider-specific "CNAME at the apex": the provider resolves the target and answers with A/AAAA. (Route 53 calls it Alias; Cloudflare calls it CNAME flattening.)</td><td><code>@  ALIAS  d123.cloudfront.net</code></td></tr>
+      <tr><td><code>NS</code></td><td>Which servers are authoritative for a zone (delegation)</td><td><code>example.com  NS  ns1.example.net.</code></td></tr>
+      <tr><td><code>SOA</code></td><td>Zone metadata: primary server, admin contact, serial, refresh timers, negative-cache TTL</td><td><code>ns1.example.net hostmaster.example.com 2024010101 ...</code></td></tr>
+      <tr><td><code>MX</code></td><td>Mail servers for the domain, with priority (lower is tried first)</td><td><code>@  MX  10  mail.example.com.</code></td></tr>
+      <tr><td><code>TXT</code></td><td>Free text: domain verification, SPF, DKIM, DMARC, ACME challenges</td><td><code>@  TXT  "v=spf1 include:_spf.example.net -all"</code></td></tr>
+      <tr><td><code>SRV</code></td><td>Host and port for a named service (used by SIP, XMPP, Kubernetes headless services, Active Directory)</td><td><code>_sip._tcp  SRV  10 60 5060 sip.example.com.</code></td></tr>
+      <tr><td><code>PTR</code></td><td>Reverse lookup: IP &rarr; name (in <code>in-addr.arpa</code> / <code>ip6.arpa</code>). Mail servers check it.</td><td><code>10.113.0.203.in-addr.arpa  PTR  www.example.com.</code></td></tr>
+      <tr><td><code>CAA</code></td><td>Which certificate authorities may issue certificates for the domain</td><td><code>@  CAA  0 issue "letsencrypt.org"</code></td></tr>
+      <tr><td><code>HTTPS</code> / <code>SVCB</code></td><td>Tells clients about HTTP/3, ALPN and alternate endpoints before connecting (RFC 9460), and allows alias-style records at the apex</td><td><code>@  HTTPS  1 . alpn="h3,h2"</code></td></tr>
+      <tr><td><code>DS</code>, <code>DNSKEY</code>, <code>RRSIG</code></td><td>DNSSEC records that form the signature chain of trust</td><td>managed by your DNS provider</td></tr>
+    </table>
+  </div>
+
+  <h3>Reading a zone file</h3>
+<pre><code>$ORIGIN example.com.
+$TTL 300
+
+@       IN SOA ns1.example.net. hostmaster.example.com. (
+              2024010101 ; serial, bump on every change
+              3600       ; refresh (secondary servers)
+              600        ; retry
+              1209600    ; expire
+              300 )      ; negative-caching TTL
+
+@       IN NS    ns1.example.net.
+@       IN NS    ns2.example.net.
+@       IN MX 10 mail.example.com.
+@       IN TXT   "v=spf1 include:_spf.example.net -all"
+www     IN CNAME site.example.net.
+api     IN A     203.0.113.20
+api     IN AAAA  2001:db8::20</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="caching">Caching and TTL</h2>
+  <p>
+    Caching is what makes DNS fast and cheap, and also what makes changes slow to spread. Every record carries a <strong>TTL</strong> (time to live, in seconds).
+    Anyone who has the answer may reuse it for that long without asking again.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Cache layer</th><th>Notes</th></tr>
+      <tr><td>Browser</td><td>Keeps its own short cache (Chrome: <code>chrome://net-internals/#dns</code>). Often caps long TTLs.</td></tr>
+      <tr><td>Operating system</td><td>Stub resolver cache plus the <code>hosts</code> file, which wins over DNS. Clear with <code>ipconfig /flushdns</code> on Windows.</td></tr>
+      <tr><td>Recursive resolver</td><td>The big one: one resolver serves thousands of users, so most queries never reach the authoritative servers.</td></tr>
+      <tr><td>Application / runtime</td><td>Some runtimes cache forever or per connection (older JVM settings, long-lived connection pools, sidecars). A common cause of "we changed DNS but traffic still goes to the old server".</td></tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Low TTL (30-300 s)</h3>
+      <ul>
+        <li>Changes and failover take effect quickly.</li>
+        <li>Good for records behind health checks or during a migration.</li>
+        <li>More queries to your authoritative servers and slightly slower lookups.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="pro">High TTL (1-24 h)</h3>
+      <ul>
+        <li>Fewer queries, faster lookups, less cost.</li>
+        <li>More resilient: cached answers survive a short outage of your DNS provider.</li>
+        <li>A wrong record lives for hours and you cannot recall it.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card note">
+    <h3>Migration playbook</h3>
+    <ol>
+      <li>Days ahead: lower the TTL of the records you will change (for example from 1 h to 60 s).</li>
+      <li>Wait at least the <em>old</em> TTL so every cache has picked up the short one.</li>
+      <li>Make the change. Watch traffic on both old and new targets.</li>
+      <li>When stable, raise the TTL back.</li>
+    </ol>
+    <p class="muted">Keep the old target running until its traffic is gone: some clients and resolvers ignore TTLs.</p>
+  </div>
+
+  <p><strong>Negative caching:</strong> "this name does not exist" (<code>NXDOMAIN</code>) is cached too, for the time given in the zone's SOA record. If you query a name before creating it, you may keep seeing "not found" for a while after you add it.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="architecture">Architecture and system design</h2>
+<pre><code>                 +-------------------------+
+                 |  Registrar / registry   |   delegation: example.com NS -> ns1/ns2
+                 +------------+------------+
+                              |
+   +--------+   +-------------v-------------+      +------------------------+
+   | Client |---| Recursive resolver (cache)|----&gt; | Root, TLD, authoritative|
+   +--------+   +---------------------------+      +-----------+------------+
+                                                               |
+                                      +------------------------+---------+
+                                      | Authoritative DNS (anycast)      |
+                                      |  PoP 1   PoP 2   PoP 3  ...      |
+                                      +------------------+---------------+
+                                                         | zone data
+                                              +----------v-----------+
+                                              | Zone source of truth |
+                                              | (API, IaC, database) |
+                                              +----------------------+</code></pre>
+
+  <div class="card arch">
+    <h3>Authoritative side</h3>
+    <ul>
+      <li><strong>Use at least two name servers</strong>, ideally in different networks. Managed providers give you four or more, each reachable at many locations.</li>
+      <li><strong>Anycast:</strong> the same IP is announced from many locations; routing sends each client to the nearest one. This cuts latency and absorbs DDoS attacks, because the traffic is spread across many sites.</li>
+      <li><strong>Zone data flow:</strong> primary/secondary replication with AXFR/IXFR zone transfers, or (more common now) a provider API fed by infrastructure-as-code (Terraform, Bicep, CloudFormation, ExternalDNS).</li>
+      <li><strong>Multi-provider DNS:</strong> publishing the same zone at two independent providers protects you from a provider outage (see the 2016 Dyn attack). Costs: keeping zones in sync and not using provider-specific features such as alias records or traffic policies.</li>
+      <li><strong>Dynamic answers:</strong> geo, latency, weighted and health-checked routing are computed by the authoritative server at query time. The resolver caches the result, so keep these TTLs short.</li>
+    </ul>
+  </div>
+
+  <div class="card arch">
+    <h3>Resolver side</h3>
+    <ul>
+      <li><strong>Where it runs:</strong> ISP, public (Google, Cloudflare, Quad9), or your own (corporate Active Directory DNS, Unbound, BIND, <code>CoreDNS</code>, cloud VPC resolvers such as Azure DNS Private Resolver or Route 53 Resolver).</li>
+      <li><strong>Forwarding:</strong> internal resolvers forward <code>corp.example.com</code> to internal servers and everything else to the internet, using conditional forwarders or private zones.</li>
+      <li><strong>EDNS Client Subnet (ECS):</strong> lets a public resolver tell the authoritative server roughly where the user is, so a CDN or geo-routing can pick a nearby endpoint. It improves accuracy and leaks a bit of location, so some resolvers disable it.</li>
+      <li><strong>Serve-stale:</strong> a resolver may answer from an expired cache entry when the authoritative servers are unreachable (RFC 8767). A helpful safety net.</li>
+    </ul>
+  </div>
+
+  <div class="card arch">
+    <h3>Transport</h3>
+    <ul>
+      <li><strong>UDP port 53</strong> for most queries. Responses too large for UDP fall back to <strong>TCP port 53</strong> (EDNS0 allows larger UDP messages; around 1232 bytes is the recommended safe size). Firewalls that block TCP/53 cause strange failures with DNSSEC and big answers.</li>
+      <li><strong>Encrypted DNS</strong> hides queries from the local network: <strong>DoT</strong> (DNS over TLS, port 853), <strong>DoH</strong> (DNS over HTTPS, port 443, blends in with web traffic) and <strong>DoQ</strong> (over QUIC). They protect the client-to-resolver hop only; the resolver still sees your queries.</li>
+      <li>Enterprises often disable browser DoH so internal names and security filtering keep working.</li>
+    </ul>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Use case</th><th>How DNS helps</th></tr>
+      <tr><td>Pointing a domain at a website or app</td><td><code>A</code>/<code>AAAA</code> or <code>CNAME</code>/alias to a server, load balancer, or CDN endpoint.</td></tr>
+      <tr><td>Fronting with a CDN</td><td><code>www CNAME d123.cdn-provider.net</code>. See the <a href="../cdn/index.html">CDN topic</a>.</td></tr>
+      <tr><td>Email delivery and anti-spoofing</td><td><code>MX</code> for routing; <code>TXT</code> records for SPF, DKIM (<code>selector._domainkey</code>) and DMARC (<code>_dmarc</code>); <code>PTR</code> for reverse checks.</td></tr>
+      <tr><td>Domain ownership and certificates</td><td><code>TXT</code> verification tokens; ACME DNS-01 challenge for wildcard certificates; <code>CAA</code> to restrict issuers.</td></tr>
+      <tr><td>Traffic steering</td><td>Weighted (canary releases, 90/10 splits), latency-based (nearest region), geolocation (data residency, language), failover (primary/standby with health checks).</td></tr>
+      <tr><td>Blue/green and region cutover</td><td>Switch a record from the old stack to the new one; rely on a low TTL for a fast switch and fast rollback.</td></tr>
+      <tr><td>Internal service discovery</td><td>Private zones, Kubernetes <code>CoreDNS</code> (<code>my-svc.my-namespace.svc.cluster.local</code>), Consul DNS, <code>SRV</code> records for host+port.</td></tr>
+      <tr><td>Split-horizon DNS</td><td>The same name returns a private IP inside the network and a public IP outside.</td></tr>
+      <tr><td>Security filtering</td><td>Protective resolvers block known malicious or unwanted domains (Quad9, Cisco Umbrella, Azure DNS Private Resolver with DNS security policies, Pi-hole at home).</td></tr>
+      <tr><td>Hybrid and multi-cloud</td><td>Conditional forwarding so on-premises and cloud private zones can resolve each other's names.</td></tr>
+    </table>
+  </div>
+
+  <h3>DNS-based load balancing: what it can and cannot do</h3>
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>Works with any client and any protocol; no proxy in the data path.</li>
+        <li>Global: can direct users to the nearest or healthiest region.</li>
+        <li>Cheap and simple to operate.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>Failover speed is limited by TTL and by clients that cache too long.</li>
+        <li>Resolver caching spreads load unevenly (one resolver = many users).</li>
+        <li>It sees the resolver's location (unless ECS), not the user's.</li>
+        <li>No awareness of per-request load or session state. Use a real load balancer behind each address.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cloud">Common managed services</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Service</th><th>Notes</th></tr>
+      <tr><td>Amazon Route 53</td><td>Authoritative DNS, private zones, resolver endpoints, health checks, routing policies (simple, weighted, latency, failover, geolocation, geoproximity, multivalue), alias records.</td></tr>
+      <tr><td>Azure DNS</td><td>Public and private zones, alias records, Private Resolver for hybrid forwarding. <strong>Azure Traffic Manager</strong> is a DNS-based traffic router (priority, weighted, performance, geographic); <strong>Azure Front Door</strong> does the same job at layer 7.</td></tr>
+      <tr><td>Google Cloud DNS</td><td>Public and private managed zones, routing policies, DNSSEC, forwarding zones.</td></tr>
+      <tr><td>Cloudflare DNS</td><td>Anycast authoritative DNS with CNAME flattening and optional proxying through its CDN/WAF.</td></tr>
+      <tr><td>Self-hosted</td><td>BIND, PowerDNS, Knot, NSD (authoritative); Unbound, Knot Resolver (recursive); CoreDNS (plugin-based, Kubernetes default).</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="security">Security</h2>
+  <ul>
+    <li><strong>Cache poisoning:</strong> an attacker tricks a resolver into caching a forged answer. Defenses: random source ports and query IDs, <strong>DNSSEC</strong> validation, 0x20 case randomization.</li>
+    <li><strong>DNSSEC:</strong> zones are signed (<code>RRSIG</code>), keys are published (<code>DNSKEY</code>), and the parent zone vouches for the child with a <code>DS</code> record, forming a chain of trust up to the root. It proves an answer is <em>authentic and unmodified</em>; it does not encrypt anything and does not hide queries. Needs careful key rollover.</li>
+    <li><strong>DDoS:</strong> DNS is a prime target (the 2016 Mirai attack on Dyn took down many big sites that depended on one provider). Use anycast providers and consider a second provider. Open recursive resolvers can be abused for amplification attacks; never expose yours to the internet.</li>
+    <li><strong>Dangling records / subdomain takeover:</strong> a <code>CNAME</code> pointing at a deleted cloud resource (storage bucket, app service, CDN endpoint) can be claimed by an attacker, who then serves content under your domain. Remove DNS records when you delete the resource, and audit regularly.</li>
+    <li><strong>Domain hijacking:</strong> protect the registrar account with MFA, enable registrar lock, and restrict who can change NS records.</li>
+    <li><strong>DNS tunneling and exfiltration:</strong> data hidden in queries to an attacker-owned domain. Monitor for unusual query volume, long or high-entropy names, and heavy TXT usage.</li>
+    <li><strong>Privacy:</strong> plain DNS is visible to anyone on the path. Use DoT/DoH and pick a resolver whose logging policy you trust.</li>
+    <li><strong>Email spoofing:</strong> publish SPF, DKIM and DMARC.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="design">Design checklist and pitfalls</h2>
+  <ul>
+    <li><strong>"It's always DNS":</strong> when everything looks healthy but nothing connects, check DNS first. Names that fail to resolve, stale caches and wrong search domains cause a large share of outages.</li>
+    <li><strong>CNAME at the apex:</strong> not allowed. Use your provider's alias/flattening feature or the HTTPS record.</li>
+    <li><strong>Search domains and <code>ndots</code>:</strong> in Kubernetes the default <code>ndots:5</code> makes a lookup of <code>api.example.com</code> try several suffixes first. Use a trailing dot (<code>api.example.com.</code>) or lower <code>ndots</code> for services making many external calls, and run node-local DNS caching.</li>
+    <li><strong>Application caching:</strong> long-lived processes may cache IPs forever. Set sane DNS TTL behavior in the runtime and re-resolve on connection failure.</li>
+    <li><strong>Dual stack:</strong> if you publish <code>AAAA</code>, make sure IPv6 really works. Clients using "Happy Eyeballs" (RFC 8305) race IPv4 and IPv6 to hide small problems, but broken IPv6 still wastes time.</li>
+    <li><strong>Low TTL is not instant failover:</strong> some resolvers and clients ignore it. Pair DNS failover with health checks and keep the old endpoint alive for a while.</li>
+    <li><strong>Treat DNS as code:</strong> keep zones in version control, review changes, and avoid hand edits in a console. A typo in an NS or MX record can take down a whole domain.</li>
+    <li><strong>Monitor:</strong> resolution success and latency from several locations, expiring domains and certificates, unexpected record changes, and query volume.</li>
+    <li><strong>Reverse DNS:</strong> only the owner of the IP block (your ISP or cloud provider) can set <code>PTR</code> records.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="troubleshooting">Troubleshooting commands</h2>
+<pre><code># Windows (PowerShell)
+Resolve-DnsName www.example.com                       # uses the system resolver
+Resolve-DnsName www.example.com -Server 1.1.1.1 -Type A
+Resolve-DnsName example.com -Type MX
+Clear-DnsClientCache                                   # same as: ipconfig /flushdns
+Get-DnsClientCache | Where-Object Name -like '*example*'
+
+# nslookup (everywhere)
+nslookup -type=NS example.com
+nslookup www.example.com 8.8.8.8
+
+# dig (Linux/macOS, or WSL)
+dig www.example.com                # answer, TTL, which server answered
+dig +trace www.example.com         # walk root -> TLD -> authoritative yourself
+dig example.com NS +short
+dig @ns1.example.net www.example.com   # ask the authoritative server directly (bypasses caches)
+dig example.com DNSKEY +dnssec         # check DNSSEC data
+dig -x 203.0.113.10                    # reverse lookup</code></pre>
+  <ul>
+    <li><strong>Answer differs between resolvers?</strong> Compare an authoritative answer with a public resolver's: if they differ, it is a cache or propagation issue.</li>
+    <li><strong><code>NXDOMAIN</code></strong> means the name does not exist; <strong><code>SERVFAIL</code></strong> means the resolver could not get a valid answer (often a broken delegation or DNSSEC problem); <strong><code>REFUSED</code></strong> means the server will not answer you.</li>
+    <li><strong>"DNS propagation"</strong> is mostly just caches expiring. It takes about as long as the old TTL.</li>
+  </ul>
+
+  <h2 id="quick">Quick reference</h2>
+  <ul>
+    <li><strong>Pointing a name at a server:</strong> <code>A</code>/<code>AAAA</code>. At a hostname you do not control: <code>CNAME</code> (alias at the apex).</li>
+    <li><strong>Need a fast switch:</strong> lower the TTL ahead of time, then change.</li>
+    <li><strong>Need resilience:</strong> several name servers, anycast, optionally two providers.</li>
+    <li><strong>Need to prove a domain is yours or authorize something:</strong> <code>TXT</code>.</li>
+    <li><strong>Need host+port discovery:</strong> <code>SRV</code>.</li>
+    <li><strong>Need tamper protection:</strong> DNSSEC. <strong>Privacy:</strong> DoT/DoH.</li>
+  </ul>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="stepper.js"></script>
+  <script src="page.js"></script>
+</body>
+</html>

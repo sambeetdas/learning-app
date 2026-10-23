@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Greedy and Divide and Conquer - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>14. Greedy algorithms and divide and conquer</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../dp/index.html">&larr; DP</a><a href="../advanced/index.html">Advanced structures &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Two big algorithm-design strategies</h2>
+  <div class="cols">
+    <div class="card arch">
+      <h3>Greedy</h3>
+      <p>Build the answer step by step, always taking the choice that looks best <em>right now</em>, and never revisiting it. Simple and fast, usually a sort plus one pass. The catch: it is only correct for problems with the right structure, and you must be able to prove it.</p>
+    </div>
+    <div class="card arch">
+      <h3>Divide and conquer</h3>
+      <p><strong>Divide</strong> the problem into independent smaller parts, <strong>conquer</strong> each recursively, and <strong>combine</strong> the results. Merge sort, quicksort, binary search, FFT and Karatsuba multiplication all follow this shape. Analyse with the <a href="../complexity/index.html#recurrences">Master theorem</a>.</p>
+    </div>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="greedy">Greedy: when does it work?</h2>
+  <p>A greedy algorithm is correct when the problem has:</p>
+  <ul>
+    <li><strong>The greedy-choice property:</strong> some optimal solution starts with the greedy choice.</li>
+    <li><strong>Optimal substructure:</strong> after making that choice, the rest is a smaller instance of the same problem.</li>
+  </ul>
+  <p>Two standard proof techniques:</p>
+  <ul>
+    <li><strong>Exchange argument:</strong> take any optimal solution that differs from the greedy one, swap one of its choices for the greedy choice, and show it does not get worse.</li>
+    <li><strong>Greedy stays ahead:</strong> show that after every step, the greedy partial solution is at least as good as any other partial solution.</li>
+  </ul>
+  <div class="card note">
+    <h3>Where greedy fails</h3>
+    <ul>
+      <li><strong>Coin change</strong> with coins {1, 3, 4} and amount 6: greedy takes 4 + 1 + 1 (3 coins); the optimum is 3 + 3 (2 coins). Greedy works only for "canonical" coin systems such as {1, 2, 5, 10, 20, 50}. Use DP otherwise.</li>
+      <li><strong>0/1 knapsack:</strong> taking the best value-per-weight items first can be far from optimal. (Fractional knapsack, where items can be split, <em>is</em> greedy.)</li>
+      <li><strong>Longest path, travelling salesman:</strong> nearest-neighbour heuristics give decent but not optimal tours.</li>
+    </ul>
+    <p>Always test a greedy idea against brute force on small random inputs before trusting it.</p>
+  </div>
+
+  <h2 id="intervals">Interval scheduling</h2>
+  <div class="demo" id="iv-demo">
+    <h3>Activity selection: earliest finish first</h3>
+    <div class="bar"><label>Intervals (start end; ...) <input type="text" class="wide" id="iv-list" value="1 4; 3 5; 0 6; 5 7; 3 9; 5 9; 6 10; 8 11; 8 12; 2 14; 12 16"></label><button type="button" id="iv-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Interval problem</th><th>Greedy rule</th></tr>
+      <tr><td>Maximum non-overlapping intervals</td><td>Sort by end; take whatever starts after the last end (animated)</td></tr>
+      <tr><td>Minimum removals to make intervals non-overlapping</td><td>n minus the answer above</td></tr>
+      <tr><td>Minimum arrows to burst balloons / points to stab all intervals</td><td>Sort by end; shoot at the end of the first unburst one</td></tr>
+      <tr><td>Minimum rooms / platforms (interval partitioning)</td><td>Sort by start; reuse the room that frees earliest (min-heap of end times)</td></tr>
+      <tr><td>Merge overlapping intervals</td><td>Sort by start; extend while overlapping</td></tr>
+      <tr><td>Minimise maximum lateness</td><td>Earliest deadline first</td></tr>
+    </table>
+  </div>
+
+  <h2 id="huffman">Huffman coding</h2>
+  <p>Huffman's algorithm (1952) builds the optimal prefix-free code for compressing symbols with known frequencies: repeatedly merge the two least frequent trees. It is inside ZIP/DEFLATE, gzip, PNG, JPEG and MP3.</p>
+  <div class="demo" id="hf-demo">
+    <h3>Building a Huffman tree</h3>
+    <div class="bar"><label>Text <input type="text" class="wide" id="hf-text" value="abracadabra" maxlength="40"></label><button type="button" id="hf-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+<pre><code>import heapq
+from collections import Counter
+from itertools import count
+def huffman(text):
+    tick = count()                                   # tie-breaker so the heap never compares trees
+    heap = [(f, next(tick), ch) for ch, f in Counter(text).items()]
+    heapq.heapify(heap)
+    while len(heap) &gt; 1:
+        f1, _, a = heapq.heappop(heap); f2, _, b = heapq.heappop(heap)
+        heapq.heappush(heap, (f1 + f2, next(tick), (a, b)))
+    codes = {}
+    def walk(node, code):
+        if isinstance(node, str): codes[node] = code or "0"; return
+        walk(node[0], code + "0"); walk(node[1], code + "1")
+    walk(heap[0][2], ""); return codes</code></pre>
+
+  <h2 id="classic-greedy">More classic greedy algorithms</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Problem</th><th>Greedy idea</th><th>Time</th></tr>
+      <tr><td>Fractional knapsack</td><td>Take items by highest value/weight, split the last one</td><td>O(n log n)</td></tr>
+      <tr><td>Dijkstra, Prim, Kruskal</td><td>Settle the closest node / add the cheapest safe edge (see <a href="../graphs/index.html">graphs</a>)</td><td>O(E log V)</td></tr>
+      <tr><td>Jump game</td><td>Track the furthest reachable index</td><td>O(n)</td></tr>
+      <tr><td>Gas station</td><td>If the tank goes negative, restart after that station</td><td>O(n)</td></tr>
+      <tr><td>Job sequencing with deadlines</td><td>Highest profit first, into the latest free slot before its deadline</td><td>O(n log n)</td></tr>
+      <tr><td>Partition labels</td><td>Extend the current part to the last occurrence of every letter in it</td><td>O(n)</td></tr>
+      <tr><td>Candy distribution</td><td>Two passes: left-to-right, then right-to-left</td><td>O(n)</td></tr>
+      <tr><td>Set cover (approximation)</td><td>Pick the set covering the most uncovered elements; within ln n of optimal</td><td>polynomial</td></tr>
+      <tr><td>Vertex cover (2-approximation)</td><td>Take both endpoints of any uncovered edge</td><td>O(E)</td></tr>
+    </table>
+  </div>
+  <p class="muted">Greedy algorithms are also the basis of many <strong>approximation algorithms</strong> for NP-hard problems: fast, with a proven bound on how far from optimal they can be.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="dc">Divide and conquer</h2>
+<pre class="pseudo">solve(problem):
+    if problem is small: solve it directly
+    split into sub-problems P1 ... Pk        (independent: no overlap, or it would be DP)
+    S_i = solve(P_i) for each i
+    return combine(S_1 ... S_k)</pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Split / combine</th><th>Recurrence</th><th>Result</th></tr>
+      <tr><td>Binary search</td><td>Keep one half</td><td>T(n) = T(n/2) + 1</td><td>O(log n)</td></tr>
+      <tr><td>Merge sort</td><td>Two halves, linear merge</td><td>T(n) = 2T(n/2) + n</td><td>O(n log n)</td></tr>
+      <tr><td>Quicksort</td><td>Partition, no combine</td><td>T(n) = 2T(n/2) + n average</td><td>O(n log n)</td></tr>
+      <tr><td>Closest pair of points</td><td>Split by x, check a thin middle strip</td><td>T(n) = 2T(n/2) + n</td><td>O(n log n)</td></tr>
+      <tr><td>Karatsuba multiplication</td><td>3 half-size products instead of 4</td><td>T(n) = 3T(n/2) + n</td><td>O(n<sup>1.585</sup>)</td></tr>
+      <tr><td>Strassen matrix multiplication</td><td>7 half-size products instead of 8</td><td>T(n) = 7T(n/2) + n&sup2;</td><td>O(n<sup>2.807</sup>)</td></tr>
+      <tr><td>FFT (fast Fourier transform)</td><td>Even and odd coefficients</td><td>T(n) = 2T(n/2) + n</td><td>O(n log n)</td></tr>
+      <tr><td>Median of medians</td><td>Groups of 5, recursive pivot choice</td><td>T(n) = T(n/5) + T(7n/10) + n</td><td>O(n)</td></tr>
+    </table>
+  </div>
+  <div class="card arch">
+    <h3>Karatsuba: multiplying big numbers faster than school</h3>
+    <p>Split x = a&middot;10<sup>m</sup> + b and y = c&middot;10<sup>m</sup> + d. Then x&middot;y = ac&middot;10<sup>2m</sup> + (ad + bc)&middot;10<sup>m</sup> + bd, and the middle term equals (a+b)(c+d) - ac - bd: only <strong>three</strong> multiplications instead of four.</p>
+<pre><code>def karatsuba(x, y):
+    if x &lt; 10 or y &lt; 10: return x * y
+    m = max(len(str(x)), len(str(y))) // 2
+    a, b = divmod(x, 10 ** m); c, d = divmod(y, 10 ** m)
+    ac, bd = karatsuba(a, c), karatsuba(b, d)
+    mid = karatsuba(a + b, c + d) - ac - bd
+    return ac * 10 ** (2 * m) + mid * 10 ** m + bd</code></pre>
+    <p class="muted">Python's own big integers use Karatsuba for large numbers. In 2019 Harvey and van der Hoeven reached O(n log n) for integer multiplication, the long-conjectured optimum.</p>
+  </div>
+  <div class="card arch">
+    <h3>Closest pair of points in O(n log n)</h3>
+<pre class="pseudo">closest(P sorted by x):
+    if |P| &le; 3: brute force
+    split at the median x into L and R
+    d = min(closest(L), closest(R))
+    strip = points within d of the dividing line, sorted by y
+    for each point in strip: compare only with the next 7 points in y order
+    return the smallest distance found</pre>
+    <p>The "only 7 neighbours" fact comes from packing: at most 8 points with mutual distance &ge; d fit in a d &times; 2d rectangle.</p>
+  </div>
+  <p><strong>Divide and conquer in the real world:</strong> parallel and distributed computing (MapReduce, Spark: split data, process partitions, combine), multithreaded sorts, image processing on tiles, and recursive rendering.</p>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Compression:</strong> Huffman codes in DEFLATE (zip, gzip, PNG), JPEG and MP3.</li>
+    <li><strong>Networking:</strong> Dijkstra-based routing (OSPF); greedy packet scheduling.</li>
+    <li><strong>Scheduling:</strong> earliest-deadline-first in real-time operating systems; meeting room booking.</li>
+    <li><strong>Finance:</strong> making change in canonical currencies; greedy portfolio heuristics.</li>
+    <li><strong>Big data:</strong> MapReduce and Spark are divide and conquer over clusters.</li>
+    <li><strong>Cryptography and computer algebra:</strong> Karatsuba and FFT-based multiplication of huge numbers.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Jump game I and II <span class="diff med">medium</span> <span class="tag">greedy reach</span></summary>
+<pre><code>def can_jump(a):
+    reach = 0
+    for i, x in enumerate(a):
+        if i &gt; reach: return False
+        reach = max(reach, i + x)
+    return True
+
+def min_jumps(a):                    # BFS by levels, done greedily
+    jumps = end = far = 0
+    for i in range(len(a) - 1):
+        far = max(far, i + a[i])
+        if i == end: jumps += 1; end = far
+    return jumps</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q2. Gas station <span class="diff med">medium</span> <span class="tag">greedy restart</span></summary>
+<pre><code>def start_station(gas, cost):
+    if sum(gas) &lt; sum(cost): return -1
+    tank = start = 0
+    for i in range(len(gas)):
+        tank += gas[i] - cost[i]
+        if tank &lt; 0: start, tank = i + 1, 0     # nothing before i+1 can work
+    return start</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q3. Non-overlapping intervals (minimum removals) <span class="diff med">medium</span> <span class="tag">earliest end</span></summary>
+    <p>Count the maximum set of compatible intervals with the earliest-finish rule (animated above); the answer is n minus that count. O(n log n).</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Minimum arrows to burst balloons <span class="diff med">medium</span> <span class="tag">earliest end</span></summary>
+    <p>Sort by end. Shoot at the end of the first balloon; skip every balloon that starts at or before that point; shoot again at the next balloon's end.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Partition labels <span class="diff med">medium</span> <span class="tag">greedy extend</span></summary>
+<pre><code>def partition_labels(s):
+    last = {c: i for i, c in enumerate(s)}
+    out, start, end = [], 0, 0
+    for i, c in enumerate(s):
+        end = max(end, last[c])
+        if i == end: out.append(end - start + 1); start = i + 1
+    return out</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q6. Assign cookies <span class="diff easy">easy</span> <span class="tag">sort + two pointers</span></summary>
+    <p>Sort children by greed and cookies by size; give each child the smallest cookie that satisfies them. O(n log n).</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Candy <span class="diff hard">hard</span> <span class="tag">two passes</span></summary>
+    <p class="q">Each child gets at least one candy, and a child with a higher rating than a neighbour gets more than that neighbour. Minimum total?</p>
+<pre><code>def candy(r):
+    n = len(r); c = [1] * n
+    for i in range(1, n):
+        if r[i] &gt; r[i-1]: c[i] = c[i-1] + 1
+    for i in range(n - 2, -1, -1):
+        if r[i] &gt; r[i+1]: c[i] = max(c[i], c[i+1] + 1)
+    return sum(c)</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q8. Lemonade change <span class="diff easy">easy</span> <span class="tag">greedy with canonical coins</span></summary>
+    <p>Keep counts of 5s and 10s. For a 20, prefer giving 10 + 5 (keeps more 5s, the most flexible coin) over 5 + 5 + 5.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Majority element by divide and conquer <span class="diff med">medium</span> <span class="tag">D&amp;C</span></summary>
+    <p>The majority of the whole array must be the majority of at least one half. Recurse on both halves; if they disagree, count both candidates in the current range. O(n log n). (Boyer-Moore voting does it in O(n), O(1).)</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Different ways to add parentheses <span class="diff med">medium</span> <span class="tag">D&amp;C + memo</span></summary>
+<pre><code>from functools import cache
+@cache
+def ways(expr):
+    if expr.isdigit(): return [int(expr)]
+    out = []
+    for i, c in enumerate(expr):
+        if c in "+-*":
+            for a in ways(expr[:i]):
+                for b in ways(expr[i + 1:]):
+                    out.append(a + b if c == "+" else a - b if c == "-" else a * b)
+    return out</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q11. The skyline problem <span class="diff hard">hard</span> <span class="tag">D&amp;C or sweep + heap</span></summary>
+    <p>Divide and conquer: compute the skylines of each half and merge them like merge sort, walking both lists and taking the max height at every x. O(n log n). Alternatively, sweep over sorted building edges with a max-heap of active heights.</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Is this greedy idea right? <span class="diff med">medium</span> <span class="tag">testing technique</span></summary>
+    <p class="q">You think "always take the activity with the shortest duration" maximises the number of activities.</p>
+    <p>Counter-example: [1, 5), [4, 7), [6, 10). Shortest is [4, 7) and it blocks both others (1 activity), while [1, 5) + [6, 10) gives 2. Write a brute-force checker over small random inputs to find such counter-examples automatically.</p>
+  </details>
+
+  <div class="pager"><a href="../dp/index.html">&larr; Dynamic programming</a><a href="../advanced/index.html">Next: Advanced data structures &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced Graph Algorithms - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>9. Advanced graph algorithms</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../graphs/index.html">&larr; Graphs</a><a href="../sorting/index.html">Sorting &rarr;</a></nav>
+  </header>
+
+  <p>
+    This page builds on <a href="../graphs/index.html">graph basics</a> (BFS, DFS, shortest paths, MST). It covers the algorithms behind connectivity analysis, network capacity, assignment problems,
+    logic constraints and tree queries, plus the most important recent research results.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="scc">Strongly connected components (SCC)</h2>
+  <p>
+    In a directed graph, an <strong>SCC</strong> is a maximal group of vertices where every vertex can reach every other. Collapsing each SCC to one node always yields a DAG (the <em>condensation</em>),
+    so SCCs let you apply DAG techniques to any directed graph.
+  </p>
+  <div class="demo" id="scc-demo">
+    <h3>Tarjan's algorithm</h3>
+    <div class="stage"></div>
+  </div>
+  <h3>Kosaraju's algorithm (simpler to remember)</h3>
+<pre class="pseudo">1. DFS the graph; record vertices in order of finishing time.
+2. Reverse every edge.
+3. Process vertices in decreasing finishing time; each DFS on the reversed graph
+   from an unvisited vertex collects exactly one SCC.           O(V + E)</pre>
+  <p class="muted">Uses: finding mutually dependent modules, deadlock cycles, clusters of web pages, and 2-SAT (below).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="bridges">Bridges and articulation points</h2>
+  <p>
+    A <strong>bridge</strong> is an edge whose removal disconnects the graph; an <strong>articulation point</strong> (cut vertex) is such a vertex. They are the single points of failure in networks.
+    One DFS with discovery times and low-links finds them all (also by Tarjan): edge u&ndash;v (v a child) is a bridge if <code>low[v] &gt; disc[u]</code>; u is an articulation point if <code>low[v] &ge; disc[u]</code> for some child v (the root needs two or more children).
+  </p>
+<pre><code>def bridges(n, adj):
+    disc, low, t, out = [-1] * n, [0] * n, [0], []
+    def dfs(u, parent):
+        disc[u] = low[u] = t[0]; t[0] += 1
+        for v in adj[u]:
+            if v == parent: continue
+            if disc[v] == -1:
+                dfs(v, u); low[u] = min(low[u], low[v])
+                if low[v] &gt; disc[u]: out.append((u, v))      # no back edge jumps over u-v
+            else:
+                low[u] = min(low[u], disc[v])
+    for u in range(n):
+        if disc[u] == -1: dfs(u, -1)
+    return out</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="flow">Maximum flow and minimum cut</h2>
+  <p>
+    A <strong>flow network</strong> has edge capacities (pipes, bandwidth, lanes). The <strong>maximum flow</strong> problem asks how much can be sent from a source s to a sink t.
+    The <strong>max-flow min-cut theorem</strong> says the answer equals the smallest total capacity of edges whose removal separates s from t: the bottleneck of the network.
+  </p>
+  <div class="demo" id="flow-demo">
+    <h3>Edmonds-Karp (Ford-Fulkerson with BFS)</h3>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Time</th><th>Idea</th></tr>
+      <tr><td>Ford-Fulkerson</td><td>O(E &middot; maxflow)</td><td>Any augmenting path (DFS); may be slow with large capacities</td></tr>
+      <tr><td><strong>Edmonds-Karp</strong></td><td>O(V E&sup2;)</td><td>Always the shortest augmenting path (BFS)</td></tr>
+      <tr><td><strong>Dinic</strong></td><td>O(V&sup2; E); O(E&radic;V) on unit graphs</td><td>BFS builds a level graph; DFS pushes a "blocking flow" through it. The practical favourite.</td></tr>
+      <tr><td>Push-relabel</td><td>O(V&sup2;&radic;E)</td><td>Nodes hold excess flow and push it "downhill"; very fast in practice</td></tr>
+      <tr><td>Min-cost max-flow</td><td>varies</td><td>Cheapest way to send the maximum flow (successive shortest paths)</td></tr>
+      <tr><td>Almost-linear max flow (2022)</td><td>m<sup>1+o(1)</sup></td><td>Chen, Kyng, Liu, Peng, Probst Gutenberg, Sachdeva: a theoretical breakthrough using interior-point methods and dynamic data structures</td></tr>
+    </table>
+  </div>
+  <p><strong>Many problems reduce to flow:</strong> bipartite matching, assigning workers to jobs, project selection (min cut), image segmentation (foreground/background as a min cut), baseball elimination, edge-disjoint paths, network reliability.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="matching">Bipartite matching and assignment</h2>
+  <p>Match people to jobs, students to schools, ads to slots: each left vertex to at most one right vertex, maximising the number (or value) of pairs.</p>
+<pre><code>def max_bipartite_matching(adj, n_left, n_right):     # Kuhn's algorithm, O(V E)
+    match_r = [-1] * n_right
+    def try_assign(u, seen):
+        for v in adj[u]:
+            if v in seen: continue
+            seen.add(v)
+            if match_r[v] == -1 or try_assign(match_r[v], seen):   # free, or its partner can move
+                match_r[v] = u; return True
+        return False
+    return sum(try_assign(u, set()) for u in range(n_left))</code></pre>
+  <ul>
+    <li><strong>Hopcroft-Karp:</strong> augments along many shortest paths at once: O(E&radic;V).</li>
+    <li><strong>Hungarian algorithm:</strong> minimum-cost perfect assignment in O(n&sup3;) (<code>scipy.optimize.linear_sum_assignment</code>).</li>
+    <li><strong>Stable marriage (Gale-Shapley):</strong> a matching with no pair preferring each other over their partners; used for medical residency matching.</li>
+    <li><strong>K&#246;nig's theorem:</strong> in bipartite graphs, maximum matching = minimum vertex cover.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="euler">Euler paths and circuits</h2>
+  <p>An <strong>Euler path</strong> uses every <em>edge</em> exactly once. It exists in an undirected connected graph when 0 or 2 vertices have odd degree (directed: in-degree equals out-degree everywhere, except possibly one start and one end). <strong>Hierholzer's algorithm</strong> finds it in O(E).</p>
+<pre><code>def euler_path(adj, start):           # adj: dict of lists, edges consumed as used (directed)
+    st, path = [start], []
+    while st:
+        u = st[-1]
+        if adj[u]: st.append(adj[u].pop())
+        else: path.append(st.pop())
+    return path[::-1]</code></pre>
+  <p class="muted">A <strong>Hamiltonian</strong> path (every <em>vertex</em> once) sounds similar but is NP-hard; the travelling salesman problem is its weighted version (bitmask DP for n &le; ~20, heuristics beyond). Uses of Euler paths: DNA sequence assembly (de Bruijn graphs), route inspection (Chinese postman), drawing a figure without lifting the pen.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="two-sat">2-SAT: satisfying pairwise constraints</h2>
+  <p>
+    Given boolean variables and clauses of the form (a OR b), is there an assignment that satisfies all of them? Each clause gives two implications: <code>NOT a &rarr; b</code> and <code>NOT b &rarr; a</code>.
+    Build the implication graph and find SCCs: the formula is satisfiable exactly when no variable is in the same SCC as its negation. O(V + E). (3-SAT, with three literals per clause, is NP-complete.)
+  </p>
+  <p class="muted">Uses: scheduling with "either/or" rules, placing labels on a map without overlaps, configuration validation.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="lca">Lowest common ancestor and tree queries</h2>
+  <p>For many LCA or distance queries on a fixed tree, pre-compute <strong>binary lifting</strong> tables: <code>up[k][v]</code> = the 2<sup>k</sup>-th ancestor of v. Each query lifts the deeper node to the same depth, then lifts both while their ancestors differ.</p>
+<pre><code>LOG = 17                                # 2^17 &gt; number of nodes
+def preprocess(parent, depth, n):
+    up = [parent[:]] + [[0] * n for _ in range(LOG - 1)]
+    for k in range(1, LOG):
+        for v in range(n): up[k][v] = up[k - 1][up[k - 1][v]]
+    return up
+
+def lca(u, v, up, depth):
+    if depth[u] &lt; depth[v]: u, v = v, u
+    for k in range(LOG - 1, -1, -1):
+        if depth[u] - (1 &lt;&lt; k) &gt;= depth[v]: u = up[k][u]
+    if u == v: return u
+    for k in range(LOG - 1, -1, -1):
+        if up[k][u] != up[k][v]: u, v = up[k][u], up[k][v]
+    return up[0][u]
+# distance(u, v) = depth[u] + depth[v] - 2 * depth[lca(u, v)]</code></pre>
+  <ul>
+    <li>O(n log n) pre-processing, O(log n) per query. An Euler tour + sparse table gives O(1) queries.</li>
+    <li><strong>Heavy-light decomposition</strong> splits a tree into chains so path queries ("sum of values on the path u&ndash;v") become O(log&sup2; n) segment-tree queries.</li>
+    <li><strong>Centroid decomposition</strong> recursively removes the node that splits the tree most evenly; solves path-counting problems in O(n log n).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="analytics">Graph analytics</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>What it measures</th><th>Used for</th></tr>
+      <tr><td><strong>PageRank</strong></td><td>Importance: a page is important if important pages link to it (power iteration on a random-surfer model)</td><td>Search ranking, influencer scoring, citation analysis</td></tr>
+      <tr><td>Betweenness centrality (Brandes)</td><td>How often a node lies on shortest paths</td><td>Finding bottlenecks and brokers in networks</td></tr>
+      <tr><td>Community detection (Louvain, Leiden, label propagation)</td><td>Densely connected groups</td><td>Social circles, fraud rings, customer segments</td></tr>
+      <tr><td>Triangle counting / clustering coefficient</td><td>How "cliquey" the graph is</td><td>Spam detection, social network analysis</td></tr>
+      <tr><td>Graph colouring (greedy, DSatur)</td><td>Assign colours so neighbours differ (NP-hard in general)</td><td>Exam timetables, register allocation in compilers, frequency assignment</td></tr>
+      <tr><td>Graph embeddings / GNNs</td><td>Learned vector representations of nodes</td><td>Recommendations, drug discovery (see the <a href="../../pytorch/index.html#algorithms">PyTorch topic</a>)</td></tr>
+    </table>
+  </div>
+<pre><code>def pagerank(adj, d=0.85, iters=50):          # adj: node -&gt; list of nodes it links to
+    nodes = list(adj); n = len(nodes)
+    pr = {u: 1 / n for u in nodes}
+    for _ in range(iters):
+        new = {u: (1 - d) / n for u in nodes}
+        for u in nodes:
+            outs = adj[u] or nodes            # a dead end spreads evenly
+            for v in outs: new[v] += d * pr[u] / len(outs)
+        pr = new
+    return pr</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="research">Recent breakthroughs (for the curious)</h2>
+  <ul>
+    <li><strong>Max flow in almost-linear time (2022):</strong> Chen, Kyng, Liu, Peng, Probst Gutenberg and Sachdeva solved maximum flow and min-cost flow in m<sup>1+o(1)</sup> time, decades after the classic algorithms.</li>
+    <li><strong>Negative-weight shortest paths in near-linear time (2022):</strong> Bernstein, Nanongkai and Wulff-Nilsen beat Bellman-Ford's O(VE) for integer weights.</li>
+    <li><strong>Dijkstra is "universally optimal" (2024):</strong> Haeupler, Hlad&iacute;k, Rozho&#328;, Tarjan and T&#283;tek showed that Dijkstra with a suitable heap is optimal on every graph structure, not just in the worst case (FOCS 2024 best paper).</li>
+    <li><strong>Breaking the sorting barrier for shortest paths (2025):</strong> Duan, Mao, Mao, Shu and Yin gave an O(m log<sup>2/3</sup> n) deterministic algorithm for directed single-source shortest paths (STOC 2025 best paper).</li>
+  </ul>
+  <p class="muted">These matter mostly for theory and very large graphs today; in practice BFS, Dijkstra, Dinic and union-find still solve almost everything.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Network reliability:</strong> bridges and articulation points show single points of failure in power grids and computer networks.</li>
+    <li><strong>Logistics and telecoms:</strong> max flow for capacity planning; min-cost flow for routing shipments.</li>
+    <li><strong>Matching markets:</strong> ride-hailing driver assignment, ad auctions, kidney exchange programmes, school admissions.</li>
+    <li><strong>Compilers:</strong> SCCs for mutually recursive functions, graph colouring for register allocation, dominator trees for optimisation.</li>
+    <li><strong>Genomics:</strong> Euler paths in de Bruijn graphs assemble DNA reads.</li>
+    <li><strong>Search and social media:</strong> PageRank, community detection, recommendation graphs.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Critical connections in a network <span class="diff hard">hard</span> <span class="tag">bridges</span></summary>
+    <p class="q">Return every connection whose removal disconnects some servers.</p>
+    <p>These are exactly the bridges: use the low-link DFS above. <span class="big g">O(V + E)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Count strongly connected components <span class="diff med">medium</span> <span class="tag">Tarjan / Kosaraju</span></summary>
+    <p>Run Tarjan (animated above) or Kosaraju and count the components. To find the minimum number of edges to add to make the graph strongly connected: build the condensation DAG; the answer is max(#sources, #sinks) (or 0 if there is only one SCC).</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Assign workers to jobs <span class="diff med">medium</span> <span class="tag">bipartite matching</span></summary>
+    <p class="q">Each worker can do some jobs; maximise the number of assigned jobs.</p>
+    <p>Bipartite matching with Kuhn's algorithm (code above), or max flow with s&rarr;workers (capacity 1), workers&rarr;jobs (1), jobs&rarr;t (1). If assignments have costs, use the Hungarian algorithm.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Reconstruct an itinerary <span class="diff hard">hard</span> <span class="tag">Euler path</span></summary>
+    <p class="q">Use every ticket exactly once, starting from "JFK", choosing the lexicographically smallest itinerary.</p>
+    <p>An Euler path with Hierholzer's algorithm; sort each adjacency list in reverse so <code>pop()</code> takes the smallest destination first. <span class="big g">O(E log E)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Project selection (maximum profit with prerequisites) <span class="diff hard">hard</span> <span class="tag">min cut</span></summary>
+    <p class="q">Projects have profits (positive) or costs (negative); choosing a project forces choosing its prerequisites. Maximise total profit.</p>
+    <p>Source &rarr; profitable project (capacity = profit), costly project &rarr; sink (capacity = cost), project &rarr; prerequisite (capacity &infin;). Answer = sum of positive profits - min cut. The source side of the cut is the chosen set.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. LCA queries on a large tree <span class="diff med">medium</span> <span class="tag">binary lifting</span></summary>
+    <p>Pre-process with binary lifting (code above) and answer each query in O(log n). For the distance between two nodes, use depths and the LCA.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Minimum height trees <span class="diff med">medium</span> <span class="tag">peel leaves</span></summary>
+    <p class="q">Which roots give a tree of minimum height?</p>
+    <p>Repeatedly remove all current leaves (like Kahn's topological sort, on degrees). The last 1 or 2 remaining nodes are the centres of the tree. <span class="big g">O(n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Currency arbitrage <span class="diff hard">hard</span> <span class="tag">negative cycle</span></summary>
+    <p class="q">Given exchange rates, can you start with one currency and end with more of it?</p>
+    <p>Use edge weights <code>-log(rate)</code>: a cycle whose rates multiply to more than 1 becomes a negative cycle. Detect it with Bellman-Ford (one extra relaxation round still improves something).</p>
+  </details>
+
+  <details class="prob"><summary>Q9. 2-SAT feasibility <span class="diff hard">hard</span> <span class="tag">implication graph + SCC</span></summary>
+    <p>Build two nodes per variable (x and not-x), add the two implications per clause, compute SCCs. Unsatisfiable if x and not-x share an SCC; otherwise assign x = true when comp[x] comes after comp[not x] in topological order.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Longest path in a DAG / count paths <span class="diff med">medium</span> <span class="tag">DP on topological order</span></summary>
+    <p>Process nodes in topological order: <code>best[v] = max(best[v], best[u] + w)</code> and <code>ways[v] += ways[u]</code> for every edge u&rarr;v. O(V + E). (Longest path in a general graph is NP-hard.)</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Travelling salesman on a small graph <span class="diff hard">hard</span> <span class="tag">bitmask DP</span></summary>
+    <p><code>dp[mask][v]</code> = cheapest way to visit exactly the cities in <code>mask</code>, ending at v. Transition by adding one unvisited city. O(2<sup>n</sup> n&sup2;): fine for n &le; 20. See the <a href="../dp/index.html#bitmask">DP page</a>.</p>
+  </details>
+
+  <div class="pager"><a href="../graphs/index.html">&larr; Graphs</a><a href="../sorting/index.html">Next: Sorting &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

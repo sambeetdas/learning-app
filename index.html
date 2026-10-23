@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learning App</title>
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Learning App</h1>
+    <input id="search" type="search" placeholder="Filter topics..." autocomplete="off" aria-label="Filter topics">
+  </header>
+  <p class="muted">Short, visual explainers. Each topic lives in its own folder.</p>
+
+  <div id="topics" class="grid"></div>
+  <p id="empty" class="muted" hidden>No topics match.</p>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="home.js"></script>
+</body>
+</html>

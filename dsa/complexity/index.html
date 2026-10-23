@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Complexity and Big-O - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>1. Complexity and Big-O</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../arrays/index.html">Next: Arrays &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Why measure complexity?</h2>
+  <p>
+    Two programs can give the same answer while one takes a millisecond and the other a week. Timing them on your laptop is not enough: the result depends on the machine, the language and the input you tried.
+    <strong>Complexity analysis</strong> describes how the cost of an algorithm <em>grows</em> as the input grows, independent of hardware. It is the main tool for comparing algorithms before you write them.
+  </p>
+  <ul>
+    <li><strong>Time complexity:</strong> how the number of basic steps grows with input size <em>n</em>.</li>
+    <li><strong>Space complexity:</strong> how much extra memory is needed (beyond the input itself), including the recursion call stack.</li>
+  </ul>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="notation">Big-O, Big-Omega and Big-Theta</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Notation</th><th>Meaning</th><th>Plain English</th></tr>
+      <tr><td><strong>O(f(n))</strong> &ndash; Big-O</td><td>Upper bound: cost &le; c&middot;f(n) for large n</td><td>"It grows <em>no faster</em> than f(n)." Used for worst cases.</td></tr>
+      <tr><td><strong>&Omega;(f(n))</strong> &ndash; Big-Omega</td><td>Lower bound: cost &ge; c&middot;f(n)</td><td>"It needs <em>at least</em> this much." E.g. comparison sorting is &Omega;(n log n).</td></tr>
+      <tr><td><strong>&Theta;(f(n))</strong> &ndash; Big-Theta</td><td>Both: tight bound</td><td>"It grows <em>exactly like</em> f(n)."</td></tr>
+      <tr><td>o(f(n)), &omega;(f(n))</td><td>Strict versions</td><td>Strictly slower / strictly faster growth. Rare in practice.</td></tr>
+    </table>
+  </div>
+  <p class="muted">In everyday use, "Big-O" usually means the tight worst-case bound, and people write O(n) when they mean &Theta;(n).</p>
+
+  <h3>Simplification rules</h3>
+  <ol>
+    <li><strong>Drop constants:</strong> 3n + 7 &rarr; O(n). 0.5n&sup2; &rarr; O(n&sup2;).</li>
+    <li><strong>Keep the dominant term:</strong> n&sup2; + 100n + 5000 &rarr; O(n&sup2;), because for large n the n&sup2; part dwarfs the rest.</li>
+    <li><strong>Sequential steps add:</strong> a loop of n, then a loop of m &rarr; O(n + m).</li>
+    <li><strong>Nested steps multiply:</strong> a loop of n inside a loop of m &rarr; O(n&middot;m).</li>
+    <li><strong>Different inputs get different letters:</strong> comparing two strings of lengths n and m is O(n&middot;m), not O(n&sup2;).</li>
+    <li><strong>Logarithm base does not matter:</strong> log&#8322; n and log&#8321;&#8320; n differ by a constant factor, so both are O(log n).</li>
+  </ol>
+
+  <!-- ===================================================== -->
+  <h2 id="classes">Common complexity classes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Class</th><th>Name</th><th>Example</th><th>Feels like</th></tr>
+      <tr><td><span class="big g">O(1)</span></td><td>Constant</td><td>Array index, hash map lookup, push/pop on a stack</td><td>Instant, whatever the size</td></tr>
+      <tr><td><span class="big g">O(log n)</span></td><td>Logarithmic</td><td>Binary search, balanced tree operations, heap push/pop</td><td>A billion items in ~30 steps</td></tr>
+      <tr><td><span class="big g">O(&radic;n)</span></td><td>Square root</td><td>Trial-division primality test</td><td>Fast</td></tr>
+      <tr><td><span class="big g">O(n)</span></td><td>Linear</td><td>One pass over the data, linear search, counting</td><td>Proportional to the data</td></tr>
+      <tr><td><span class="big g">O(n log n)</span></td><td>Linearithmic</td><td>Merge sort, heap sort, efficient sorting in general</td><td>The practical limit for big data</td></tr>
+      <tr><td><span class="big y">O(n&sup2;)</span></td><td>Quadratic</td><td>All pairs, bubble/insertion sort, simple 2-D DP</td><td>Fine for thousands, painful for millions</td></tr>
+      <tr><td><span class="big y">O(n&sup3;)</span></td><td>Cubic</td><td>Naive matrix multiplication, Floyd-Warshall</td><td>Hundreds of items</td></tr>
+      <tr><td><span class="big r">O(2<sup>n</sup>)</span></td><td>Exponential</td><td>All subsets, naive recursive Fibonacci</td><td>Dies around n = 40</td></tr>
+      <tr><td><span class="big r">O(n!)</span></td><td>Factorial</td><td>All permutations, brute-force travelling salesman</td><td>Dies around n = 12</td></tr>
+    </table>
+  </div>
+
+  <div class="demo">
+    <h3>The growth-rate race</h3>
+    <div class="bar">
+      <label>n up to <input type="range" id="g-n" min="5" max="60" value="20"> <b id="g-n-v">20</b></label>
+      <label><input type="checkbox" id="g-log"> logarithmic y-axis</label>
+    </div>
+    <canvas class="plot" id="growth" width="760" height="330"></canvas>
+    <p class="muted">On the linear axis, the exponential and factorial curves leave the chart almost immediately. Switch to the log axis to see them all.</p>
+    <div class="bar">
+      <label>How long does it take for n =
+        <select id="t-n">
+          <option value="10">10</option><option value="20">20</option><option value="100" selected>100</option><option value="1000">1,000</option>
+          <option value="100000">100,000</option><option value="1000000">1,000,000</option><option value="1000000000">1,000,000,000</option>
+        </select>
+      </label>
+      <span class="muted">assuming 10<sup>8</sup> simple operations per second</span>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Complexity</th><th>Operations</th><th>Time</th></tr></thead><tbody id="t-body"></tbody></table></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="counting">Counting operations in code</h2>
+  <p>To find the complexity of code, count how many times the innermost work runs as a function of n. Pick a pattern and step through it.</p>
+
+  <div class="demo" id="oc-demo">
+    <h3>Operation counter</h3>
+    <div class="bar">
+      <label>Code
+        <select id="oc-kind">
+          <option value="linear">Single loop</option>
+          <option value="sequence">Two loops in sequence</option>
+          <option value="nested">Nested loops</option>
+          <option value="triangle">Nested, j starts at i + 1</option>
+          <option value="halving">Halving loop</option>
+        </select>
+      </label>
+      <label>n <select id="oc-n"><option>4</option><option selected>5</option><option>6</option><option>8</option></select></label>
+      <span>Complexity: <b id="oc-big"></b></span>
+    </div>
+    <div class="stage"></div>
+  </div>
+
+  <h3>Quick recognition guide</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Code shape</th><th>Complexity</th></tr>
+      <tr><td>Fixed number of statements, no loops over the input</td><td><span class="big g">O(1)</span></td></tr>
+      <tr><td><code>for i in range(n)</code></td><td><span class="big g">O(n)</span></td></tr>
+      <tr><td><code>i = i * 2</code> or <code>n = n // 2</code> in the loop</td><td><span class="big g">O(log n)</span></td></tr>
+      <tr><td>Loop over n with an O(log n) operation inside (heap push, binary search)</td><td><span class="big g">O(n log n)</span></td></tr>
+      <tr><td>Two nested loops over n (even if the inner one starts at i)</td><td><span class="big y">O(n&sup2;)</span></td></tr>
+      <tr><td>Recursion with two calls on n-1 (<code>f(n-1) + f(n-1)</code>)</td><td><span class="big r">O(2<sup>n</sup>)</span></td></tr>
+      <tr><td>Recursion that halves and does O(n) work to combine (merge sort)</td><td><span class="big g">O(n log n)</span></td></tr>
+      <tr><td>Generate all permutations</td><td><span class="big r">O(n&middot;n!)</span></td></tr>
+    </table>
+  </div>
+  <div class="card note">
+    <h3>Hidden costs in library calls</h3>
+    <ul>
+      <li><code>x in my_list</code> is O(n); <code>x in my_set</code> is O(1) on average.</li>
+      <li><code>list.insert(0, x)</code> and <code>list.pop(0)</code> are O(n) (everything shifts). Use <code>collections.deque</code>.</li>
+      <li><code>s[a:b]</code> slicing copies: O(b - a). <code>sorted()</code> is O(n log n).</li>
+      <li>Building a string with <code>+=</code> in a loop can be O(n&sup2;) in many languages because strings are immutable; collect pieces in a list and <code>"".join()</code> them.</li>
+    </ul>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cases">Best, average, worst and amortised</h2>
+  <ul>
+    <li><strong>Worst case:</strong> the maximum over all inputs of size n. The usual guarantee. Linear search: O(n) when the item is last or missing.</li>
+    <li><strong>Best case:</strong> the minimum. Linear search: O(1) when the item is first. Rarely useful on its own.</li>
+    <li><strong>Average case:</strong> expected cost over a distribution of inputs. Quicksort: O(n log n) on average, O(n&sup2;) worst; hash tables: O(1) average, O(n) worst.</li>
+    <li><strong>Amortised:</strong> the average cost per operation over a <em>sequence</em> of operations, guaranteed. A dynamic array append is usually O(1) but occasionally O(n) when it resizes; because it doubles its capacity, n appends cost O(n) in total, so each append is <em>amortised</em> O(1). (See the animation on the <a href="../arrays/index.html#dynamic">arrays page</a>.)</li>
+    <li><strong>Expected (randomised):</strong> for algorithms that use randomness, such as randomised quicksort or skip lists, the cost averaged over the algorithm's own random choices, for <em>any</em> input.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="space">Space complexity</h2>
+  <ul>
+    <li>Count the <strong>extra</strong> memory: new arrays, hash maps, and the <strong>recursion stack</strong> (each pending call uses a stack frame).</li>
+    <li>Reversing an array in place: O(1) extra. Copying it: O(n). Recursive DFS on a path-shaped tree of n nodes: O(n) stack.</li>
+    <li><strong>Time-space trade-off:</strong> memoisation and hash maps spend memory to save time; streaming algorithms spend time (or accuracy) to save memory.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="recurrences">Recurrences and the Master theorem</h2>
+  <p>Recursive algorithms are described by a <strong>recurrence</strong>: the cost of a problem of size n in terms of smaller problems. For divide-and-conquer recurrences of the form</p>
+<pre class="pseudo">T(n) = a &middot; T(n / b) + f(n)        a = number of sub-problems, n/b = their size, f(n) = work to split and combine</pre>
+  <p>compare f(n) with n<sup>log<sub>b</sub> a</sup> (the total work at the leaves of the recursion tree):</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Case</th><th>Condition</th><th>Result</th><th>Example</th></tr>
+      <tr><td>1. Leaves dominate</td><td>f(n) grows slower than n<sup>log<sub>b</sub> a</sup></td><td>T(n) = &Theta;(n<sup>log<sub>b</sub> a</sup>)</td><td>Karatsuba: T = 3T(n/2) + n &rarr; O(n<sup>1.585</sup>)</td></tr>
+      <tr><td>2. Balanced</td><td>f(n) = &Theta;(n<sup>log<sub>b</sub> a</sup>)</td><td>T(n) = &Theta;(n<sup>log<sub>b</sub> a</sup> log n)</td><td>Merge sort: T = 2T(n/2) + n &rarr; O(n log n); binary search: T = T(n/2) + 1 &rarr; O(log n)</td></tr>
+      <tr><td>3. Root dominates</td><td>f(n) grows faster (and is "regular")</td><td>T(n) = &Theta;(f(n))</td><td>T = 2T(n/2) + n&sup2; &rarr; O(n&sup2;)</td></tr>
+    </table>
+  </div>
+  <p>Other common recurrences (not covered by the Master theorem):</p>
+  <ul>
+    <li><code>T(n) = T(n-1) + O(1)</code> &rarr; O(n) (simple recursion over a list).</li>
+    <li><code>T(n) = T(n-1) + O(n)</code> &rarr; O(n&sup2;) (selection sort, worst-case quicksort).</li>
+    <li><code>T(n) = 2T(n-1) + O(1)</code> &rarr; O(2<sup>n</sup>) (naive Fibonacci, Towers of Hanoi).</li>
+    <li><strong>Recursion-tree method:</strong> draw the tree of calls, sum the work per level, multiply by the number of levels. That is how all of the above are derived.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="practice">Beyond Big-O: what matters in practice</h2>
+  <ul>
+    <li><strong>Constants matter for real sizes:</strong> an O(n log n) algorithm with a huge constant can lose to an O(n&sup2;) one for small n. That is why library sorts switch to insertion sort for tiny sub-arrays.</li>
+    <li><strong>Memory access patterns:</strong> arrays are contiguous and cache-friendly; linked structures jump around memory. A linear scan of an array can beat a "faster" pointer-based structure.</li>
+    <li><strong>I/O dominates:</strong> for data on disk or network, count disk reads or round trips (that is why databases use B-trees with hundreds of keys per node).</li>
+    <li><strong>Parallelism:</strong> work (total operations) versus span (longest chain of dependent steps) describes how well an algorithm parallelises.</li>
+    <li><strong>Complexity classes P and NP:</strong> some problems (travelling salesman, SAT, knapsack in general) have no known polynomial algorithm; for them we use approximation, heuristics, or exponential algorithms on small inputs.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+  <p>Work out each complexity yourself, then open the solution.</p>
+
+  <details class="prob"><summary>Q1. Two loops in a row <span class="diff easy">easy</span></summary>
+<pre><code>for i in range(n): print(i)
+for j in range(m): print(j)</code></pre>
+    <h4>Solution</h4><p>The loops run one after another, so their costs add: <span class="big g">O(n + m)</span> time, O(1) space. Do not write O(n) unless m is known to be at most n.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Inner loop depends on the outer one <span class="diff easy">easy</span></summary>
+<pre><code>for i in range(n):
+    for j in range(i):
+        work()</code></pre>
+    <h4>Solution</h4><p>The inner loop runs 0 + 1 + 2 + ... + (n-1) = n(n-1)/2 times. Dropping constants and lower terms gives <span class="big y">O(n&sup2;)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Doubling counter <span class="diff easy">easy</span></summary>
+<pre><code>i = 1
+while i &lt; n:
+    i = i * 2</code></pre>
+    <h4>Solution</h4><p>After k steps, i = 2<sup>k</sup>. The loop stops when 2<sup>k</sup> &ge; n, so k = log&#8322; n: <span class="big g">O(log n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Logarithmic loop inside a linear one <span class="diff med">medium</span></summary>
+<pre><code>for i in range(n):
+    j = 1
+    while j &lt; n:
+        j *= 2</code></pre>
+    <h4>Solution</h4><p>The outer loop runs n times and the inner loop log n times each: <span class="big g">O(n log n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. The harmonic loop <span class="diff med">medium</span></summary>
+<pre><code>for i in range(1, n + 1):
+    for j in range(0, n, i):    # step size i
+        work()</code></pre>
+    <h4>Solution</h4><p>The inner loop runs n/i times. Total n/1 + n/2 + n/3 + ... + n/n = n &middot; H(n), where the harmonic sum H(n) &asymp; ln n. So <span class="big g">O(n log n)</span>. This pattern appears in the sieve of Eratosthenes (which is even better, O(n log log n)).</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Naive recursive Fibonacci <span class="diff med">medium</span></summary>
+<pre><code>def fib(n):
+    if n &lt; 2: return n
+    return fib(n - 1) + fib(n - 2)</code></pre>
+    <h4>Solution</h4>
+    <p>T(n) = T(n-1) + T(n-2) + O(1). Each call makes two more, so the call tree has about &phi;<sup>n</sup> &asymp; 1.618<sup>n</sup> nodes: <span class="big r">O(2<sup>n</sup>)</span> (tight bound O(&phi;<sup>n</sup>)). Space is O(n) for the deepest chain of calls.</p>
+    <p>With memoisation each fib(k) is computed once: O(n) time. See the <a href="../dp/index.html">DP page</a> animation.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Recursive binary search and merge sort <span class="diff med">medium</span></summary>
+    <p class="q">Give the recurrence and complexity of (a) binary search, (b) merge sort.</p>
+    <h4>Solution</h4>
+    <ul>
+      <li>(a) T(n) = T(n/2) + O(1). Master theorem: a = 1, b = 2, n<sup>log<sub>2</sub>1</sup> = 1 = f(n) &rarr; case 2 &rarr; <span class="big g">O(log n)</span>.</li>
+      <li>(b) T(n) = 2T(n/2) + O(n). n<sup>log<sub>2</sub>2</sup> = n = f(n) &rarr; case 2 &rarr; <span class="big g">O(n log n)</span>. Intuitively: log n levels, each doing O(n) merging work.</li>
+    </ul>
+  </details>
+
+  <details class="prob"><summary>Q8. String building in a loop <span class="diff med">medium</span></summary>
+<pre><code>s = ""
+for word in words:          # n words, total length L
+    s = s + word</code></pre>
+    <h4>Solution</h4>
+    <p>In languages with immutable strings, each <code>+</code> may copy the whole string built so far, so the total copying is 1 + 2 + ... &asymp; O(L&sup2;). (CPython sometimes optimises this, but you should not rely on it.) Fix: <code>"".join(words)</code>, which is <span class="big g">O(L)</span>. In C#/Java use <code>StringBuilder</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Is this O(n&sup2;)? <span class="diff hard">hard</span></summary>
+<pre><code>j = 0
+for i in range(n):
+    while j &lt; n and a[j] &lt; a[i]:
+        j += 1</code></pre>
+    <h4>Solution</h4>
+    <p>It looks nested, but <code>j</code> is never reset: across the whole run it moves forward at most n times. Total work = n (outer) + n (all inner steps together) = <span class="big g">O(n)</span>. This "amortised pointer" argument is why two-pointer and sliding-window solutions are linear.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Choose an algorithm from the constraints <span class="diff hard">hard</span></summary>
+    <p class="q">You must answer whether any two numbers in a list of n = 200,000 integers sum to a target. Which approaches fit in about one second?</p>
+    <h4>Solution</h4>
+    <ul>
+      <li>All pairs: n&sup2;/2 = 2&times;10<sup>10</sup> operations, about 200 seconds. Too slow.</li>
+      <li>Sort + two pointers: O(n log n) &asymp; 3.5&times;10<sup>6</sup>. Fine.</li>
+      <li>Hash set of seen values, check <code>target - x</code>: O(n) expected. Best. (See the <a href="../hashing/index.html#questions">hashing page</a>.)</li>
+    </ul>
+  </details>
+
+  <details class="prob"><summary>Q11. Space of recursion <span class="diff med">medium</span></summary>
+<pre><code>def total(node):            # binary tree with n nodes
+    if not node: return 0
+    return node.val + total(node.left) + total(node.right)</code></pre>
+    <h4>Solution</h4><p>Time <span class="big g">O(n)</span> (each node visited once). Space is the maximum recursion depth = the tree height h: O(log n) for a balanced tree, O(n) for a degenerate (list-like) tree.</p>
+  </details>
+
+  <div class="pager"><a href="../index.html">&larr; DSA home</a><a href="../arrays/index.html">Next: Arrays, strings and techniques &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

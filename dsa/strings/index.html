@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>String Algorithms - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>16. String algorithms</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../advanced/index.html">&larr; Advanced structures</a><a href="../math/index.html">Math and geometry &rarr;</a></nav>
+  </header>
+
+  <p>
+    Text is everywhere: search boxes, logs, DNA, source code, network packets. String algorithms answer questions like "where does this pattern occur?", "how similar are these two strings?",
+    and "what is the longest repeated piece?" far faster than comparing character by character from every position. Basic string techniques (two pointers, sliding windows, counting) are on the <a href="../arrays/index.html#strings">arrays page</a>.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Solves</th><th>Time</th></tr>
+      <tr><td>Naive matching</td><td>Find a pattern</td><td>O(n&middot;m) worst</td></tr>
+      <tr><td><strong>KMP</strong></td><td>Find a pattern; prefix-function tricks</td><td>O(n + m)</td></tr>
+      <tr><td><strong>Z-algorithm</strong></td><td>Longest prefix match at every position</td><td>O(n + m)</td></tr>
+      <tr><td><strong>Rabin-Karp</strong></td><td>Matching with rolling hashes; many patterns of the same length; substring equality</td><td>O(n + m) expected</td></tr>
+      <tr><td><strong>Boyer-Moore</strong></td><td>Fast practical search (skips ahead)</td><td>sub-linear on average</td></tr>
+      <tr><td><strong>Aho-Corasick</strong></td><td>Many patterns at once</td><td>O(n + total pattern length + matches)</td></tr>
+      <tr><td><strong>Manacher</strong></td><td>All palindromic substrings</td><td>O(n)</td></tr>
+      <tr><td><strong>Suffix array + LCP</strong></td><td>Substring queries, longest repeated substring, distinct substrings</td><td>O(n log n) build</td></tr>
+      <tr><td><strong>Suffix automaton / tree</strong></td><td>All substrings compactly</td><td>O(n) build</td></tr>
+      <tr><td>Edit distance, LCS</td><td>Similarity (see <a href="../dp/index.html#two-d">DP</a>)</td><td>O(n&middot;m)</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="kmp">Knuth-Morris-Pratt (KMP)</h2>
+  <p>
+    The naive matcher, after a mismatch, slides the pattern one step and starts comparing again from scratch, re-reading text it has already seen. KMP pre-computes, for every prefix of the pattern,
+    the longest proper prefix that is also a suffix (the <strong>failure table</strong>, or <strong>LPS</strong> array). After a mismatch it reuses that knowledge, so the text pointer never moves backwards.
+  </p>
+  <div class="demo" id="kmp-demo">
+    <h3>KMP step by step</h3>
+    <div class="bar">
+      <label>Text <input type="text" class="wide" id="kmp-t" value="ababcabcabababd" maxlength="26"></label>
+      <label>Pattern <input type="text" id="kmp-p" value="ababd" maxlength="10" style="width:8rem"></label>
+      <button type="button" id="kmp-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre><code>def kmp_search(text, p):
+    lps, k = [0] * len(p), 0
+    for i in range(1, len(p)):
+        while k and p[i] != p[k]: k = lps[k - 1]
+        if p[i] == p[k]: k += 1
+        lps[i] = k
+    out, j = [], 0
+    for i, c in enumerate(text):
+        while j and c != p[j]: j = lps[j - 1]
+        if c == p[j]: j += 1
+        if j == len(p): out.append(i - j + 1); j = lps[j - 1]
+    return out</code></pre>
+  <p class="muted"><strong>Prefix-function tricks:</strong> the smallest period of s is <code>n - lps[n-1]</code> (if it divides n, s is a repetition); building <code>lps</code> of <code>pattern + "#" + text</code> finds all matches; the shortest palindrome by adding characters in front uses <code>lps</code> of <code>s + "#" + reverse(s)</code>.</p>
+
+  <h2 id="z">Z-algorithm</h2>
+  <p><code>z[i]</code> = length of the longest substring starting at i that is also a prefix of s. It is computed in O(n) by reusing a window [l, r) of the rightmost match found so far. Pattern matching: compute Z of <code>p + "$" + text</code>; every position with z = len(p) is a match.</p>
+<pre><code>def z_function(s):
+    n = len(s); z = [0] * n; l = r = 0
+    for i in range(1, n):
+        if i &lt; r: z[i] = min(r - i, z[i - l])           # reuse what the window already tells us
+        while i + z[i] &lt; n and s[z[i]] == s[i + z[i]]: z[i] += 1
+        if i + z[i] &gt; r: l, r = i, i + z[i]
+    return z</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="rabin-karp">Rabin-Karp and rolling hashes</h2>
+  <p>Compare <em>hashes</em> instead of strings. A polynomial hash can be updated in O(1) when the window slides one step: remove the leading character's contribution, shift, add the new one. Equal hashes are verified character by character, because different strings can collide.</p>
+  <div class="demo" id="rk-demo">
+    <h3>Rolling hash search</h3>
+    <div class="bar">
+      <label>Text <input type="text" class="wide" id="rk-t" value="abracadabra cadabra" maxlength="26"></label>
+      <label>Pattern <input type="text" id="rk-p" value="cad" maxlength="8" style="width:6rem"></label>
+      <label>modulus <input type="number" id="rk-m" value="17" style="width:5rem"></label>
+      <button type="button" id="rk-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+    <p class="cap muted">The tiny modulus 17 is chosen so you can see collisions (windows 10 and 11); real code uses a large prime (around 10<sup>9</sup>) or two moduli at once.</p>
+  </div>
+  <ul>
+    <li><strong>Substring equality in O(1):</strong> pre-compute prefix hashes <code>H[i]</code> and powers of the base; the hash of any substring is <code>H[r] - H[l] &middot; B<sup>r-l</sup></code>. Combined with binary search this finds the longest repeated substring or compares suffixes quickly.</li>
+    <li><strong>Hash attacks:</strong> a fixed base and modulus can be attacked with crafted inputs; choose a random base at runtime for adversarial settings.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="boyer-moore">Boyer-Moore and practical search</h2>
+  <p>
+    Boyer-Moore compares the pattern from <strong>right to left</strong> and, on a mismatch, uses two rules (bad character, good suffix) to skip ahead, often by the full pattern length.
+    On natural text it inspects only a fraction of the characters, so it gets <em>faster</em> as patterns get longer. Variants (Boyer-Moore-Horspool, two-way) power <code>grep</code>, text editors, and many standard library <code>find</code> functions; modern implementations add SIMD scanning for the first character.
+  </p>
+
+  <h2 id="aho">Aho-Corasick: many patterns at once</h2>
+  <p>Build a <a href="../advanced/index.html#trie">trie</a> of all patterns, then add <strong>failure links</strong> (like KMP's, but across the trie) computed by BFS. Scanning the text once follows trie edges and failure links and reports every pattern occurrence.</p>
+<pre class="pseudo">build trie of all patterns
+BFS from the root:  fail[child] = the deepest trie node that is a proper suffix of child's string
+                    output[child] also includes output[fail[child]]
+scan text:  node = root
+            for each character c:
+                while node has no edge c and node != root: node = fail[node]
+                if node has edge c: node = child(node, c)
+                report every pattern in output[node]</pre>
+  <p class="muted">Used by antivirus scanners, intrusion detection systems (Snort), spam and profanity filters, <code>fgrep</code>, and DNA motif search.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="manacher">Palindromes and Manacher's algorithm</h2>
+  <p>
+    Expanding around each of the 2n-1 centres finds the longest palindromic substring in O(n&sup2;) with O(1) memory: simple and often enough.
+    <strong>Manacher's algorithm</strong> does it in O(n): it remembers the rightmost palindrome found so far and mirrors already-known radii from the left side.
+  </p>
+<pre><code>def longest_palindrome(s):                   # Manacher, O(n)
+    t = "^#" + "#".join(s) + "#$"            # separators handle even lengths
+    p, c, r = [0] * len(t), 0, 0
+    for i in range(1, len(t) - 1):
+        if i &lt; r: p[i] = min(r - i, p[2 * c - i])     # mirror of i around c
+        while t[i + p[i] + 1] == t[i - p[i] - 1]: p[i] += 1
+        if i + p[i] &gt; r: c, r = i, i + p[i]
+    k = max(range(len(p)), key=p.__getitem__)
+    start = (k - p[k]) // 2
+    return s[start:start + p[k]]</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="suffix">Suffix arrays, LCP and suffix automata</h2>
+  <p>The <strong>suffix array</strong> lists the starting positions of all suffixes in sorted order. Every substring is a prefix of some suffix, so binary searching the suffix array finds any pattern in O(m log n). The <strong>LCP array</strong> (longest common prefix of neighbouring suffixes, Kasai's algorithm, O(n)) unlocks more:</p>
+  <ul>
+    <li>Longest repeated substring = max LCP.</li>
+    <li>Number of distinct substrings = n(n+1)/2 - sum(LCP).</li>
+    <li>Longest common substring of two strings: build on <code>a + "#" + b</code> and take the max LCP between suffixes from different strings.</li>
+  </ul>
+<pre><code>def suffix_array(s):                         # prefix doubling, O(n log^2 n): simple and fast enough
+    n, k = len(s), 1
+    rank = [ord(c) for c in s]; sa = list(range(n))
+    while True:
+        key = lambda i: (rank[i], rank[i + k] if i + k &lt; n else -1)
+        sa.sort(key=key)
+        new = [0] * n
+        for j in range(1, n): new[sa[j]] = new[sa[j - 1]] + (key(sa[j]) != key(sa[j - 1]))
+        rank = new
+        if rank[sa[-1]] == n - 1: return sa
+        k *= 2</code></pre>
+  <p class="muted">Faster builds: SA-IS and DC3 run in O(n). A <strong>suffix automaton</strong> (the smallest automaton accepting all substrings, at most 2n states) and <strong>suffix trees</strong> (Ukkonen's algorithm) answer the same questions in O(n). The <strong>FM-index</strong> (based on the Burrows-Wheeler transform) compresses the text and still allows fast search: it is the core of DNA read aligners such as BWA and Bowtie.</p>
+
+  <h2 id="more">More things to know about strings</h2>
+  <ul>
+    <li><strong>Regular expressions:</strong> Thompson's construction turns a regex into an NFA that runs in O(n&middot;m) without backtracking (RE2, Rust's regex, Go). Backtracking engines (PCRE, Python, JavaScript, .NET) support more features but can take exponential time on some patterns ("catastrophic backtracking", a real cause of outages, such as Cloudflare's in 2019).</li>
+    <li><strong>Burrows-Wheeler transform:</strong> sorts all rotations of the text; similar contexts end up together, which makes the output highly compressible (bzip2).</li>
+    <li><strong>Unicode:</strong> normalise (NFC/NFD) before comparing, and use library functions for case folding and grapheme clusters.</li>
+    <li><strong>Fuzzy matching at scale:</strong> n-gram indexes, BK-trees for edit distance, and the MinHash / embedding techniques on the <a href="../modern/index.html">modern algorithms page</a>.</li>
+  </ul>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Search:</strong> Ctrl+F, grep, IDE "find in files", full-text engines (Lucene, Elasticsearch use inverted indexes plus string algorithms).</li>
+    <li><strong>Security:</strong> intrusion detection and antivirus signatures (Aho-Corasick).</li>
+    <li><strong>Bioinformatics:</strong> genome assembly and read alignment (suffix arrays, FM-index, Smith-Waterman).</li>
+    <li><strong>Version control and sync:</strong> diff (LCS), rsync and deduplicating backups (rolling hashes / content-defined chunking).</li>
+    <li><strong>Plagiarism and near-duplicate detection:</strong> fingerprints from rolling hashes (winnowing, MOSS).</li>
+    <li><strong>Compression:</strong> LZ77/LZ78 (zip, gzip, zstd) find repeated substrings; BWT in bzip2.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Find the index of the first occurrence (strStr) <span class="diff easy">easy</span> <span class="tag">KMP / Z</span></summary>
+    <p>KMP (code above) gives O(n + m) guaranteed. In practice, the language's <code>str.find</code> is already optimised (CPython uses a two-way / Boyer-Moore-Horspool hybrid).</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Repeated substring pattern <span class="diff easy">easy</span> <span class="tag">prefix function</span></summary>
+    <p class="q">Is s made of a substring repeated several times ("abcabc")?</p>
+    <p>With the LPS array: let p = n - lps[n-1]; the answer is yes when lps[n-1] &gt; 0 and n % p == 0. The neat trick <code>s in (s + s)[1:-1]</code> also works.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Shortest palindrome by adding characters in front <span class="diff hard">hard</span> <span class="tag">KMP</span></summary>
+    <p>Find the longest palindromic prefix: compute lps of <code>s + "#" + s[::-1]</code>; its last value L is that length. Answer = <code>s[L:][::-1] + s</code>. O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Longest palindromic substring <span class="diff med">medium</span> <span class="tag">expand / Manacher</span></summary>
+<pre><code>def longest_pal(s):                            # expand around centres, O(n^2), O(1) space
+    best = ""
+    for c in range(len(s)):
+        for l, r in ((c, c), (c, c + 1)):        # odd and even centres
+            while l &gt;= 0 and r &lt; len(s) and s[l] == s[r]: l -= 1; r += 1
+            if r - l - 1 &gt; len(best): best = s[l + 1:r]
+    return best</code></pre>
+    <p>Manacher (above) does it in O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Count palindromic substrings <span class="diff med">medium</span> <span class="tag">expand around centres</span></summary>
+    <p>Same expansion as Q4, counting every successful expansion step. O(n&sup2;); with Manacher, sum of (p[i] + 1) // 2 over the transformed string gives O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Find all anagrams of p in s <span class="diff med">medium</span> <span class="tag">fixed window + counts</span></summary>
+<pre><code>def find_anagrams(s, p):
+    need, win, out = [0] * 26, [0] * 26, []
+    for c in p: need[ord(c) - 97] += 1
+    for i, c in enumerate(s):
+        win[ord(c) - 97] += 1
+        if i &gt;= len(p): win[ord(s[i - len(p)]) - 97] -= 1
+        if win == need: out.append(i - len(p) + 1)
+    return out</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q7. Longest duplicate substring <span class="diff hard">hard</span> <span class="tag">binary search + rolling hash</span></summary>
+    <p>If a duplicate of length L exists, one of length L-1 does too: binary search L. For a given L, hash every window of length L with a rolling hash and look for a repeat in a set (verify on collision). O(n log n) expected. A suffix array with LCP gives O(n log n) deterministically.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Search many keywords in one text <span class="diff hard">hard</span> <span class="tag">Aho-Corasick</span></summary>
+    <p>Build the Aho-Corasick automaton (pseudocode above) and scan the text once. Total time is linear in the text, the total length of the keywords, and the number of matches, instead of O(n &times; keywords).</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Number of distinct substrings <span class="diff hard">hard</span> <span class="tag">suffix array + LCP</span></summary>
+    <p>n(n+1)/2 total substrings minus the sum of the LCP array (each LCP counts prefixes shared with the previous suffix, i.e. duplicates). With a suffix automaton: sum over states of len(state) - len(link(state)).</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Longest common prefix of a list of strings <span class="diff easy">easy</span> <span class="tag">vertical scan / sort</span></summary>
+    <p>Compare character by character across all strings until one differs; or sort the list and compare only the first and last string. O(total length).</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Valid palindrome after deleting at most one character <span class="diff easy">easy</span> <span class="tag">two pointers</span></summary>
+    <p>Move inwards from both ends; at the first mismatch, check whether skipping the left or the right character leaves a palindrome. O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. String compression (run-length encoding) <span class="diff easy">easy</span> <span class="tag">read/write pointers</span></summary>
+    <p>"aaabcc" &rarr; "a3bc2": walk runs with a read pointer, write the character and its count (if &gt; 1) with a write pointer, in place. O(n).</p>
+  </details>
+
+  <div class="pager"><a href="../advanced/index.html">&larr; Advanced structures</a><a href="../math/index.html">Next: Math, bits and geometry &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Streaming API - Learning App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Streaming API: how does the server tell the browser "something new happened"?</h1>
+    <nav><a href="../index.html">&larr; All topics</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">The problem</h2>
+  <p>
+    Normal HTTP works like a phone call where only the browser can dial: the browser asks, the server answers, and the call ends.
+    The server cannot start a conversation. But many apps need exactly that: a new chat message, a price change, a finished job.
+  </p>
+  <p>This page walks through five ways to solve it and compares them side by side.</p>
+  <p class="muted">The examples come from a small ASP.NET Core sample (SQLite storage plus an in-memory broadcaster). Where the text says "the demo" or "here", it means that sample; the ideas apply to any stack.</p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Technique</th><th>One-line idea</th><th>Endpoint here</th>
+      </tr>
+      <tr><td><a href="#polling">Short polling</a></td><td>Ask again and again on a timer.</td><td><code>GET /messages?after=ID</code></td></tr>
+      <tr><td><a href="#longpoll">Long polling</a></td><td>Ask, and the server waits to answer until there is news.</td><td><code>GET /longpoll?after=ID</code></td></tr>
+      <tr><td><a href="#sse">Server-Sent Events</a></td><td>Keep one response open; the server keeps writing to it.</td><td><code>GET /stream</code></td></tr>
+      <tr><td><a href="#ndjson">HTTP streaming</a></td><td>Same idea, but plain JSON lines and no special protocol.</td><td><code>GET /stream/ndjson?after=ID</code></td></tr>
+      <tr><td><a href="#websocket">WebSocket</a></td><td>Upgrade to a two-way connection.</td><td><code>GET /ws?after=ID</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Sending a message is a normal <code>POST /messages</code> for every technique except WebSocket, which sends over its own connection.</p>
+  <p>Each technique has an <strong>Architecture &amp; system design</strong> box. For how it all fits into a real system with many servers, see <a href="#big-picture">The bigger picture</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="polling">1. Short polling</h2>
+  <p>The simplest idea. The page asks "anything new since message 7?" every few seconds. The server answers right away, even if the answer is "no".</p>
+
+  <figure class="anim" data-anim="polling"></figure>
+
+<pre><code>Browser                         Server
+   | GET /messages?after=7  --->  |
+   | &lt;--- []   (nothing new)     |
+   |        ... 2 seconds ...     |
+   | GET /messages?after=7  --->  |
+   | &lt;--- [{id:8, ...}]          |</code></pre>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>Trivial to build and debug; it is just normal requests.</li>
+        <li>Works everywhere: proxies, old browsers, serverless.</li>
+        <li>Server holds no connections open.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>Delay: up to the full polling interval (2s here).</li>
+        <li>Wasteful: most requests return nothing, but still pay for headers.</li>
+        <li>Faster polling means lower delay but more load.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card arch">
+    <h3>Architecture &amp; system design</h3>
+    <ul>
+      <li><strong>Server state:</strong> none. Each poll is an independent request, so any server instance can answer it. Round-robin load balancing, autoscaling and serverless functions all work with no changes.</li>
+      <li><strong>Load grows with clients, not with messages:</strong> 10,000 clients polling every 2s is 5,000 requests per second <em>even when nothing happens</em>, and each one usually touches the database. That idle load is the real cost.</li>
+      <li><strong>Making it cheaper:</strong> put a cache (e.g. Redis) in front of the database, return <code>304 Not Modified</code> with ETags, or let a CDN cache the answer for a second or two when every client sees the same data.</li>
+      <li><strong>Many servers:</strong> no extra pieces needed. The database is the single source of truth and the <code>after=</code> cursor means every poll just asks it "what is newer than X?".</li>
+      <li><strong>Reliability:</strong> naturally strong. The client drives everything with its cursor, so nothing is lost as long as the data is still stored.</li>
+      <li><strong>Mobile:</strong> waking the radio every few seconds drains battery and data, so mobile apps poll slowly or use push notifications instead.</li>
+    </ul>
+  </div>
+
+  <h3>Use cases</h3>
+  <ul>
+    <li>Dashboards that refresh every 30-60 seconds.</li>
+    <li>Checking the status of a background job ("is my export ready?").</li>
+    <li>Anything where a few seconds of delay is fine and simplicity matters most.</li>
+  </ul>
+
+  <h3>Code</h3>
+<pre><code>// browser
+setInterval(() =&gt; {
+  $.getJSON('/messages', { after: lastId }, msgs =&gt; msgs.forEach(show));
+}, 2000);
+
+// server (MessagesController)
+[HttpGet]
+public List&lt;Message&gt; Get([FromQuery] long after = 0) =&gt; store.GetAfter(after);</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="longpoll">2. Long polling</h2>
+  <p>
+    A smarter version of polling. The page asks "anything new since message 7?" and the server <em>does not answer yet</em> if there is nothing.
+    It holds the request open and answers the moment a message arrives (or after about 25 seconds, so the connection does not die of old age).
+    The page then immediately asks again.
+  </p>
+
+  <figure class="anim" data-anim="longpoll"></figure>
+
+<pre><code>Browser                         Server
+   | GET /longpoll?after=7  --->  |
+   |        ... waiting ...       |   (request stays open)
+   |                              |   &lt;- someone posts message 8
+   | &lt;--- [{id:8, ...}]          |
+   | GET /longpoll?after=8  --->  |   (ask again right away)</code></pre>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>Near-instant delivery, with far fewer empty requests than polling.</li>
+        <li>Still just plain HTTP, so it passes almost any proxy or firewall.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>A new request (with headers) after every message: costly if messages are frequent.</li>
+        <li>Messages that arrive between two requests must be caught up (that is what <code>after=</code> is for).</li>
+        <li>Each waiting client occupies a request on the server.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card arch">
+    <h3>Architecture &amp; system design</h3>
+    <ul>
+      <li><strong>Server state:</strong> one waiting request per client. The server must use asynchronous I/O (ASP.NET Core does) so waiting requests do not each tie up a thread; thread-per-request servers run out of threads quickly.</li>
+      <li><strong>Many servers:</strong> the request is waiting on server A, but the new message may be posted to server B. Servers therefore need a shared <em>backplane</em> (Redis pub/sub, Azure Service Bus, PostgreSQL LISTEN/NOTIFY) to tell each other "something new happened". Sticky sessions are not needed: every request is independent and the cursor resumes anywhere.</li>
+      <li><strong>Timeouts:</strong> every hop (load balancer, reverse proxy, corporate proxy) closes idle requests, often after about 60 seconds. The hold time must stay below the smallest one; this demo uses 25 seconds.</li>
+      <li><strong>Thundering herd:</strong> one broadcast message answers every waiting client at once, and they all send their next request at the same moment. At scale this creates load spikes; adding a little random delay (jitter) spreads them out.</li>
+      <li><strong>Cost per message:</strong> each delivery is a full HTTP request and response, including authentication and logging, so busy feeds cost much more than with a stream.</li>
+      <li><strong>Serverless:</strong> a poor fit. You pay for time spent waiting and hit execution time limits.</li>
+    </ul>
+  </div>
+
+  <h3>Use cases</h3>
+  <ul>
+    <li>Notifications and chat when WebSockets are blocked or unavailable (a classic fallback).</li>
+    <li>Low-to-medium traffic apps that need "instant" updates without special infrastructure.</li>
+  </ul>
+
+  <h3>Code</h3>
+<pre><code>// browser
+function ask() {
+  $.getJSON('/longpoll', { after: lastId }, msgs =&gt; { msgs.forEach(show); ask(); });
+}
+ask();
+
+// server (MessageFeed.WaitForAfter)
+var existing = store.GetAfter(afterId);
+if (existing.Count &gt; 0) return existing;          // news already waiting
+await subscription.Reader.ReadAsync(timeoutToken); // otherwise wait for a message
+return store.GetAfter(afterId);</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="sse">3. Server-Sent Events (SSE)</h2>
+  <p>
+    The browser makes one request and the server never finishes the response. It just keeps writing small text events to it as things happen.
+    The browser has a built-in <code>EventSource</code> that reads these events, reconnects automatically if the connection drops,
+    and tells the server the last event id it saw (<code>Last-Event-ID</code>) so the server can fill in what was missed.
+  </p>
+
+  <figure class="anim" data-anim="sse"></figure>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+id: 8
+event: message
+data: {"id":8,"text":"hello"}
+
+: ping                  &lt;- comment, used as keep-alive
+
+id: 9
+event: message
+data: {"id":9,"text":"world"}</code></pre>
+  <p class="muted">Each event ends with a blank line. That is the whole format.</p>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>Very simple on both sides; the browser does the hard work.</li>
+        <li>Automatic reconnect and resume.</li>
+        <li>Plain HTTP, so it works with normal auth, logging and proxies.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>One direction only: server to client.</li>
+        <li><code>EventSource</code> cannot set custom headers (auth tokens need cookies or a query string).</li>
+        <li>Text only (no binary).</li>
+        <li>Over HTTP/1.1 browsers allow only about 6 connections per site, shared across tabs. HTTP/2 removes this limit.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card arch">
+    <h3>Architecture &amp; system design</h3>
+    <ul>
+      <li><strong>Server state:</strong> one open connection per client, costing a socket and some memory for as long as the user stays. Async servers like Kestrel can hold many thousands per instance, but measure your own limit and set one (e.g. Kestrel's <code>MaxConcurrentConnections</code>).</li>
+      <li><strong>Many servers:</strong> each server only knows its own connections, so a message posted on server B must reach clients connected to server A through a backplane (Redis pub/sub, a message broker). <em>This demo's in-memory <code>Broadcaster</code> only works on a single server</em>; it is the piece you would replace to scale out.</li>
+      <li><strong>No sticky sessions needed:</strong> if events are stored durably and have ids, a reconnecting client can land on any server and resume from <code>Last-Event-ID</code>.</li>
+      <li><strong>Infrastructure:</strong> proxies must not buffer the response (this demo sends <code>X-Accel-Buffering: no</code>; response compression can also buffer), and heartbeats must be more frequent than the shortest idle timeout on the path. Serve it over HTTP/2 so many streams share one connection and the 6-connection browser limit disappears.</li>
+      <li><strong>Deployments:</strong> restarting a server drops all its connections at once and every client reconnects together (a reconnect storm). Use graceful shutdown, and spread reconnects with the <code>retry:</code> field and random backoff.</li>
+      <li><strong>Security:</strong> a connection can outlive the token that opened it, so decide what happens on expiry (close it and let the client reconnect with a fresh token). Avoid tokens in the URL where you can, because URLs end up in access logs.</li>
+      <li><strong>Reliability:</strong> event ids plus a stored history give <em>at-least-once</em> delivery; the client ignores ids it has already seen, which makes it effectively exactly-once.</li>
+    </ul>
+  </div>
+
+  <h3>Use cases</h3>
+  <ul>
+    <li>Live feeds, notifications, stock or sports tickers.</li>
+    <li>Progress of a long task (uploads, builds, deployments).</li>
+    <li>Streaming AI chat responses token by token.</li>
+  </ul>
+
+  <h3>Code</h3>
+<pre><code>// browser
+const es = new EventSource('/stream');
+es.addEventListener('message', e =&gt; show(JSON.parse(e.data)));
+
+// server (SseStreamController)
+Response.Headers.ContentType = "text/event-stream";
+await foreach (var m in feed.Stream(lastId, heartbeat, ct))
+{
+    await Response.WriteAsync($"id: {m.Id}\nevent: message\ndata: {json}\n\n", ct);
+    await Response.Body.FlushAsync(ct);   // without Flush the event sits in a buffer
+}</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="ndjson">4. HTTP streaming (NDJSON)</h2>
+  <p>
+    The same trick as SSE, with no special protocol on top. The server keeps one response open and writes one JSON object per line
+    (<em>NDJSON</em>, "newline-delimited JSON"). The page reads the body piece by piece with <code>fetch</code> and splits it into lines.
+    Because there is no <code>EventSource</code> to help, the page has to handle reconnecting and resuming itself (it passes <code>?after=</code>).
+  </p>
+
+  <figure class="anim" data-anim="ndjson"></figure>
+
+<pre><code>HTTP/1.1 200 OK
+Content-Type: application/x-ndjson
+Transfer-Encoding: chunked
+
+{"id":8,"text":"hello"}
+{"id":9,"text":"world"}
+                                &lt;- empty line = heartbeat
+{"id":10,"text":"again"}</code></pre>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>Works from any HTTP client: browsers, curl, mobile apps, backend services.</li>
+        <li>You control the headers (auth tokens work), unlike <code>EventSource</code>.</li>
+        <li>Easy to stream large results without loading everything in memory.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>No automatic reconnect or resume: you write it.</li>
+        <li>Some proxies buffer responses and break the "live" feel.</li>
+        <li>One direction only, like SSE.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card arch">
+    <h3>Architecture &amp; system design</h3>
+    <ul>
+      <li><strong>Same server model as SSE:</strong> one long-lived response per client, so the same points apply: memory per connection, a backplane to scale out, no proxy buffering, heartbeats below idle timeouts.</li>
+      <li><strong>Your protocol, your rules:</strong> nothing is standard beyond "one JSON object per line". You design the resume cursor (<code>?after=</code> here), error messages inside the stream and versioning, and every client has to implement them.</li>
+      <li><strong>Backpressure:</strong> if a client reads slowly, TCP slows the server's writes down and messages queue up on the server. Limit that queue per client: drop, merge, or disconnect slow readers. This demo uses an unbounded queue, which is fine for learning but a memory risk in production. The same applies to SSE and WebSocket.</li>
+      <li><strong>Large results:</strong> streaming rows as they are read (<code>IAsyncEnumerable</code> in ASP.NET Core) keeps server memory flat no matter how big an export is, and the client can start using data straight away.</li>
+      <li><strong>Between your own services:</strong> gRPC server streaming is the typed, more efficient alternative. Plain chunked JSON streams are common in public and infrastructure APIs (for example the Kubernetes "watch" and Docker events APIs) because any HTTP client can read them.</li>
+    </ul>
+  </div>
+
+  <h3>Use cases</h3>
+  <ul>
+    <li>APIs that return big result sets progressively (exports, search results, log tailing).</li>
+    <li>LLM and AI APIs that stream tokens to your backend or a custom client.</li>
+    <li>Server-to-server and command-line streaming, where <code>EventSource</code> does not exist.</li>
+  </ul>
+
+  <h3>Code</h3>
+<pre><code>// browser
+const res = await fetch('/stream/ndjson?after=' + lastId);
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split('\n');
+  buffer = lines.pop();                       // keep the incomplete last line
+  lines.filter(Boolean).forEach(l =&gt; show(JSON.parse(l)));
+}
+
+// server (NdjsonStreamController)
+Response.Headers.ContentType = "application/x-ndjson";
+await Response.WriteAsync(json + "\n", ct);
+await Response.Body.FlushAsync(ct);</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="websocket">5. WebSocket</h2>
+  <p>
+    The browser starts with a normal HTTP request that says "let's switch protocols". If the server agrees (<code>101 Switching Protocols</code>),
+    the connection stops being HTTP and becomes a persistent, <strong>two-way</strong> pipe. Either side can send a message at any moment.
+    A chat page, for example, can send each typed message up the socket instead of using a separate POST.
+  </p>
+
+  <figure class="anim" data-anim="websocket"></figure>
+
+<pre><code>Browser                              Server
+   | GET /ws  (Upgrade: websocket) --&gt; |
+   | &lt;-- 101 Switching Protocols ----- |
+   |                                    |
+   | &lt;==== {id:8,...} ================== |   server pushes
+   | ==== {"text":"hi"} ==============&gt; |   client sends on the same connection</code></pre>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>True two-way, low-latency communication.</li>
+        <li>Small overhead per message once connected.</li>
+        <li>Supports text and binary.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>No automatic reconnect or resume: you write it.</li>
+        <li>Not plain HTTP afterwards, so some proxies and load balancers need configuration.</li>
+        <li>Harder to scale and secure; you manage connection state yourself.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card arch">
+    <h3>Architecture &amp; system design</h3>
+    <ul>
+      <li><strong>Server state:</strong> one stateful, two-way connection per client, with buffers in both directions. You also need an application protocol on top: message types, acknowledgements, errors and versioning. Libraries such as SignalR, Socket.IO, or MQTT and STOMP over WebSocket provide one.</li>
+      <li><strong>Many servers:</strong> like SSE, a backplane is needed so a message reaches clients connected to other servers. Load balancers must support the <code>Upgrade</code> handshake. Raw WebSockets do not need sticky sessions (the connection lives on one server), but frameworks that negotiate first, such as SignalR on several servers, need them unless you use WebSockets only or a managed service.</li>
+      <li><strong>Lost HTTP features:</strong> after the handshake it is no longer HTTP. Per-request logging, caching, HTTP rate limiting and many WAF rules no longer see individual messages, so you add your own per-message validation, rate limiting and logging. Some corporate networks block WebSockets entirely, which is why fallbacks exist.</li>
+      <li><strong>Security:</strong> browsers do not apply CORS to WebSockets. Check the <code>Origin</code> header on the handshake (to prevent cross-site WebSocket hijacking), authenticate at connect time, and authorize every incoming message, not only the connection.</li>
+      <li><strong>Operations:</strong> plan for connection draining on deploys, reconnect storms, ping/pong heartbeats, and monitoring of open connections and per-connection memory.</li>
+      <li><strong>Managed services:</strong> Azure Web PubSub, Azure SignalR Service, AWS API Gateway WebSockets and providers such as Pusher or Ably hold the connections for you, so your servers stay stateless.</li>
+    </ul>
+  </div>
+
+  <h3>Use cases</h3>
+  <ul>
+    <li>Chat apps and collaborative editing.</li>
+    <li>Multiplayer games and live cursors.</li>
+    <li>Trading screens and anything where the client sends frequent small messages too.</li>
+  </ul>
+
+  <h3>Code</h3>
+<pre><code>// browser
+const ws = new WebSocket('ws://' + location.host + '/ws?after=' + lastId);
+ws.onmessage = e =&gt; show(JSON.parse(e.data));
+ws.send(JSON.stringify({ text: 'hello' }));   // client to server
+
+// server (WebSocketController)
+using var socket = await HttpContext.WebSockets.AcceptWebSocketAsync();
+await socket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);  // server to client
+var result = await socket.ReceiveAsync(buffer, ct);                   // client to server</code></pre>
+
+  <!-- ===================================================== -->
+  <h2>Side-by-side</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th></th><th>Short polling</th><th>Long polling</th><th>SSE</th><th>HTTP streaming</th><th>WebSocket</th>
+      </tr>
+      <tr><td>Direction</td><td>Client asks</td><td>Client asks</td><td>Server &rarr; client</td><td>Server &rarr; client</td><td>Both ways</td></tr>
+      <tr><td>Delivery delay</td><td>Up to the interval</td><td>Near instant</td><td>Near instant</td><td>Near instant</td><td>Near instant</td></tr>
+      <tr><td>Requests</td><td>One per interval</td><td>One per message</td><td>One</td><td>One</td><td>One (handshake)</td></tr>
+      <tr><td>Auto reconnect</td><td>You loop anyway</td><td>You loop anyway</td><td><strong>Built in</strong></td><td>You write it</td><td>You write it</td></tr>
+      <tr><td>Browser API</td><td><code>fetch</code> / ajax</td><td><code>fetch</code> / ajax</td><td><code>EventSource</code></td><td><code>fetch</code> + stream</td><td><code>WebSocket</code></td></tr>
+      <tr><td>Proxy / firewall friendly</td><td>Best</td><td>Very</td><td>Usually</td><td>Usually</td><td>Needs support</td></tr>
+      <tr><td>Complexity</td><td>Lowest</td><td>Low</td><td>Low</td><td>Medium</td><td>Highest</td></tr>
+      <tr><th colspan="6" style="text-align:left">System design</th></tr>
+      <tr><td>Server state per client</td><td>None</td><td>One waiting request</td><td>One open connection</td><td>One open connection</td><td>One two-way connection</td></tr>
+      <tr><td>Load driven by</td><td>Clients &times; poll rate</td><td>Messages &times; clients</td><td>Open connections</td><td>Open connections</td><td>Open connections + incoming messages</td></tr>
+      <tr><td>Scaling to many servers</td><td>Just works (DB is the truth)</td><td>Needs a backplane</td><td>Needs a backplane</td><td>Needs a backplane</td><td>Needs a backplane</td></tr>
+      <tr><td>Sticky sessions</td><td>No</td><td>No</td><td>No (resume by id)</td><td>No (resume by cursor)</td><td>Raw: no. Frameworks: often</td></tr>
+      <tr><td>Proxy / LB requirements</td><td>None</td><td>Hold time &lt; idle timeout</td><td>No buffering, heartbeats</td><td>No buffering, heartbeats</td><td>Upgrade support, heartbeats</td></tr>
+      <tr><td>HTTP caching / CDN</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
+      <tr><td>Serverless fit</td><td>Great</td><td>Poor</td><td>Limited</td><td>Limited</td><td>Via managed service</td></tr>
+      <tr><td>Mobile battery</td><td>Worst at short intervals</td><td>OK</td><td>Good</td><td>Good</td><td>Good</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="big-picture">The bigger picture: system design</h2>
+  <p>
+    The transport is only the last step. In a real system, a "live update" travels through several parts,
+    and most of the hard problems (scale, reliability, security) live in those parts, not in the choice between SSE and WebSocket.
+  </p>
+
+<pre><code>        Clients (browsers, mobile apps, other services)
+                 |  HTTPS / WSS
+        +--------v---------+
+        |  Load balancer / |   idle timeouts, Upgrade support,
+        |  reverse proxy   |   response buffering, TLS
+        +---+----------+---+
+            |          |
+     +------v---+  +---v------+
+     | App      |  | App      |   hold the open connections,
+     | server 1 |  | server 2 |   check who may see what
+     +--+----^--+  +--+----^--+
+        |    |        |    |
+        |  +-+--------+----+-------------+
+        |  |  Backplane / pub-sub        |   "message 42 exists" reaches
+        |  |  (Redis, Service Bus, Kafka)|   every server
+        |  +-----------------------------+
+        |
+     +--v-----------------+
+     | Database / log     |   source of truth; clients replay from
+     | (SQLite here)      |   their last id after a reconnect
+     +--------------------+</code></pre>
+
+  <p class="muted">
+    This demo squeezes all of this into one process: <code>MessageStore</code> is the database, and the in-memory <code>Broadcaster</code> plays the backplane.
+    That is why it only works on a single server.
+  </p>
+
+  <h3>1. Separate the write path from the push path</h3>
+  <p>
+    Saving a message (<code>POST /messages</code>) and pushing it to clients are two different jobs. Write to the database first, then publish an event saying it exists.
+    If the publish can fail after the write succeeded (or the other way round), use the <em>transactional outbox</em> pattern: store the event in the same database transaction and publish it from there, so the two never disagree.
+  </p>
+
+  <h3>2. Push is best effort; the stored log makes it reliable</h3>
+  <ul>
+    <li>Connections drop all the time (Wi-Fi changes, laptops sleep, deploys). Never rely on "the client was connected when it happened".</li>
+    <li>Give every event an increasing id and keep a history. Clients remember their last id and ask for everything after it when they reconnect (<code>after=</code> and <code>Last-Event-ID</code> here).</li>
+    <li>This gives <em>at-least-once</em> delivery. Clients ignore ids they have already seen, so it behaves as exactly-once.</li>
+    <li>Mind the gap between "replay history" and "go live": this demo subscribes <em>before</em> reading history and drops duplicates, so no message can slip through between the two (see <code>MessageFeed.Stream</code>).</li>
+    <li>Ordering is easy with one sequence (like here). With many partitions or shards, order is usually guaranteed only within one partition.</li>
+  </ul>
+
+  <h3>3. Open connections are a resource to plan for</h3>
+  <ul>
+    <li>Each connection costs memory, a socket, and capacity on every load balancer and proxy in the path. Managed services usually price by concurrent connections.</li>
+    <li>Plan capacity on <em>peak concurrent users</em>, not requests per second. Load test with realistic connection counts and idle periods.</li>
+    <li>Set limits, and decide what happens when they are reached: refuse new connections, or fall back to polling.</li>
+  </ul>
+
+  <h3>4. Slow consumers and backpressure</h3>
+  <p>
+    A client on a bad network reads slowly while messages keep coming. Without a limit, its queue on the server grows until memory runs out.
+    Use bounded queues per client and pick a policy: drop the oldest messages, merge updates (send only the latest state, e.g. the current price, not every tick), or disconnect the client and let it resume from its last id.
+  </p>
+
+  <h3>5. Timeouts and heartbeats along the whole path</h3>
+  <p>
+    Every hop between browser and server (corporate proxy, CDN, load balancer, reverse proxy, the server itself) closes connections that look idle, often after about 60 seconds.
+    Send heartbeats more often than the shortest timeout (15 seconds here), and keep long-poll hold times below it (25 seconds here).
+  </p>
+
+  <h3>6. Deployments and failures</h3>
+  <ul>
+    <li>A restart drops every connection on that server, and all those clients reconnect at the same moment.</li>
+    <li>Use graceful shutdown (stop accepting, let streams end cleanly), reconnect with random backoff (jitter), and make sure resuming from the last id is cheap for the database.</li>
+  </ul>
+
+  <h3>7. Security</h3>
+  <ul>
+    <li>Authenticate when the connection opens, and decide what happens when the token expires during a long-lived connection.</li>
+    <li>Authorize <em>fan-out</em>: when one event goes to many clients, check that each receiver may see it (users, groups, channels, tenants).</li>
+    <li>Rate-limit incoming messages (WebSocket) and new connections. Check <code>Origin</code> on WebSocket handshakes.</li>
+  </ul>
+
+  <h3>8. Observability</h3>
+  <p>
+    Track these numbers in production: open connections, messages delivered per second, delivery delay, reconnect rate, and per-client queue length.
+    A sudden jump in reconnects is often the first sign of a broken proxy or a bad deploy.
+  </p>
+
+  <h3>9. Build or buy</h3>
+  <ul>
+    <li><strong>ASP.NET Core SignalR</strong> wraps everything on this page: it picks the best transport automatically (WebSocket, then SSE, then long polling), and adds groups, reconnection and a Redis backplane.</li>
+    <li><strong>Azure SignalR Service / Azure Web PubSub</strong> (or AWS API Gateway WebSockets, Pusher, Ably) hold the connections for you, so your servers stay stateless and simple to scale.</li>
+    <li>Building it yourself is the best way to <em>understand</em> it. In production, most teams use a library or managed service and spend their effort on the data and security rules instead.</li>
+  </ul>
+
+  <h3>Questions to ask before choosing</h3>
+  <ol>
+    <li>Who sends: only the server, or both sides?</li>
+    <li>How often do updates happen, and how fast must they arrive?</li>
+    <li>How many clients are connected at the same time, at peak?</li>
+    <li>What is between the client and the server (corporate proxies, CDN, serverless platform)?</li>
+    <li>Who are the clients: browsers, mobile apps, or other services?</li>
+    <li>What happens if a client misses a message? Is a history to replay from needed?</li>
+  </ol>
+
+  <h2>Which one should I pick?</h2>
+  <ul>
+    <li><strong>Updates every minute or so, or you just need it working:</strong> short polling.</li>
+    <li><strong>Need instant updates and must work behind strict networks:</strong> long polling.</li>
+    <li><strong>The server pushes updates to the browser (the most common case):</strong> SSE. It is the best default.</li>
+    <li><strong>Streaming to non-browser clients, or you need custom headers:</strong> HTTP streaming (NDJSON).</li>
+    <li><strong>The client and server both send often (chat, games, collaboration):</strong> WebSocket.</li>
+    <li><strong>Many servers, or you do not want to manage connections at all:</strong> SignalR with a backplane, or a managed service such as Azure SignalR Service or Azure Web PubSub.</li>
+  </ul>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="anim.js"></script>
+  <script src="page.js"></script>
+</body>
+</html>

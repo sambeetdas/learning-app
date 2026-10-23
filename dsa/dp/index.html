@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dynamic Programming - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>13. Dynamic programming</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../recursion/index.html">&larr; Recursion</a><a href="../greedy-dc/index.html">Greedy &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is dynamic programming?</h2>
+  <p>
+    <strong>Dynamic programming (DP)</strong> solves a problem by combining answers to smaller sub-problems, storing each answer so it is computed only once.
+    It applies when a problem has two properties:
+  </p>
+  <ol>
+    <li><strong>Optimal substructure:</strong> the best answer is built from best answers to sub-problems (the shortest route to C through B uses the shortest route to B).</li>
+    <li><strong>Overlapping sub-problems:</strong> the same sub-problems come up again and again (naive Fibonacci recomputes fib(3) many times; see the <a href="../recursion/index.html#call-tree">call tree</a>).</li>
+  </ol>
+  <p>DP routinely turns exponential brute force into polynomial time. It is the technique behind diff tools, spell checkers, DNA alignment, speech recognition, route planning and reinforcement learning.</p>
+
+  <div class="cols">
+    <div class="card arch">
+      <h3>Top-down: memoisation</h3>
+      <p>Write the natural recursion, then cache results. Only computes the sub-problems actually needed.</p>
+<pre><code>from functools import cache
+@cache
+def fib(n):
+    return n if n &lt; 2 else fib(n - 1) + fib(n - 2)</code></pre>
+    </div>
+    <div class="card arch">
+      <h3>Bottom-up: tabulation</h3>
+      <p>Fill a table from the smallest sub-problems upwards. No recursion limit; easy to optimise space.</p>
+<pre><code>def fib(n):
+    a, b = 0, 1                   # keep only the last two values
+    for _ in range(n): a, b = b, a + b
+    return a</code></pre>
+    </div>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="method">How to design a DP solution</h2>
+<pre class="pseudo">1. STATE       What exactly does dp[...] mean?  ("dp[i] = best total using houses 0..i")
+               Choose the smallest set of parameters that determines the answer.
+2. TRANSITION  How does a state follow from smaller states?  (a choice: take / skip, which coin, which split)
+3. BASE CASES  The smallest states you know directly.
+4. ORDER       Fill states so that every dependency is already computed.
+5. ANSWER      Which state (or max over states) is the final answer?
+6. OPTIMISE    Keep only the rows you need; reconstruct the choices if asked.</pre>
+  <p class="muted">Rule of thumb: if you can write a brute-force recursion whose arguments are small numbers or indexes, and the same arguments repeat, memoising it is already a DP.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="one-d">1-D DP</h2>
+  <div class="demo" id="d1-demo">
+    <h3>Filling a 1-D table</h3>
+    <div class="bar">
+      <label>Problem <select id="d1-kind"><option value="robber">House robber</option><option value="coins">Coin change (fewest coins)</option><option value="stairs">Climbing stairs</option></select></label>
+      <span id="d1-arr-wrap"><label>values <input type="text" id="d1-arr" value="2, 7, 9, 3, 1, 5, 4"></label></span>
+      <span id="d1-amt-wrap" style="display:none"><label>amount / steps <input type="number" id="d1-amt" value="6" style="width:4rem"></label></span>
+      <button type="button" id="d1-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="two-d">2-D DP on two strings</h2>
+  <p>When the input is two sequences, the state is usually "the first i items of one and the first j of the other", giving an (n+1) &times; (m+1) table.</p>
+  <div class="demo" id="d2-demo">
+    <h3>LCS and edit distance tables</h3>
+    <div class="bar">
+      <label>Problem <select id="d2-kind"><option value="lcs">Longest common subsequence</option><option value="edit">Edit distance</option></select></label>
+      <label>s <input type="text" id="d2-s" value="ABCBDAB" maxlength="9" style="width:8rem"></label>
+      <label>t <input type="text" id="d2-t" value="BDCABA" maxlength="9" style="width:8rem"></label>
+      <button type="button" id="d2-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+    <div class="legend"><span><span class="sw m-a"></span>cell being filled</span><span><span class="sw m-b"></span>cells it depends on</span><span><span class="sw m-ok"></span>letters match</span><span><span class="sw m-p"></span>traceback path</span></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="knapsack">The knapsack family</h2>
+  <p>Choose items with weights and values to maximise value within a capacity. It models budgets, cargo loading, portfolio selection, and many subset problems in disguise (partition equal subset sum, target sum).</p>
+  <div class="demo" id="ks-demo">
+    <h3>0/1 knapsack table</h3>
+    <div class="bar">
+      <label>Items (weight value; ...) <input type="text" class="wide" id="ks-items" value="1 1; 3 4; 4 5; 5 7"></label>
+      <label>capacity <input type="number" id="ks-w" value="7" style="width:4rem"></label>
+      <button type="button" id="ks-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre><code>def knapsack(items, W):              # 0/1, one row, O(W) memory
+    dp = [0] * (W + 1)
+    for w, v in items:
+        for c in range(W, w - 1, -1):     # right to left: each item used at most once
+            dp[c] = max(dp[c], dp[c - w] + v)
+    return dp[W]
+# Unbounded knapsack (items reusable, e.g. coin change): loop c from left to right instead.</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Variant</th><th>Twist</th><th>Example</th></tr>
+      <tr><td>0/1 knapsack</td><td>Each item once</td><td>Partition equal subset sum, target sum</td></tr>
+      <tr><td>Unbounded</td><td>Items reusable</td><td>Coin change, rod cutting</td></tr>
+      <tr><td>Bounded</td><td>Item i up to k<sub>i</sub> times</td><td>Binary splitting of counts, or monotonic-queue optimisation</td></tr>
+      <tr><td>Counting</td><td>Number of ways instead of max</td><td>Coin change II (combinations)</td></tr>
+    </table>
+  </div>
+  <p class="muted">Knapsack is NP-hard in general: O(n&middot;W) is "pseudo-polynomial" because W can be exponentially large in its number of digits.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="lis">Longest increasing subsequence</h2>
+  <div class="demo" id="lis-demo">
+    <h3>LIS in O(n log n)</h3>
+    <div class="bar"><label>Array <input type="text" class="wide" id="lis-arr" value="10, 9, 2, 5, 3, 7, 101, 18, 4, 20"></label><button type="button" id="lis-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="patterns">DP patterns catalogue</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Pattern</th><th>Typical state</th><th>Problems</th></tr>
+      <tr><td><strong>Linear sequence</strong></td><td>dp[i] = answer for a prefix ending at / up to i</td><td>Climbing stairs, house robber, decode ways, max subarray (Kadane), word break</td></tr>
+      <tr><td><strong>Grid paths</strong></td><td>dp[r][c] from the cell above and the cell to the left</td><td>Unique paths, minimum path sum, dungeon game, maximal square</td></tr>
+      <tr><td><strong>Knapsack / subset sum</strong></td><td>dp[i][capacity]</td><td>0/1 knapsack, partition, target sum, coin change</td></tr>
+      <tr><td><strong>Two sequences</strong></td><td>dp[i][j] for prefixes of both</td><td>LCS, edit distance, regex / wildcard matching, interleaving strings</td></tr>
+      <tr><td><strong>Subsequence of one sequence</strong></td><td>dp[i] = best ending at i</td><td>LIS, longest palindromic subsequence, Russian doll envelopes</td></tr>
+      <tr><td><strong>Intervals</strong></td><td>dp[l][r] over a sub-range, trying every split point</td><td>Matrix-chain multiplication, burst balloons, optimal BST, palindrome partitioning</td></tr>
+      <tr><td><strong>State machine</strong></td><td>dp[i][state] (holding / not holding / cooling down)</td><td>Stock problems with cooldown, fees or k transactions</td></tr>
+      <tr><td><strong>Trees</strong></td><td>dp[node][flag] computed from children (postorder)</td><td>House robber III, tree diameter, maximum independent set on a tree</td></tr>
+      <tr><td><strong id="bitmask">Bitmask</strong></td><td>dp[mask][last] over subsets (n &le; ~20)</td><td>Travelling salesman, assignment, shortest superstring</td></tr>
+      <tr><td><strong>Digits</strong></td><td>dp[position][tight][state] over the digits of a bound</td><td>Count numbers up to N with some digit property</td></tr>
+      <tr><td><strong>DAG / graph</strong></td><td>dp[v] in topological order</td><td>Longest path in a DAG, number of paths, Bellman-Ford (DP over edge counts)</td></tr>
+      <tr><td><strong>Probability / games</strong></td><td>dp[state] = expected value or win/lose</td><td>Dice problems, stone game, minimax with memo</td></tr>
+    </table>
+  </div>
+<pre><code># Bitmask DP: travelling salesman, O(2^n * n^2)
+def tsp(d):
+    n = len(d); INF = float('inf')
+    dp = [[INF] * n for _ in range(1 &lt;&lt; n)]
+    dp[1][0] = 0                                  # visited {0}, standing at city 0
+    for mask in range(1 &lt;&lt; n):
+        for last in range(n):
+            if dp[mask][last] == INF or not mask &gt;&gt; last &amp; 1: continue
+            for nxt in range(n):
+                if mask &gt;&gt; nxt &amp; 1: continue
+                m2 = mask | 1 &lt;&lt; nxt
+                dp[m2][nxt] = min(dp[m2][nxt], dp[mask][last] + d[last][nxt])
+    return min(dp[(1 &lt;&lt; n) - 1][v] + d[v][0] for v in range(n))</code></pre>
+
+  <h3>Optimisation techniques (advanced)</h3>
+  <ul>
+    <li><strong>Rolling arrays:</strong> keep only the previous row (2-D &rarr; 1-D memory).</li>
+    <li><strong>Prefix sums</strong> over the previous row to make a sum-over-range transition O(1).</li>
+    <li><strong>Monotonic deque</strong> for "max of dp over the last k states" (sliding-window DP).</li>
+    <li><strong>Binary search</strong> inside the transition (LIS, weighted interval scheduling).</li>
+    <li><strong>Convex hull trick / Li Chao tree:</strong> transitions of the form <code>min(m_j &middot; x + b_j)</code> in O(log n) or O(1) amortised.</li>
+    <li><strong>Divide-and-conquer and Knuth optimisations:</strong> when the best split point is monotonic, reduce O(n&sup3;) interval DP to O(n&sup2;), or O(k n&sup2;) to O(k n log n).</li>
+    <li><strong>Bitsets</strong> for subset-sum style DPs: process 64 states per machine word.</li>
+    <li><strong>Matrix exponentiation</strong> for linear recurrences: the n-th Fibonacci number in O(log n) (see <a href="../math/index.html#matrix">math</a>).</li>
+  </ul>
+
+  <h3>DP vs greedy vs divide and conquer</h3>
+  <ul>
+    <li><strong>Greedy</strong> makes one locally best choice and never looks back; fast, but only correct for special problems (see <a href="../greedy-dc/index.html">greedy</a>).</li>
+    <li><strong>Divide and conquer</strong> splits into <em>independent</em> sub-problems (merge sort); no overlap, so nothing to cache.</li>
+    <li><strong>DP</strong> handles <em>overlapping</em> sub-problems and tries all choices, keeping the best.</li>
+  </ul>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Application</th><th>DP inside</th></tr>
+      <tr><td><code>diff</code>, Git, code review tools</td><td>LCS / Myers' diff algorithm on lines</td></tr>
+      <tr><td>Spell checkers, fuzzy search, autocorrect</td><td>Edit distance</td></tr>
+      <tr><td>Bioinformatics</td><td>Needleman-Wunsch (global) and Smith-Waterman (local) sequence alignment</td></tr>
+      <tr><td>Speech recognition, part-of-speech tagging, GPS map matching</td><td>Viterbi algorithm on hidden Markov models</td></tr>
+      <tr><td>TeX and word processors</td><td>Knuth-Plass optimal line breaking</td></tr>
+      <tr><td>Reinforcement learning, robotics</td><td>Bellman equation, value iteration</td></tr>
+      <tr><td>Finance and operations</td><td>Knapsack-style budgeting, inventory and option pricing (binomial trees)</td></tr>
+      <tr><td>Compilers and databases</td><td>Instruction selection; query optimisers choose join orders with DP over subsets</td></tr>
+      <tr><td>Image processing</td><td>Seam carving (content-aware resizing) finds minimum-energy paths</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Climbing stairs / Fibonacci <span class="diff easy">easy</span> <span class="tag">1-D</span></summary>
+    <p>dp[i] = dp[i-1] + dp[i-2]; keep two variables. <span class="big g">O(n)</span>, O(1). With step sizes from a set S: dp[i] = &Sigma; dp[i - s].</p>
+  </details>
+
+  <details class="prob"><summary>Q2. House robber II (houses in a circle) <span class="diff med">medium</span> <span class="tag">1-D, two runs</span></summary>
+    <p>The first and last houses are neighbours. Answer = max(rob(houses[1:]), rob(houses[:-1])), running the linear version (animated) twice.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Coin change and coin change II <span class="diff med">medium</span> <span class="tag">unbounded knapsack</span></summary>
+<pre><code>def min_coins(coins, amount):
+    dp = [0] + [float('inf')] * amount
+    for x in range(1, amount + 1):
+        for c in coins:
+            if c &lt;= x: dp[x] = min(dp[x], dp[x - c] + 1)
+    return dp[amount] if dp[amount] != float('inf') else -1
+
+def count_ways(coins, amount):           # combinations: coins in the OUTER loop
+    dp = [1] + [0] * amount
+    for c in coins:
+        for x in range(c, amount + 1): dp[x] += dp[x - c]
+    return dp[amount]</code></pre>
+    <p>Swapping the loops in count_ways would count ordered sequences (permutations) instead of combinations.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Longest increasing subsequence <span class="diff med">medium</span> <span class="tag">DP / patience</span></summary>
+    <p>O(n&sup2;): <code>dp[i] = 1 + max(dp[j] for j &lt; i if a[j] &lt; a[i])</code>. O(n log n): the tails array with binary search (animated above).</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Longest common subsequence <span class="diff med">medium</span> <span class="tag">2-D</span></summary>
+<pre><code>def lcs(s, t):
+    dp = [[0] * (len(t) + 1) for _ in range(len(s) + 1)]
+    for i in range(1, len(s) + 1):
+        for j in range(1, len(t) + 1):
+            dp[i][j] = dp[i-1][j-1] + 1 if s[i-1] == t[j-1] else max(dp[i-1][j], dp[i][j-1])
+    return dp[-1][-1]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q6. Edit distance <span class="diff hard">hard</span> <span class="tag">2-D</span></summary>
+    <p>Recurrence animated above: match &rarr; diagonal; otherwise 1 + min(delete, insert, replace). <span class="big y">O(n&middot;m)</span>; O(min(n, m)) memory with two rows.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Partition equal subset sum <span class="diff med">medium</span> <span class="tag">0/1 knapsack (boolean)</span></summary>
+<pre><code>def can_partition(a):
+    total = sum(a)
+    if total % 2: return False
+    reach = {0}
+    for x in a: reach |= {s + x for s in reach}       # or a bitset: bits |= bits &lt;&lt; x
+    return total // 2 in reach</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q8. Unique paths with obstacles <span class="diff med">medium</span> <span class="tag">grid</span></summary>
+<pre><code>def unique_paths(grid):
+    C = len(grid[0]); dp = [0] * C; dp[0] = 1
+    for row in grid:
+        for c in range(C):
+            if row[c] == 1: dp[c] = 0                 # obstacle
+            elif c: dp[c] += dp[c - 1]                # from above (dp[c]) + from the left
+    return dp[-1]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q9. Word break <span class="diff med">medium</span> <span class="tag">1-D over prefixes</span></summary>
+<pre><code>def word_break(s, words):
+    ws, n = set(words), len(s)
+    dp = [True] + [False] * n                       # dp[i]: s[:i] can be segmented
+    for i in range(1, n + 1):
+        dp[i] = any(dp[j] and s[j:i] in ws for j in range(max(0, i - 20), i))   # 20 = longest word
+    return dp[n]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q10. Decode ways <span class="diff med">medium</span> <span class="tag">1-D</span></summary>
+    <p class="q">'A'=1 ... 'Z'=26. How many ways to decode a digit string?</p>
+    <p>dp[i] = (dp[i-1] if s[i-1] != '0') + (dp[i-2] if 10 &le; int(s[i-2:i]) &le; 26). Like climbing stairs with conditions. O(n).</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Longest palindromic substring / subsequence <span class="diff med">medium</span> <span class="tag">interval</span></summary>
+    <p>Subsequence: <code>dp[l][r] = dp[l+1][r-1] + 2</code> if s[l] == s[r], else max(dp[l+1][r], dp[l][r-1]). Substring: expand around each of the 2n-1 centres in O(n&sup2;) with O(1) memory, or Manacher's algorithm in O(n) (see <a href="../strings/index.html#manacher">strings</a>).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Stock trading with cooldown <span class="diff med">medium</span> <span class="tag">state machine</span></summary>
+<pre><code>def max_profit(prices):
+    hold, sold, rest = float('-inf'), 0, 0
+    for p in prices:
+        hold, sold, rest = max(hold, rest - p), hold + p, max(rest, sold)
+    return max(sold, rest)</code></pre>
+    <p>Three states per day: holding a share, just sold (must cool down), resting. Each transition is one line.</p>
+  </details>
+
+  <details class="prob"><summary>Q13. Burst balloons <span class="diff hard">hard</span> <span class="tag">interval DP</span></summary>
+    <p class="q">Bursting balloon i earns left &times; i &times; right of its current neighbours. Maximise the total.</p>
+    <p>Think about the <em>last</em> balloon k burst in (l, r): its neighbours are then the fixed boundaries l and r. <code>dp[l][r] = max over k of dp[l][k] + dp[k][r] + a[l]&middot;a[k]&middot;a[r]</code> (with 1s padded at both ends). O(n&sup3;).</p>
+  </details>
+
+  <details class="prob"><summary>Q14. Regular expression matching ('.' and '*') <span class="diff hard">hard</span> <span class="tag">two sequences</span></summary>
+<pre><code>def is_match(s, p):
+    dp = [[False] * (len(p) + 1) for _ in range(len(s) + 1)]
+    dp[0][0] = True
+    for j in range(2, len(p) + 1):
+        dp[0][j] = p[j-1] == '*' and dp[0][j-2]           # "a*b*" can match ""
+    for i in range(1, len(s) + 1):
+        for j in range(1, len(p) + 1):
+            if p[j-1] == '*':
+                dp[i][j] = dp[i][j-2] or (p[j-2] in (s[i-1], '.') and dp[i-1][j])   # zero, or one more
+            else:
+                dp[i][j] = p[j-1] in (s[i-1], '.') and dp[i-1][j-1]
+    return dp[-1][-1]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q15. Weighted job scheduling <span class="diff hard">hard</span> <span class="tag">DP + binary search</span></summary>
+    <p class="q">Jobs have start, end and profit; choose non-overlapping jobs with maximum profit.</p>
+    <p>Sort by end time. dp[i] = max(dp[i-1], profit[i] + dp[j]) where j is the last job ending before job i starts, found with binary search. O(n log n). (Unweighted, a greedy works; see greedy.)</p>
+  </details>
+
+  <details class="prob"><summary>Q16. Maximal square of 1s <span class="diff med">medium</span> <span class="tag">grid</span></summary>
+    <p><code>dp[r][c] = 1 + min(dp[r-1][c], dp[r][c-1], dp[r-1][c-1])</code> for a 1-cell: the largest square ending at (r, c). Answer = (max dp)&sup2;. O(R&middot;C).</p>
+  </details>
+
+  <div class="pager"><a href="../recursion/index.html">&larr; Recursion</a><a href="../greedy-dc/index.html">Next: Greedy and divide and conquer &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CDN - Learning App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>CDN: Content Delivery Network</h1>
+    <nav><a href="../dns/index.html">&larr; DNS</a><a href="../index.html">All topics</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is a CDN and why use one?</h2>
+  <p>
+    A CDN is a network of servers spread around the world that sit between your users and your <strong>origin</strong> (the server that really owns the content).
+    The first request for a file goes to the origin; the CDN keeps a copy, and later users nearby get that copy straight from a close-by <strong>edge</strong> server.
+  </p>
+  <p>The three reasons to use one:</p>
+  <ul>
+    <li><strong>Speed:</strong> light in fibre takes roughly 1 ms per 100 km one way, so a round trip from India to a US origin costs well over 200 ms before any work is done. An edge in the same city cuts that to a few milliseconds, and also shortens TCP/TLS handshakes.</li>
+    <li><strong>Offload:</strong> if 95% of requests are answered by the edge, the origin serves only 5% of the traffic, so it needs far less capacity and bandwidth.</li>
+    <li><strong>Resilience and protection:</strong> traffic spikes and DDoS attacks are absorbed across hundreds of locations, and cached content can keep being served for a while even if the origin is down.</li>
+  </ul>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="architecture">Architecture</h2>
+<pre><code>   Users (Mumbai, Paris, Sydney ...)
+        |  nearest edge, picked by DNS or anycast
+   +----v-----+  +----------+  +----------+
+   |  Edge    |  |  Edge    |  |  Edge    |     hundreds of Points of Presence (PoPs)
+   |  PoP     |  |  PoP     |  |  PoP     |     each: TLS termination, cache, WAF
+   +----+-----+  +----+-----+  +----+-----+
+        |  miss       |  miss       |  miss
+   +----v-------------v-------------v-----+
+   |  Regional / shield cache (optional)   |     collapses many edge misses into one
+   +------------------+--------------------+
+                      |  one request
+   +------------------v--------------------+
+   |  Origin: web server, object storage,  |     the source of truth
+   |  load balancer, API                   |
+   +---------------------------------------+</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Part</th><th>What it does</th></tr>
+      <tr><td><strong>Edge / PoP</strong></td><td>A data center (or rack in an ISP) close to users. Terminates TLS, checks the cache, applies security rules, serves or forwards the request.</td></tr>
+      <tr><td><strong>Request routing</strong></td><td>Gets the user to a good edge. Either <strong>DNS-based</strong> (the CDN's DNS answers with the IP of a nearby edge; see the <a href="../dns/index.html">DNS topic</a>) or <strong>anycast</strong> (every edge announces the same IP and the network routes to the nearest). Many CDNs combine both.</td></tr>
+      <tr><td><strong>Regional / tiered cache (origin shield)</strong></td><td>An intermediate cache layer. Edges ask it instead of the origin, so a file missing in 200 edges still produces one origin request. Names vary: CloudFront Origin Shield, Cloudflare Tiered Cache, Fastly Shielding.</td></tr>
+      <tr><td><strong>Origin</strong></td><td>Your server, object storage (S3, Azure Blob), or an app behind a load balancer. Must set good caching headers and allow only the CDN to reach it, if possible.</td></tr>
+      <tr><td><strong>Control plane</strong></td><td>Configuration, rules, certificates, purge API and analytics. Changes are pushed to every edge (seconds to minutes).</td></tr>
+    </table>
+  </div>
+
+  <h3>Pull vs push CDN</h3>
+  <ul>
+    <li><strong>Pull (the normal one):</strong> the CDN fetches from your origin on demand and caches. Simple: just point it at your origin.</li>
+    <li><strong>Push:</strong> you upload files to the CDN's own storage ahead of time. Used for large, rarely changing files (game patches, installers) where you control exactly what is where.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="flow">Request flow and the cache simulator</h2>
+  <ol>
+    <li>The browser resolves the hostname (CNAME to the CDN) and connects to a nearby edge.</li>
+    <li>The edge builds a <strong>cache key</strong> (usually host + path + selected query strings/headers) and looks it up.</li>
+    <li><strong>HIT:</strong> fresh copy found, served immediately.</li>
+    <li><strong>MISS:</strong> not cached or expired; the edge fetches from the origin (or shield), stores the response if the headers allow, and returns it.</li>
+    <li><strong>BYPASS / no-store:</strong> not cacheable (for example a personalised API), so every request goes to the origin; the CDN still adds TLS and network benefits.</li>
+  </ol>
+
+  <div class="demo" id="cdn-demo">
+    <h3>Edge cache simulator</h3>
+    <p class="muted">One edge server, simulated clock. Hit = 20 ms, going to the origin adds 180 ms.</p>
+    <div class="sim-grid">
+      <div>
+        <div class="bar" id="cdn-assets"></div>
+        <div class="bar">
+          <button type="button" data-act="burst" class="primary">100 users load /index.html</button>
+          <button type="button" data-act="wait30">Wait 30 s</button>
+          <button type="button" data-act="wait1h">Wait 1 hour</button>
+          <button type="button" data-act="purge" class="danger">Purge all</button>
+          <button type="button" data-act="reset">Reset</button>
+        </div>
+        <div class="stat-row">
+          <div>Clock<b id="c-clock">0 s</b></div>
+          <div>Requests<b id="c-req">0</b></div>
+          <div>Hit ratio<b id="c-ratio">-</b></div>
+          <div>Origin requests<b id="c-origin">0</b></div>
+        </div>
+        <div class="log" id="cdn-log"></div>
+      </div>
+      <div>
+        <strong>Edge cache contents</strong>
+        <ul class="cache-list" id="cdn-cache"></ul>
+      </div>
+    </div>
+    <p class="muted">Try: request <code>/index.html</code> twice (MISS then HIT), wait 30 s then again (still HIT), wait another 30 s (expired, MISS again). Request the versioned JS file: it stays cached for a year. Request <code>/api/cart</code>: always BYPASS.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="caching">Caching rules and headers</h2>
+  <p>The origin tells the CDN (and browsers) how to cache with HTTP headers. Getting these right is 80% of CDN success.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Header / directive</th><th>Meaning</th></tr>
+      <tr><td><code>Cache-Control: max-age=N</code></td><td>Fresh for N seconds, in browsers and shared caches.</td></tr>
+      <tr><td><code>s-maxage=N</code></td><td>Like max-age, but only for shared caches (CDNs). Lets you cache longer at the edge than in browsers.</td></tr>
+      <tr><td><code>public</code> / <code>private</code></td><td><code>private</code>: only the user's browser may store it, not the CDN (per-user content).</td></tr>
+      <tr><td><code>no-store</code></td><td>Do not store anywhere. Use for sensitive responses.</td></tr>
+      <tr><td><code>no-cache</code></td><td>May store, but must revalidate with the origin before every reuse (cheap with <code>ETag</code>).</td></tr>
+      <tr><td><code>immutable</code></td><td>The file will never change at this URL; do not even revalidate. Pair with a long max-age and versioned file names.</td></tr>
+      <tr><td><code>stale-while-revalidate=N</code></td><td>Serve a stale copy instantly while refreshing in the background for up to N seconds. Hides origin latency.</td></tr>
+      <tr><td><code>stale-if-error=N</code></td><td>If the origin is failing, serve the stale copy for up to N seconds. Free resilience.</td></tr>
+      <tr><td><code>ETag</code>, <code>Last-Modified</code></td><td>Validators. The edge asks "has it changed?" (<code>If-None-Match</code>); the origin answers <code>304 Not Modified</code> with no body.</td></tr>
+      <tr><td><code>Vary</code></td><td>Lists request headers that change the response. <code>Vary: Accept-Encoding</code> is fine; <code>Vary: Cookie</code> or <code>User-Agent</code> shatters the cache into many copies.</td></tr>
+      <tr><td><code>Age</code></td><td>Response header: how many seconds the copy has been in a cache. Useful for debugging.</td></tr>
+    </table>
+  </div>
+
+<pre><code># Fingerprinted assets (app.3f9a1c.js, styles.9b21.css): cache for a year, never revalidate
+Cache-Control: public, max-age=31536000, immutable
+
+# HTML pages: short at the edge, always fresh in browsers, survive origin trouble
+Cache-Control: public, max-age=0, s-maxage=60, stale-while-revalidate=30, stale-if-error=3600
+
+# Personalised or sensitive API responses
+Cache-Control: private, no-store</code></pre>
+
+  <h3>The cache key</h3>
+  <p>
+    Two requests share a cached copy only if their <strong>cache keys</strong> match. By default the key is the host and full URL.
+    Decide deliberately what else belongs in it:
+  </p>
+  <ul>
+    <li><strong>Query strings:</strong> ignore tracking parameters (<code>utm_*</code>, <code>fbclid</code>), include only the ones that change the content (<code>?page=2</code>). Otherwise every campaign link is a miss.</li>
+    <li><strong>Headers:</strong> normalise <code>Accept-Encoding</code> (gzip/br) and, if needed, device class or language into a small set of values instead of passing the raw header.</li>
+    <li><strong>Cookies:</strong> forwarding cookies to the origin usually makes the CDN treat each user as unique. Strip them for static content, whitelist only the ones that matter.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="invalidation">Invalidation: changing content that is cached</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Approach</th><th>How</th><th>Notes</th></tr>
+      <tr><td><strong>Versioned (fingerprinted) URLs</strong></td><td><code>app.3f9a1c.js</code> - the name changes when the content changes.</td><td>Best approach. Cache for a year, no purge ever needed. Only the HTML that references the files needs a short TTL.</td></tr>
+      <tr><td><strong>Short TTL</strong></td><td>Let copies expire on their own.</td><td>Simple; costs more origin requests.</td></tr>
+      <tr><td><strong>Purge / invalidate</strong></td><td>API call to remove a URL, a pattern or everything.</td><td>Seconds to minutes to take effect worldwide. Often limited or billed per request. Purging everything makes the next wave hit the origin all at once.</td></tr>
+      <tr><td><strong>Surrogate keys / cache tags</strong></td><td>Tag responses (<code>Surrogate-Key: product-42</code>) and purge by tag.</td><td>Fastly, Cloudflare (Enterprise tags), others. Ideal for e-commerce and CMS pages.</td></tr>
+      <tr><td><strong>Soft purge</strong></td><td>Mark as stale rather than delete; serve stale while refetching.</td><td>Avoids a stampede on the origin.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Use case</th><th>How a CDN helps</th></tr>
+      <tr><td><strong>Static websites and SPAs</strong></td><td>HTML, JS, CSS, fonts served from the edge. The origin can be plain object storage (S3, Azure Blob Storage).</td></tr>
+      <tr><td><strong>Images and media</strong></td><td>Huge bandwidth savings; many CDNs resize, crop and convert images to WebP/AVIF on the fly based on the requesting device.</td></tr>
+      <tr><td><strong>Video on demand and live streaming</strong></td><td>HLS/DASH split video into small segments (2-10 s) that cache well. Live manifests get a very short TTL, segments a longer one. Scales to millions of viewers without scaling the origin.</td></tr>
+      <tr><td><strong>Software and game downloads</strong></td><td>Large files, popular at release time. <code>Range</code> requests and segment caching let downloads resume and the edge cache big objects in chunks.</td></tr>
+      <tr><td><strong>Dynamic sites and APIs</strong></td><td>Even uncacheable responses go faster: the user does the TLS handshake with a nearby edge, which keeps warm, optimised connections to the origin. Cacheable API responses (catalogue, config, public data) can use short TTLs, such as 5-30 seconds.</td></tr>
+      <tr><td><strong>E-commerce and flash sales</strong></td><td>Absorb the spike on product and category pages; keep cart and checkout dynamic.</td></tr>
+      <tr><td><strong>Global SaaS</strong></td><td>Consistent performance across regions; failover between origins in different regions.</td></tr>
+      <tr><td><strong>Security perimeter</strong></td><td>DDoS absorption, WAF, bot management, rate limiting, geo restrictions, TLS termination with managed certificates, all before traffic reaches the origin.</td></tr>
+      <tr><td><strong>Edge compute</strong></td><td>Run small functions at the edge: redirects, A/B tests, header rewriting, auth token checks, personalisation, image rules (Cloudflare Workers, CloudFront Functions / Lambda@Edge, Fastly Compute, Akamai EdgeWorkers).</td></tr>
+      <tr><td><strong>Protecting paid or private content</strong></td><td>Signed URLs or signed cookies with an expiry, so only authorised users can fetch files through the CDN.</td></tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">Good</h3>
+      <ul>
+        <li>Lower latency and faster page loads worldwide.</li>
+        <li>Much lower load and egress cost on the origin.</li>
+        <li>Handles traffic spikes and attacks.</li>
+        <li>Built-in HTTP/2, HTTP/3, Brotli, TLS and image optimisation.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Not so good</h3>
+      <ul>
+        <li>Stale content if caching is misconfigured; invalidation is not instant.</li>
+        <li>Another layer to configure, debug and pay for.</li>
+        <li>Personalised content needs care to avoid leaks.</li>
+        <li>Little benefit if all users and the origin are in one location, or for very low traffic.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="design">System design considerations</h2>
+  <div class="card arch">
+    <h3>Origin design</h3>
+    <ul>
+      <li><strong>Lock down the origin:</strong> if users can bypass the CDN, they bypass its WAF and DDoS protection. Allow only the CDN: private storage with CloudFront Origin Access Control or Azure Front Door private link, CDN IP allow-lists, or a secret header the origin checks.</li>
+      <li><strong>Origin failover:</strong> configure a secondary origin (another region or bucket) that the CDN switches to on errors or timeouts. Combine with <code>stale-if-error</code>.</li>
+      <li><strong>Use an origin shield:</strong> raises the hit ratio and reduces origin load, at the cost of slightly higher latency on a full miss and a small extra fee.</li>
+      <li><strong>Request collapsing:</strong> when 1,000 users ask for the same missing file at once, the edge should send one origin request and make the rest wait. Check that this is enabled, especially for large files and live video.</li>
+      <li><strong>Cache negative responses carefully:</strong> briefly cache 404s to protect the origin; do not cache 5xx errors for long.</li>
+    </ul>
+  </div>
+  <div class="card arch">
+    <h3>Delivery and deployment</h3>
+    <ul>
+      <li><strong>Separate static and dynamic:</strong> e.g. <code>/static/*</code> and <code>/assets/*</code> with a long TTL, <code>/api/*</code> with no caching, using path-based behaviours/rules on one domain.</li>
+      <li><strong>Deploy safely with a SPA:</strong> upload new fingerprinted assets first, then update <code>index.html</code>. Keep old assets for a while so users with a cached HTML still find their JS.</li>
+      <li><strong>Compression:</strong> serve Brotli or gzip for text; never double-compress images.</li>
+      <li><strong>Protocols:</strong> enable HTTP/2 and HTTP/3 (QUIC) at the edge; the CDN can talk HTTP/1.1 to a simple origin.</li>
+      <li><strong>TLS:</strong> use CDN-managed certificates on your custom domain; keep the CDN-to-origin hop on HTTPS as well.</li>
+      <li><strong>CORS:</strong> if responses vary by <code>Origin</code>, add it to the cache key or <code>Vary</code>, or a response cached for one site may be served to another and fail.</li>
+      <li><strong>Multi-CDN:</strong> large players use two or more CDNs behind DNS-based steering for resilience and price leverage. Costs: duplicate configuration and uneven features.</li>
+    </ul>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="security">Security</h2>
+  <ul>
+    <li><strong>DDoS and WAF:</strong> attacks hit the huge edge network instead of your origin; WAF rules block injection, bots and abusive IPs at the edge.</li>
+    <li><strong>Cache poisoning:</strong> an attacker sends a request with an unexpected header (for example <code>X-Forwarded-Host</code>) that the origin reflects into the response, and the CDN caches the poisoned response for everyone. Keep headers that influence the response either in the cache key or ignored by the origin.</li>
+    <li><strong>Web cache deception:</strong> a user-specific page that is wrongly cached because of its URL (like <code>/account/profile.css</code>) can be fetched by someone else. Base caching on explicit headers, not only file extensions, and send <code>private, no-store</code> for personal pages.</li>
+    <li><strong>Never cache responses with <code>Set-Cookie</code> or authenticated data</strong> unless the cache key includes the identity on purpose.</li>
+    <li><strong>Signed URLs / cookies, token authentication, hotlink protection, geo-blocking</strong> control who may fetch content.</li>
+    <li><strong>Subdomain takeover:</strong> a DNS <code>CNAME</code> left pointing at a deleted CDN endpoint can be claimed by someone else. Clean up DNS when you remove an endpoint (see <a href="../dns/index.html#security">DNS security</a>).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="metrics">Metrics and cost</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>Why it matters</th></tr>
+      <tr><td><strong>Cache hit ratio</strong> (requests and bytes)</td><td>The headline number. Static sites should be above 90%. A low ratio usually points to cache-key problems (cookies, query strings, <code>Vary</code>) or too-short TTLs.</td></tr>
+      <tr><td>Origin offload / origin requests per second</td><td>What your servers actually see; size the origin for the miss rate, not the user rate.</td></tr>
+      <tr><td>Time to first byte (p50/p95/p99) by region</td><td>Shows whether users get the speed benefit, and where.</td></tr>
+      <tr><td>4xx / 5xx rate, origin errors, timeouts</td><td>Catches broken deploys and origin outages early.</td></tr>
+      <tr><td>Bandwidth and request counts</td><td>Main cost drivers: data transfer out, HTTP requests, invalidations, and extras such as edge compute, WAF rules and log delivery. Edge egress is usually cheaper than origin egress.</td></tr>
+    </table>
+  </div>
+
+  <h2 id="providers">Common providers</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Provider</th><th>Notes</th></tr>
+      <tr><td>Amazon CloudFront</td><td>Tight AWS integration (S3, ALB, Lambda@Edge, CloudFront Functions, WAF, Shield).</td></tr>
+      <tr><td>Azure Front Door / Azure CDN</td><td>Front Door combines CDN, global load balancing and WAF with Azure origins.</td></tr>
+      <tr><td>Google Cloud CDN / Media CDN</td><td>Works with Cloud Load Balancing and Cloud Storage buckets.</td></tr>
+      <tr><td>Cloudflare</td><td>Very large anycast network, DNS, WAF and DDoS included, Workers edge compute.</td></tr>
+      <tr><td>Akamai</td><td>One of the oldest and largest; strong in enterprise, media and security.</td></tr>
+      <tr><td>Fastly</td><td>Programmable (VCL, Compute), instant purge and surrogate keys.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="pitfalls">Common pitfalls</h2>
+  <ul>
+    <li><strong>Everything is a miss:</strong> cookies forwarded to origin, <code>Vary: Cookie</code>, unique query strings, or <code>Cache-Control: no-cache</code>/<code>private</code> set by the framework by default.</li>
+    <li><strong>Caching the wrong thing:</strong> personal data, error pages, redirects to login. Verify with real requests before going live.</li>
+    <li><strong>Users see an old version:</strong> long TTL on a non-versioned file. Fingerprint file names or shorten the TTL; remember browsers cache too.</li>
+    <li><strong>Origin falls over after a purge:</strong> purging everything sends all traffic to the origin at once. Purge narrowly, use soft purge, or enable a shield and request collapsing.</li>
+    <li><strong>Uncached big files:</strong> some CDNs only cache objects up to a size limit unless range caching is enabled.</li>
+    <li><strong>Forgetting the browser cache:</strong> a CDN purge does not clear what is already in users' browsers.</li>
+    <li><strong>Debugging blind:</strong> not knowing which edge answered; use the debug headers below.</li>
+  </ul>
+
+  <h2 id="debug">Debugging with curl</h2>
+<pre><code># Show cache status, age and cache headers (PowerShell: use curl.exe)
+curl.exe -sI https://www.example.com/app.3f9a1c.js
+
+HTTP/2 200
+cache-control: public, max-age=31536000, immutable
+age: 8312                      &lt;- seconds this copy has been cached
+x-cache: Hit from cloudfront   &lt;- CloudFront (also: X-Cache: Miss from cloudfront)
+cf-cache-status: HIT           &lt;- Cloudflare (HIT, MISS, EXPIRED, BYPASS, DYNAMIC)
+x-served-by: cache-bom1234     &lt;- Fastly: which edge answered
+
+# Is revalidation working?
+curl.exe -sI -H "If-None-Match: &quot;abc123&quot;" https://www.example.com/index.html   # expect 304
+
+# Which IP / PoP am I hitting? (resolves via the CDN's DNS)
+nslookup www.example.com</code></pre>
+
+  <h2 id="quick">Quick reference</h2>
+  <ul>
+    <li><strong>Static files:</strong> fingerprint the names, <code>max-age=31536000, immutable</code>.</li>
+    <li><strong>HTML:</strong> short <code>s-maxage</code> with <code>stale-while-revalidate</code> and <code>stale-if-error</code>.</li>
+    <li><strong>Personalised / sensitive:</strong> <code>private, no-store</code>, and keep it out of the CDN cache.</li>
+    <li><strong>Big audience or video:</strong> enable shield and request collapsing; test at expected peak.</li>
+    <li><strong>Always:</strong> lock down the origin, monitor hit ratio, and plan how you will invalidate before you need to.</li>
+  </ul>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="simulator.js"></script>
+  <script src="page.js"></script>
+</body>
+</html>

@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Machine Learning - Learning App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Machine Learning</h1>
+    <nav><a href="../index.html">&larr; All topics</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is machine learning?</h2>
+  <p>
+    In normal programming you write the rules: <em>if the amount is over 10,000 and the country is new, flag it</em>.
+    In machine learning (ML) you give the computer <strong>examples</strong> (inputs together with the right answers) and it works out the rules itself,
+    as a mathematical function called a <strong>model</strong>. You then use the model to make predictions on data it has never seen.
+  </p>
+<pre><code>Traditional programming:   rules + data      ---&gt;  answers
+Machine learning:          data + answers    ---&gt;  rules (the model)
+                           new data + model  ---&gt;  predictions</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Term</th><th>Meaning</th><th>Example</th></tr>
+      <tr><td><strong>AI</strong></td><td>The broad goal: machines doing tasks that normally need human intelligence. Includes rule-based systems and search.</td><td>Chess engine, chatbot, route planner</td></tr>
+      <tr><td><strong>Machine learning</strong></td><td>AI where the behaviour is learned from data instead of hand-coded.</td><td>Spam filter, price prediction</td></tr>
+      <tr><td><strong>Deep learning</strong></td><td>ML using many-layered neural networks. Dominates images, speech, text and other unstructured data.</td><td>Face recognition, translation</td></tr>
+      <tr><td><strong>Generative AI / LLMs</strong></td><td>Very large deep models trained to produce text, images, code or audio.</td><td>ChatGPT-style assistants, image generators</td></tr>
+      <tr><td><strong>Data science</strong></td><td>The wider craft of getting insight from data: analysis, statistics, ML, communication.</td><td>Analysing why sales dropped</td></tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h3 class="pro">ML is a good fit when</h3>
+      <ul>
+        <li>The rules are too many or too fuzzy to write by hand (is this photo a cat?).</li>
+        <li>The pattern changes over time and the system must adapt (fraud, trends).</li>
+        <li>You have enough relevant, reasonably clean data with outcomes.</li>
+        <li>An imperfect but fast prediction is still valuable, and mistakes are affordable.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="con">Do not use ML when</h3>
+      <ul>
+        <li>A simple rule or formula solves it (tax calculation, "is it a weekend").</li>
+        <li>You have little data, or no way to know the right answers.</li>
+        <li>Every decision must be 100% correct and fully explainable by law or safety.</li>
+        <li>You cannot maintain it: models degrade and need monitoring and retraining.</li>
+      </ul>
+    </div>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="types">Types of learning</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Type</th><th>You provide</th><th>The model learns to</th><th>Typical tasks</th></tr>
+      <tr><td><strong>Supervised</strong></td><td>Inputs with known answers (labels)</td><td>Predict the label for new inputs</td><td>Classification (spam or not), regression (house price)</td></tr>
+      <tr><td><strong>Unsupervised</strong></td><td>Inputs only, no answers</td><td>Find structure on its own</td><td>Clustering customers, anomaly detection, dimensionality reduction, topic discovery</td></tr>
+      <tr><td><strong>Semi-supervised</strong></td><td>A few labels and a lot of unlabelled data</td><td>Use the unlabelled data to do better than labels alone</td><td>Medical images where labelling is expensive</td></tr>
+      <tr><td><strong>Self-supervised</strong></td><td>Raw data; the labels are made from the data itself</td><td>Predict hidden parts (the next word, a masked patch)</td><td>How LLMs and many vision models are pre-trained</td></tr>
+      <tr><td><strong>Reinforcement</strong></td><td>An environment with rewards</td><td>Choose actions that maximise long-term reward by trial and error</td><td>Game playing, robotics, bidding, ad and content selection</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="problems">Problem types and real use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Problem type</th><th>Question it answers</th><th>Use cases</th><th>Common algorithms</th></tr>
+      <tr><td><strong>Classification</strong></td><td>Which category?</td><td>Spam, fraud, churn, disease diagnosis, defect detection, sentiment, loan default</td><td>Logistic regression, gradient boosting, random forest, neural networks</td></tr>
+      <tr><td><strong>Regression</strong></td><td>How much?</td><td>Price, delivery time, energy use, insurance claim cost, remaining machine life</td><td>Linear/ridge regression, gradient boosting, neural networks</td></tr>
+      <tr><td><strong>Time-series forecasting</strong></td><td>What happens next?</td><td>Demand, sales, traffic, server load, stock levels</td><td>ARIMA/ETS, Prophet, gradient boosting with lags, LSTM, temporal transformers</td></tr>
+      <tr><td><strong>Clustering</strong></td><td>Which items are alike?</td><td>Customer segments, grouping documents, image grouping</td><td>k-means, DBSCAN, hierarchical, Gaussian mixtures</td></tr>
+      <tr><td><strong>Anomaly detection</strong></td><td>What is unusual?</td><td>Fraud, intrusion, equipment faults, data quality issues</td><td>Isolation Forest, one-class SVM, autoencoders, statistical tests</td></tr>
+      <tr><td><strong>Recommendation / ranking</strong></td><td>What should we show first?</td><td>Products, videos, search results, news feed, ads</td><td>Matrix factorization, two-tower models, learning-to-rank (LambdaMART), bandits</td></tr>
+      <tr><td><strong>Dimensionality reduction</strong></td><td>How to simplify many features?</td><td>Visualisation, noise removal, compression, faster models</td><td>PCA, t-SNE, UMAP, autoencoders</td></tr>
+      <tr><td><strong>Computer vision</strong></td><td>What is in this image or video?</td><td>Quality inspection, medical imaging, OCR, self-driving, face unlock</td><td>CNNs, vision transformers, YOLO, segmentation networks</td></tr>
+      <tr><td><strong>Natural language processing</strong></td><td>What does this text mean?</td><td>Support triage, translation, summarisation, search, entity extraction, chat assistants</td><td>Transformers, embeddings, LLMs, TF-IDF + linear models</td></tr>
+      <tr><td><strong>Speech and audio</strong></td><td>What was said / what sound is it?</td><td>Voice assistants, transcription, call analytics</td><td>Transformer / conformer models (Whisper-style)</td></tr>
+      <tr><td><strong>Generation</strong></td><td>Create new content</td><td>Code assistants, marketing copy, image and video generation, synthetic data</td><td>LLMs, diffusion models, GANs</td></tr>
+      <tr><td><strong>Decision making / optimisation</strong></td><td>What action to take?</td><td>Dynamic pricing, routing, inventory, resource allocation, robotics</td><td>Reinforcement learning, bandits, ML plus mathematical optimisation</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="lifecycle">The ML project lifecycle</h2>
+  <p>Modelling is only a small part. Most real effort goes into data and into running the model reliably afterwards.</p>
+  <ol>
+    <li><strong>Frame the problem.</strong> What decision will the prediction change? What does success look like in business terms (money saved, minutes reduced)? What is the cost of each type of mistake? What is the simplest non-ML baseline?</li>
+    <li><strong>Collect and understand the data.</strong> Where does it come from, how are labels produced, how reliable are they? Explore distributions, gaps, outliers and leaks.</li>
+    <li><strong>Clean and prepare.</strong> Missing values, duplicates, wrong units, inconsistent categories.</li>
+    <li><strong>Engineer features.</strong> Turn raw data into signals the model can use (counts, ratios, time since last event, text embeddings). Often the biggest accuracy gain.</li>
+    <li><strong>Split the data</strong> into training, validation and test sets, before any fitting.</li>
+    <li><strong>Train a baseline, then better models.</strong> Start simple (logistic regression, a small tree model) and add complexity only if it pays off.</li>
+    <li><strong>Evaluate</strong> with metrics that match the business cost, on data the model never saw. Look at errors by segment, not only averages.</li>
+    <li><strong>Tune and iterate.</strong> Hyperparameters, features, data quality, model choice.</li>
+    <li><strong>Deploy.</strong> Batch scoring, real-time API, streaming or on-device.</li>
+    <li><strong>Monitor and retrain.</strong> The world changes; model quality quietly decays unless you watch it.</li>
+  </ol>
+  <div class="card note">
+    <h3>Rule of thumb</h3>
+    <p>Roughly 60-80% of the time goes into data work (collecting, cleaning, labelling, features) and deployment, not into choosing algorithms. Better data usually beats a fancier model.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="training">How a model learns: gradient descent</h2>
+  <p>
+    A model has adjustable numbers called <strong>parameters</strong> (weights). A <strong>loss function</strong> measures how wrong its predictions are.
+    Training means nudging the parameters to make the loss smaller. The standard method, <strong>gradient descent</strong>, computes which direction reduces the loss fastest and takes a small step that way, over and over.
+    The step size is the <strong>learning rate</strong>.
+  </p>
+
+  <div class="demo">
+    <h3>Watch a line learn to fit data</h3>
+    <div class="bar">
+      <button type="button" id="gd-play" class="primary">Play</button>
+      <button type="button" id="gd-step">Step</button>
+      <button type="button" id="gd-reset">Reset</button>
+      <label>Learning rate <input type="range" id="gd-lr" min="0.01" max="1" step="0.01" value="0.2"> <b id="gd-lr-val">0.20</b></label>
+    </div>
+    <div class="canvases">
+      <figure style="margin:0"><canvas class="plot" id="gd-fit" width="520" height="320"></canvas><figcaption>The line (blue) moves towards the points as it learns.</figcaption></figure>
+      <figure style="margin:0"><canvas class="plot" id="gd-loss" width="520" height="320"></canvas><figcaption>Loss (error) per step: it should fall and flatten out.</figcaption></figure>
+    </div>
+    <div class="readout" id="gd-stats"></div>
+    <p class="cap">Try: learning rate 0.05 (slow but steady), 0.2 (good), 0.9 (the loss explodes: steps overshoot the minimum and the model diverges).</p>
+  </div>
+
+  <ul>
+    <li><strong>Stochastic / mini-batch gradient descent:</strong> real systems compute each step on a small batch of examples rather than the whole dataset. Noisier, but much faster on big data.</li>
+    <li><strong>One pass through the data</strong> is an <em>epoch</em>. Training runs many epochs, usually stopping when validation error stops improving (<em>early stopping</em>).</li>
+    <li><strong>Optimizers</strong> such as Adam improve on plain gradient descent by adapting the step size per parameter.</li>
+    <li><strong>Tree-based models</strong> (random forest, gradient boosting) learn differently, by splitting data into groups, but still minimise a loss.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="data">Data: the part that matters most</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Topic</th><th>What to know</th></tr>
+      <tr><td><strong>Train / validation / test split</strong></td><td>Train fits the model; validation is for choosing models and settings; the <strong>test set is touched once</strong>, at the end, for an honest estimate. For time-ordered data, split by time (train on the past, test on the future), never randomly.</td></tr>
+      <tr><td><strong>Cross-validation</strong></td><td>Rotate the validation fold (for example 5 times) to get a more stable estimate when data is limited.</td></tr>
+      <tr><td><strong>Data leakage</strong></td><td>Information from the future or from the answer sneaking into the features, giving great test scores and a useless model in production. Examples: a "cancellation date" column in a churn model, scaling or imputing on the full dataset before splitting, duplicate rows across train and test. <em>If results look too good, suspect leakage.</em></td></tr>
+      <tr><td><strong>Class imbalance</strong></td><td>When one class is rare (fraud, disease), a model that always says "no" scores 99.9% accuracy. Use class weights, resampling, better metrics (precision/recall, PR-AUC) and a tuned decision threshold.</td></tr>
+      <tr><td><strong>Missing values</strong></td><td>Impute (median, most frequent, model-based) and add a "was missing" flag; missingness is often informative. Some tree libraries handle gaps natively.</td></tr>
+      <tr><td><strong>Scaling</strong></td><td>Needed for distance-based and gradient-based models (kNN, SVM, linear models, neural networks); not needed for trees. Fit the scaler on training data only.</td></tr>
+      <tr><td><strong>Encoding categories</strong></td><td>One-hot for few categories, target/frequency encoding or embeddings for many. Handle unseen categories at prediction time.</td></tr>
+      <tr><td><strong>Feature engineering</strong></td><td>Ratios, counts over time windows, time since last event, interaction terms, date parts (weekday, month), text embeddings, aggregates by group. Domain knowledge here beats model tuning.</td></tr>
+      <tr><td><strong>Label quality</strong></td><td>Wrong or inconsistent labels cap what any model can reach. Measure agreement between labellers, audit samples, and budget time for labelling.</td></tr>
+      <tr><td><strong>Outliers</strong></td><td>Decide whether they are errors (remove) or rare real events (keep, they may be the whole point, as in fraud).</td></tr>
+      <tr><td><strong>Enough data?</strong></td><td>Learning curves help: if validation error is still dropping as you add data, more data will help; if it is flat, improve features or model instead.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="fit">Overfitting, underfitting and the bias-variance trade-off</h2>
+  <p>
+    A model that is <strong>too simple</strong> misses the real pattern (<em>underfitting</em>, high <strong>bias</strong>).
+    A model that is <strong>too flexible</strong> memorises the noise in the training data and fails on new data (<em>overfitting</em>, high <strong>variance</strong>).
+    The goal is the sweet spot where error on <em>unseen</em> data is lowest. This is the central idea of ML.
+  </p>
+
+  <div class="demo">
+    <h3>Fit a curve to 12 noisy points</h3>
+    <div class="bar">
+      <label>Model complexity (polynomial degree) <input type="range" id="of-deg" min="1" max="11" step="1" value="3"> <b id="of-deg-val">3</b></label>
+      <label>Regularization
+        <select id="of-reg">
+          <option value="0.000000001">None</option>
+          <option value="0.01">Light</option>
+          <option value="0.1">Medium</option>
+          <option value="1">Strong</option>
+        </select>
+      </label>
+    </div>
+    <div class="canvases">
+      <figure style="margin:0"><canvas class="plot" id="of-fit" width="520" height="320"></canvas><figcaption>The model (blue) versus the true pattern (dashed).</figcaption></figure>
+      <figure style="margin:0"><canvas class="plot" id="of-err" width="520" height="320"></canvas><figcaption>Training error keeps falling; test error turns upward when the model overfits.</figcaption></figure>
+    </div>
+    <div class="readout" id="of-stats"></div>
+    <p class="cap">Try: degree 1 (underfit), 3 (good), 11 (overfit: wiggles through every dot). Then keep degree 11 and raise regularization: the curve calms down and test error drops.</p>
+  </div>
+
+  <h3>How to fight overfitting</h3>
+  <ul>
+    <li><strong>More (and more varied) data</strong>, or data augmentation (flip, crop, add noise to images).</li>
+    <li><strong>Simpler model</strong>, fewer features, shallower trees.</li>
+    <li><strong>Regularization:</strong> penalise large weights (L2 / ridge, L1 / lasso which also removes features), dropout in neural networks, limiting tree depth.</li>
+    <li><strong>Early stopping:</strong> stop training when validation error starts to rise.</li>
+    <li><strong>Cross-validation</strong> to notice the problem early, and <strong>ensembles</strong> to average it out.</li>
+  </ul>
+  <p class="muted">Diagnosis: high training error and high test error = underfitting. Low training error but much higher test error = overfitting.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="algorithms">Key algorithms and when to use them</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>Type</th><th>Good for</th><th>Strengths</th><th>Watch out for</th></tr>
+      <tr><td><strong>Linear / ridge / lasso regression</strong></td><td>Regression</td><td>Baselines, interpretable numeric prediction</td><td>Fast, simple, explainable coefficients</td><td>Only linear relationships unless you add features</td></tr>
+      <tr><td><strong>Logistic regression</strong></td><td>Classification</td><td>Baselines, credit scoring, text with TF-IDF, calibrated probabilities</td><td>Fast, interpretable, hard to overfit</td><td>Linear decision boundary</td></tr>
+      <tr><td><strong>Decision tree</strong></td><td>Both</td><td>Rules a human can read</td><td>Handles mixed data, no scaling, visual</td><td>A single tree overfits easily</td></tr>
+      <tr><td><strong>Random forest</strong></td><td>Both</td><td>Strong default on tabular data</td><td>Robust, few settings, feature importance</td><td>Large and slower than one model; not the most accurate</td></tr>
+      <tr><td><strong>Gradient boosting (XGBoost, LightGBM, CatBoost)</strong></td><td>Both</td><td><strong>Best choice for most tabular / spreadsheet-style problems</strong></td><td>Top accuracy, handles missing values, fast</td><td>Needs tuning; can overfit noisy data</td></tr>
+      <tr><td><strong>Support vector machine</strong></td><td>Both</td><td>Medium-size datasets with clear margins; text</td><td>Effective in high dimensions</td><td>Slow on very large data; needs scaling</td></tr>
+      <tr><td><strong>k-nearest neighbours</strong></td><td>Both</td><td>Simple baselines, similarity search</td><td>No training, easy to grasp</td><td>Slow at prediction time; suffers with many features</td></tr>
+      <tr><td><strong>Naive Bayes</strong></td><td>Classification</td><td>Quick text classification and spam filtering</td><td>Extremely fast, works with little data</td><td>Assumes features are independent</td></tr>
+      <tr><td><strong>k-means</strong></td><td>Clustering</td><td>Customer segments, compression</td><td>Fast, simple</td><td>Must choose k; assumes round clusters of similar size</td></tr>
+      <tr><td><strong>DBSCAN / HDBSCAN</strong></td><td>Clustering</td><td>Odd-shaped clusters and noise detection</td><td>No need to choose k; finds outliers</td><td>Sensitive to its distance setting</td></tr>
+      <tr><td><strong>PCA, t-SNE, UMAP</strong></td><td>Dimension reduction</td><td>Visualising and compressing features</td><td>Reveals structure</td><td>t-SNE/UMAP distances are not literal; use for exploration</td></tr>
+      <tr><td><strong>Isolation Forest / autoencoder</strong></td><td>Anomaly detection</td><td>Rare, unlabelled problems (fraud, faults)</td><td>No labels needed</td><td>"Unusual" is not always "bad"; needs threshold tuning</td></tr>
+      <tr><td><strong>Neural networks (MLP)</strong></td><td>Both</td><td>Large data, complex relationships</td><td>Very flexible</td><td>Data-hungry, needs tuning; often beaten by boosting on tabular data</td></tr>
+      <tr><td><strong>CNN</strong></td><td>Deep learning</td><td>Images, video, spectrograms</td><td>Learns visual features automatically</td><td>Needs lots of data or transfer learning</td></tr>
+      <tr><td><strong>RNN / LSTM / GRU</strong></td><td>Deep learning</td><td>Sequences, sensor and time-series data</td><td>Remembers order</td><td>Slow to train; largely replaced by transformers for text</td></tr>
+      <tr><td><strong>Transformer</strong></td><td>Deep learning</td><td>Text, code, and increasingly images, audio, time series</td><td>Uses attention to relate all parts of the input; parallel training</td><td>Expensive to train; start from a pre-trained model</td></tr>
+    </table>
+  </div>
+
+  <h3>Two classic algorithms, animated</h3>
+
+  <div class="demo">
+    <h3>k-means clustering (unsupervised)</h3>
+    <p class="muted">No labels. The algorithm discovers groups by repeating two steps: assign each point to the nearest centre, then move each centre to the middle of its points.</p>
+    <div class="bar">
+      <label>Number of clusters (k)
+        <select id="km-k"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option></select>
+      </label>
+      <button type="button" id="km-step" class="primary">Step</button>
+      <button type="button" id="km-play">Play</button>
+      <button type="button" id="km-reset">Restart centroids</button>
+      <button type="button" id="km-new">New data</button>
+    </div>
+    <canvas class="plot" id="km" width="720" height="320"></canvas>
+    <div class="readout"><span id="km-status"></span><br>Round: <b id="km-iter">0</b> &middot; Total distance to centres (inertia): <b id="km-inertia">-</b></div>
+    <p class="cap">Try: press "Restart centroids" several times: different starting points can give different results. Set k to 2 or 6 on the same data to see why choosing k matters.</p>
+  </div>
+
+  <div class="demo">
+    <h3>k-nearest neighbours (supervised classification)</h3>
+    <p class="muted">To classify a new point, look at its <b>k</b> closest labelled neighbours and take a vote. The coloured background shows what the model would predict at each location.</p>
+    <div class="bar">
+      <label>k <input type="range" id="knn-k" min="1" max="25" step="1" value="5"> <b id="knn-k-val">5</b></label>
+      <label><input type="radio" name="knn-class" value="0" checked> <span class="dot" style="background:#2563eb"></span>add class A</label>
+      <label><input type="radio" name="knn-class" value="1"> <span class="dot" style="background:#e11d48"></span>add class B</label>
+      <button type="button" id="knn-clear">Reset points</button>
+    </div>
+    <canvas class="plot" id="knn" width="720" height="320"></canvas>
+    <div class="readout" id="knn-note"></div>
+    <p class="cap">Click on the plot to add your own points and watch the boundary move.</p>
+  </div>
+
+  <h3>Choosing quickly</h3>
+  <ul>
+    <li><strong>Tabular data with labels:</strong> start with logistic/linear regression as a baseline, then try gradient boosting. That pair solves most business problems.</li>
+    <li><strong>Images, audio, video:</strong> fine-tune a pre-trained deep network (CNN or vision transformer).</li>
+    <li><strong>Text:</strong> TF-IDF + logistic regression for a quick baseline; embeddings or fine-tuned transformers when meaning matters; an LLM for generation and flexible tasks.</li>
+    <li><strong>No labels:</strong> clustering, anomaly detection, or self-supervised pre-training.</li>
+    <li><strong>Small data:</strong> simple, regularised models and strong features; consider transfer learning.</li>
+    <li><strong>Must be explainable:</strong> linear models, small trees, or boosting with SHAP explanations.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="metrics">Measuring quality: choosing the right metric</h2>
+  <p>Accuracy alone is often misleading. Pick the metric that reflects the real cost of mistakes.</p>
+
+<pre><code>Confusion matrix (fraud example, 1,000 transactions)
+
+                    Predicted fraud    Predicted OK
+  Actually fraud        TP = 8            FN = 2      (missed fraud)
+  Actually OK           FP = 12           TN = 978    (good customers blocked)
+
+  Accuracy  = (TP + TN) / all     = 98.6%   &lt;- looks great, hides the story
+  Precision = TP / (TP + FP)      = 40%     of the alerts are real
+  Recall    = TP / (TP + FN)      = 80%     of the fraud was caught
+  F1        = harmonic mean of precision and recall</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Task</th><th>Metrics</th><th>Use when</th></tr>
+      <tr><td rowspan="5"><strong>Classification</strong></td><td>Precision</td><td>False alarms are costly (blocking a good customer)</td></tr>
+      <tr><td>Recall</td><td>Misses are costly (cancer screening, fraud)</td></tr>
+      <tr><td>F1 score</td><td>You need a balance and have imbalanced classes</td></tr>
+      <tr><td>ROC-AUC</td><td>Ranking quality across all thresholds, with balanced classes</td></tr>
+      <tr><td>PR-AUC (average precision)</td><td>Rare positive class; more honest than ROC-AUC when positives are scarce</td></tr>
+      <tr><td rowspan="3"><strong>Regression</strong></td><td>MAE</td><td>Average error in real units, robust to outliers</td></tr>
+      <tr><td>RMSE</td><td>Large errors hurt disproportionately</td></tr>
+      <tr><td>R&sup2;, MAPE / WAPE</td><td>Share of variance explained; percentage error (careful with values near zero)</td></tr>
+      <tr><td><strong>Ranking / recommendation</strong></td><td>NDCG, MAP, recall@k, click-through rate</td><td>Order of results matters</td></tr>
+      <tr><td><strong>Clustering</strong></td><td>Silhouette score, stability, business usefulness</td><td>No ground truth exists</td></tr>
+      <tr><td><strong>Generative / LLM</strong></td><td>Human ratings, task-specific eval sets, faithfulness checks, automated judges</td><td>There is no single correct answer</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Threshold:</strong> classifiers output a score; you choose the cut-off. Set it from the cost of each error type, not at 0.5 by default.</li>
+    <li><strong>Calibration:</strong> if the model says "70%", is it right 70% of the time? Needed whenever probabilities feed decisions; fix with Platt scaling or isotonic regression.</li>
+    <li><strong>Offline vs online:</strong> a better offline metric does not guarantee better business results. Confirm with an A/B test.</li>
+    <li><strong>Check slices:</strong> good average performance can hide poor performance for a region, device or customer group.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="tuning">Hyperparameter tuning</h2>
+  <p><strong>Parameters</strong> are learned from data (weights). <strong>Hyperparameters</strong> are settings you choose before training (tree depth, learning rate, number of layers, regularization strength).</p>
+  <ul>
+    <li><strong>Grid search:</strong> try every combination. Simple, wasteful for many settings.</li>
+    <li><strong>Random search:</strong> sample combinations at random. Usually finds good settings faster than a grid.</li>
+    <li><strong>Bayesian optimisation</strong> (Optuna, Hyperopt): uses past trials to choose the next one. Efficient for expensive models.</li>
+    <li><strong>AutoML</strong> (Azure AutoML, SageMaker Autopilot, Vertex AutoML, AutoGluon, H2O): automates model selection and tuning, a strong baseline in minutes.</li>
+    <li>Always tune using validation data or cross-validation, never the test set.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="ensembles">Ensembles: combining models of the same kind</h2>
+  <p>Many weak or varied models voting together are usually more accurate and more stable than any single model. The errors of individual models partly cancel out.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Method</th><th>Idea</th><th>Reduces</th><th>Examples</th></tr>
+      <tr><td><strong>Bagging</strong></td><td>Train many models in parallel on random resamples of the data, then average or vote.</td><td>Variance (overfitting)</td><td>Random forest</td></tr>
+      <tr><td><strong>Boosting</strong></td><td>Train models one after another; each focuses on the mistakes of the previous ones, and their outputs are added up.</td><td>Bias (and some variance)</td><td>XGBoost, LightGBM, CatBoost, AdaBoost</td></tr>
+      <tr><td><strong>Voting / averaging</strong></td><td>Different model types predict independently; combine by majority vote or by averaging probabilities.</td><td>Variance</td><td>Logistic regression + random forest + boosting</td></tr>
+      <tr><td><strong>Stacking</strong></td><td>A final "meta-model" learns how best to combine the predictions of several base models.</td><td>Both, if models differ</td><td>scikit-learn <code>StackingClassifier</code>, Kaggle winning solutions</td></tr>
+    </table>
+  </div>
+  <p class="muted">Ensembles work best when the models are accurate <em>and different</em> (different algorithms, features or data). Ten copies of the same model add nothing. The cost: more compute, more complexity, harder to explain.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="combine">Solving real use cases by combining algorithms</h2>
+  <p>
+    Real problems are rarely solved by one model. Production systems chain several, each handling what it does best:
+    a cheap filter first, a precise model next, rules and humans at the edges. Pick a use case and press <strong>Play</strong> to follow the data through the pipeline.
+  </p>
+
+  <div class="demo">
+    <h3>Multi-algorithm pipelines</h3>
+    <div class="tabs" id="pl-tabs"></div>
+    <div class="pipeline" id="pl-stages"></div>
+    <div class="progress"><div id="pl-bar"></div></div>
+    <div class="msg" id="pl-caption" style="margin-top:.6rem;min-height:6.5rem"></div>
+    <div class="bar">
+      <button type="button" id="pl-prev">&larr; Back</button>
+      <button type="button" id="pl-play" class="primary">Play</button>
+      <button type="button" id="pl-next">Next &rarr;</button>
+    </div>
+    <div class="why verdict ok" id="pl-why"></div>
+  </div>
+
+  <h3>Common combination patterns</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Pattern</th><th>How it works</th><th>Example</th></tr>
+      <tr><td><strong>Cascade / funnel</strong></td><td>A cheap, fast model screens everything; an expensive accurate model examines only what passes.</td><td>Rules &rarr; classifier &rarr; human review; candidate generation &rarr; ranking</td></tr>
+      <tr><td><strong>Unsupervised features for a supervised model</strong></td><td>Cluster assignments, anomaly scores or embeddings become input columns for a classifier.</td><td>Anomaly score as a fraud feature; text embeddings feeding logistic regression</td></tr>
+      <tr><td><strong>Rules + ML (hybrid)</strong></td><td>Hard constraints and known cases in rules; fuzzy judgement in ML. Rules also act as safety rails.</td><td>Compliance blocklists around a risk model</td></tr>
+      <tr><td><strong>Model + residual model</strong></td><td>A simple model captures the main pattern; a second model learns what is left over.</td><td>ARIMA baseline + gradient boosting on residuals</td></tr>
+      <tr><td><strong>Parallel experts + combiner</strong></td><td>Different models for different data types or segments, merged by voting or stacking.</td><td>Image model + text model + tabular model for product moderation</td></tr>
+      <tr><td><strong>Segment, then specialise</strong></td><td>Cluster the population, then train a model per segment (or add the segment as a feature).</td><td>Different churn models for new versus long-term customers</td></tr>
+      <tr><td><strong>Predict, then optimise</strong></td><td>ML predicts quantities (demand, time, cost); a mathematical optimiser uses them to choose actions.</td><td>Forecast &rarr; inventory plan; ETA prediction &rarr; route planning</td></tr>
+      <tr><td><strong>Retrieve, re-rank, generate</strong></td><td>Search narrows to relevant items, a stronger model orders them, a generator writes the answer.</td><td>RAG assistants, semantic search</td></tr>
+      <tr><td><strong>Pre-train, then fine-tune</strong></td><td>Start from a large general model and adapt it with a little task-specific data.</td><td>ImageNet CNN for factory defects; BERT for support tickets</td></tr>
+      <tr><td><strong>Human in the loop</strong></td><td>Low-confidence cases go to people; their decisions become new training data.</td><td>Document processing, content moderation, fraud review</td></tr>
+    </table>
+  </div>
+
+  <h3>Other use cases and the combination that fits</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Use case</th><th>Typical combination</th></tr>
+      <tr><td>Credit scoring</td><td>Logistic regression or boosting, with monotonic constraints and reason codes (SHAP) for explainability and regulation.</td></tr>
+      <tr><td>Medical imaging</td><td>Pre-trained CNN fine-tuned on scans + uncertainty estimate + radiologist review of uncertain cases.</td></tr>
+      <tr><td>Customer support triage</td><td>Text embeddings + classifier for routing, clustering to discover new issue types, LLM to draft replies.</td></tr>
+      <tr><td>Dynamic pricing</td><td>Demand forecast + price-elasticity model + optimiser, tested with bandits or A/B tests.</td></tr>
+      <tr><td>Delivery time / ETA</td><td>Gradient boosting on historical trips + live traffic features, quantile outputs for ranges, rule-based fallback.</td></tr>
+      <tr><td>Search relevance</td><td>BM25 + vector retrieval, learning-to-rank on click data, query understanding model.</td></tr>
+      <tr><td>Quality inspection on a production line</td><td>CNN classifier for known defects + autoencoder for unseen defects + threshold rules and operator feedback.</td></tr>
+      <tr><td>Cyber security</td><td>Signature rules + anomaly detection on traffic + classifier for alert triage + graph analysis for related entities.</td></tr>
+    </table>
+  </div>
+
+  <h3>Code: a stacked ensemble in scikit-learn</h3>
+<pre><code>from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import (RandomForestClassifier,
+                              HistGradientBoostingClassifier, StackingClassifier)
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split, cross_val_score
+
+num, cat = ['age', 'income'], ['country', 'plan']
+
+prep = ColumnTransformer([
+    ('num', Pipeline([('imp', SimpleImputer(strategy='median')),
+                      ('sc',  StandardScaler())]), num),
+    ('cat', OneHotEncoder(handle_unknown='ignore'), cat),
+])
+
+stack = StackingClassifier(
+    estimators=[('rf', RandomForestClassifier(n_estimators=300, class_weight='balanced')),
+                ('gb', HistGradientBoostingClassifier())],
+    final_estimator=LogisticRegression(),      # the "meta-model" that blends them
+    cv=5)
+
+model = Pipeline([('prep', prep), ('clf', stack)])   # preprocessing lives INSIDE the pipeline (no leakage)
+
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+print(cross_val_score(model, X_tr, y_tr, cv=5, scoring='average_precision').mean())
+model.fit(X_tr, y_tr)                                # touch the test set only once, at the very end</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="deep">Deep learning and neural networks</h2>
+  <p>
+    A neural network is layers of simple units (<em>neurons</em>). Each neuron multiplies its inputs by weights, adds them up, and passes the result through an <em>activation function</em> (such as ReLU).
+    Stacking layers lets the network build complex features from simple ones: edges, then shapes, then objects.
+    Training uses <strong>backpropagation</strong>: the error is pushed backwards through the layers to find how each weight should change, then gradient descent updates them.
+  </p>
+
+  <div class="demo">
+    <h3>A tiny neural network: loan decision</h3>
+    <div class="sliders">
+      <label>Income <input type="range" class="nn-slider" id="nn-in0" min="0" max="1" step="0.01" value="0.8"> <b id="nn-in0-v">0.80</b></label>
+      <label>Credit history <input type="range" class="nn-slider" id="nn-in1" min="0" max="1" step="0.01" value="0.8"> <b id="nn-in1-v">0.80</b></label>
+      <label>Missed payments <input type="range" class="nn-slider" id="nn-in2" min="0" max="1" step="0.01" value="0.1"> <b id="nn-in2-v">0.10</b></label>
+    </div>
+    <svg class="nn" id="nn" viewBox="0 0 720 270" role="img" aria-label="A neural network with an input layer of three nodes, two hidden layers of four nodes and an output layer of two nodes"></svg>
+    <div class="bar">
+      <button type="button" id="nn-fwd" class="primary">Animate forward pass</button>
+      <button type="button" id="nn-back">Animate backpropagation</button>
+      <button type="button" id="nn-clear">Reset view</button>
+    </div>
+    <div class="readout" id="nn-caption">Move the sliders to change the inputs and watch the activations update.</div>
+    <p class="cap">Blue lines are positive weights, red are negative; thicker means stronger. The brightness of a circle is how strongly that neuron fires. Try raising "Missed payments".</p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Architecture</th><th>Idea</th><th>Use for</th></tr>
+      <tr><td><strong>MLP (feed-forward)</strong></td><td>Plain stacked layers.</td><td>Tabular data, small tasks, parts of larger models</td></tr>
+      <tr><td><strong>CNN (convolutional)</strong></td><td>Small filters slide across the image, detecting the same pattern anywhere.</td><td>Images, video, audio spectrograms</td></tr>
+      <tr><td><strong>RNN / LSTM</strong></td><td>Process a sequence step by step, carrying a memory.</td><td>Time series, sensor data (older NLP)</td></tr>
+      <tr><td><strong>Transformer</strong></td><td><em>Attention</em>: every element looks at every other element and decides what is relevant. Trains in parallel and scales well.</td><td>Language, code, vision, audio, multimodal</td></tr>
+      <tr><td><strong>Autoencoder</strong></td><td>Compress the input then rebuild it. Reconstruction error signals unusual inputs.</td><td>Anomaly detection, denoising, embeddings</td></tr>
+      <tr><td><strong>GAN / diffusion</strong></td><td>Learn to generate realistic samples (diffusion: start from noise and denoise step by step).</td><td>Images, video, synthetic data</td></tr>
+    </table>
+  </div>
+
+  <h3>Ideas that make modern ML practical</h3>
+  <ul>
+    <li><strong>Embeddings:</strong> turning words, products, users or images into vectors where similar things sit close together. They power search, recommendations and RAG.</li>
+    <li><strong>Transfer learning:</strong> reuse a model trained on huge general data and adapt it with your small dataset. Usually the right starting point for images and text.</li>
+    <li><strong>Large language models (LLMs):</strong> transformers pre-trained to predict the next token on vast text, then tuned to follow instructions. Prompting, fine-tuning (including LoRA) and retrieval (RAG) are three ways to adapt them. They can state falsehoods confidently, so ground and evaluate their output.</li>
+    <li><strong>GPUs and batches:</strong> deep learning needs parallel hardware (GPU/TPU). For tabular data, CPU-based boosting is usually enough.</li>
+    <li><strong>Deep learning is not always better:</strong> on structured business data, gradient boosting often matches or beats it with far less effort.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="rl">Reinforcement learning and bandits</h2>
+  <p>
+    An <strong>agent</strong> takes <strong>actions</strong> in an <strong>environment</strong>, receives <strong>rewards</strong>, and learns a <strong>policy</strong> that maximises total reward over time.
+    The core tension is <em>explore</em> (try something new) versus <em>exploit</em> (repeat what works).
+  </p>
+  <ul>
+    <li><strong>Multi-armed bandits</strong> are the simple, widely used case: pick one of several options (headline, offer, recommendation) per visit, learn which wins, and shift traffic gradually. Smarter than a fixed A/B test when you want to earn while you learn.</li>
+    <li><strong>Full RL</strong> handles sequences where today's action changes tomorrow's situation (robot control, game play, supply chains). Needs a simulator or lots of safe experimentation, so it is rarer in business use.</li>
+    <li><strong>RLHF</strong> (reinforcement learning from human feedback) is used to align LLMs with human preferences.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="mlops">Putting ML into production (MLOps)</h2>
+  <p>A notebook that works is about 20% of the job. MLOps applies DevOps discipline to data and models.</p>
+<pre><code>Data sources --&gt; Data pipeline --&gt; Feature store --&gt; Training --&gt; Evaluation --&gt; Model registry
+                                         |                                         |
+                                         v                                         v
+                               Online features  --&gt;  Serving (API / batch / stream / edge)
+                                                           |
+                                    Monitoring: quality, data drift, latency, cost
+                                                           |
+                                          Alert / retrain trigger  --&gt; back to Training</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Area</th><th>What it involves</th></tr>
+      <tr><td><strong>Versioning and reproducibility</strong></td><td>Version code, data, features, parameters and models so any result can be reproduced (Git, DVC, MLflow, lakeFS).</td></tr>
+      <tr><td><strong>Experiment tracking and registry</strong></td><td>Record every run's settings and metrics; promote approved models through staging to production (MLflow, Weights &amp; Biases, Azure ML, SageMaker, Vertex AI).</td></tr>
+      <tr><td><strong>Feature store</strong></td><td>One definition of each feature used for training and serving, preventing <em>training-serving skew</em> (Feast, Tecton, cloud feature stores).</td></tr>
+      <tr><td><strong>Serving patterns</strong></td><td><strong>Batch</strong> (score nightly, cheapest), <strong>online API</strong> (milliseconds, per request), <strong>streaming</strong> (on events), <strong>edge / on-device</strong> (privacy, no network).</td></tr>
+      <tr><td><strong>Safe rollout</strong></td><td>Shadow mode (run silently and compare), canary release (small share of traffic), A/B test, quick rollback.</td></tr>
+      <tr><td><strong>Monitoring</strong></td><td>Technical: latency, errors, cost. Data: <strong>data drift</strong> (inputs change) and <strong>concept drift</strong> (the relationship between inputs and outcome changes). Quality: accuracy once real outcomes arrive. Business KPIs.</td></tr>
+      <tr><td><strong>Retraining</strong></td><td>On a schedule, on drift alerts, or continuously. Automate it with tested pipelines (Airflow, Kubeflow, Azure ML pipelines, SageMaker Pipelines).</td></tr>
+      <tr><td><strong>Testing</strong></td><td>Unit tests for data and feature code, schema and data-quality checks, model performance gates before release, tests on key slices.</td></tr>
+      <tr><td><strong>Cost and latency</strong></td><td>Smaller or distilled models, quantisation, caching, batching, and a fallback when the model is slow or down.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="responsible">Responsible AI: fairness, explainability, privacy, security</h2>
+  <ul>
+    <li><strong>Bias and fairness:</strong> models learn the biases in their data (historic hiring or lending decisions) and can amplify them. Check performance and error rates across groups, review features that act as proxies for protected attributes, and agree on a fairness definition before training.</li>
+    <li><strong>Explainability:</strong> global (which features matter overall: permutation importance), local (why this prediction: <strong>SHAP</strong>, <strong>LIME</strong>), or inherently interpretable models. Required for regulated decisions such as credit.</li>
+    <li><strong>Privacy:</strong> minimise and anonymise personal data, respect consent and deletion rights (GDPR), and consider differential privacy or federated learning. Models can memorise and leak training data.</li>
+    <li><strong>Security:</strong> adversarial inputs (tiny changes that fool image models), data poisoning, model theft, and for LLMs <strong>prompt injection</strong> and data leakage through prompts. Validate inputs, limit what tools a model can use, and keep a human check on high-impact actions.</li>
+    <li><strong>Governance and regulation:</strong> document data sources, intended use, limits and test results (model cards). Rules such as the EU AI Act classify systems by risk and impose duties on high-risk ones.</li>
+    <li><strong>Reliability:</strong> know when the model is unsure and fall back safely. Provide a way for people to contest and correct decisions.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="unknowns">Things beginners often do not know</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Concept</th><th>Why it matters</th></tr>
+      <tr><td><strong>Always build a baseline</strong></td><td>A simple rule, average or logistic regression tells you if the fancy model adds value at all. Many projects stop there.</td></tr>
+      <tr><td><strong>Correlation is not causation</strong></td><td>Prediction finds patterns; it does not tell you what happens if you <em>intervene</em>. For "should we offer a discount?" you need experiments or causal methods (uplift modelling).</td></tr>
+      <tr><td><strong>Training-serving skew</strong></td><td>Features computed differently offline and online silently break models. Share the feature code or use a feature store.</td></tr>
+      <tr><td><strong>Feedback loops</strong></td><td>The model's decisions change the data it later learns from (you only see outcomes for loans you approved). Plan for exploration and unbiased samples.</td></tr>
+      <tr><td><strong>Cold start</strong></td><td>New users and new items have no history. Use popular/content-based fallbacks until data arrives.</td></tr>
+      <tr><td><strong>Concept drift</strong></td><td>Behaviour changes (new fraud tactics, post-pandemic demand), so yesterday's model slowly gets worse. Monitor and retrain.</td></tr>
+      <tr><td><strong>Interpretability vs accuracy</strong></td><td>Often a small accuracy gain is not worth losing explainability, especially in regulated areas.</td></tr>
+      <tr><td><strong>The cost of a wrong prediction is not symmetric</strong></td><td>Missing a fraud costs far more than one extra check. Optimise decisions, not accuracy.</td></tr>
+      <tr><td><strong>Distribution shift</strong></td><td>If production data differs from training data (new country, new camera), accuracy drops, even without a bug.</td></tr>
+      <tr><td><strong>Randomness</strong></td><td>Different seeds give different results. Report averages over several runs and fix seeds for reproducibility.</td></tr>
+      <tr><td><strong>Human labelling effort</strong></td><td>Labels are often the biggest cost. Active learning (label the most informative examples first) and weak supervision reduce it.</td></tr>
+      <tr><td><strong>Synthetic data and augmentation</strong></td><td>Can fill gaps for rare cases, but must resemble reality or it teaches the wrong thing.</td></tr>
+      <tr><td><strong>Foundation models</strong></td><td>Large pre-trained models you adapt rather than train from scratch. Changes the build-or-buy decision for text, vision and speech.</td></tr>
+      <tr><td><strong>Small models can win</strong></td><td>Latency, cost and privacy often favour compact, distilled or classic models over giant ones.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="tools">Tools and ecosystem</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Need</th><th>Common tools</th></tr>
+      <tr><td>Language and data handling</td><td>Python; pandas, NumPy, Polars; SQL; Spark for big data</td></tr>
+      <tr><td>Classic ML</td><td>scikit-learn, XGBoost, LightGBM, CatBoost, statsmodels, Prophet</td></tr>
+      <tr><td>Deep learning</td><td>PyTorch, TensorFlow/Keras, JAX; Hugging Face Transformers</td></tr>
+      <tr><td>Notebooks and exploration</td><td>Jupyter, VS Code notebooks, Google Colab; matplotlib, seaborn, plotly</td></tr>
+      <tr><td>Experiments and pipelines</td><td>MLflow, Weights &amp; Biases, DVC, Airflow, Kubeflow, Optuna</td></tr>
+      <tr><td>Managed platforms</td><td>Azure Machine Learning, Amazon SageMaker, Google Vertex AI, Databricks</td></tr>
+      <tr><td>Serving</td><td>FastAPI, BentoML, TorchServe, Triton, ONNX Runtime, cloud endpoints</td></tr>
+      <tr><td>Explainability and fairness</td><td>SHAP, LIME, Fairlearn, Evidently (drift and quality reports)</td></tr>
+      <tr><td>LLM applications</td><td>Provider APIs, vector databases, LangChain / LlamaIndex style frameworks, evaluation harnesses</td></tr>
+    </table>
+  </div>
+
+  <h2 id="quick">Quick reference and learning path</h2>
+  <div class="cols">
+    <div>
+      <h3>Rules to remember</h3>
+      <ul>
+        <li>Start simple; baseline first.</li>
+        <li>Data quality and features beat model choice.</li>
+        <li>Split before you do anything else; guard the test set.</li>
+        <li>Pick metrics from the business cost of errors.</li>
+        <li>Tabular data: try gradient boosting. Images/text: fine-tune pre-trained models.</li>
+        <li>Combine models where each covers another's weakness.</li>
+        <li>A model in production is a service: monitor, retrain, roll back.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Suggested learning path</h3>
+      <ol>
+        <li>Python, pandas, basic statistics and probability.</li>
+        <li>Linear and logistic regression; train/test split; metrics.</li>
+        <li>Trees, random forest, gradient boosting; cross-validation; feature engineering.</li>
+        <li>Clustering, PCA, anomaly detection.</li>
+        <li>Neural networks with PyTorch; CNNs; transformers; embeddings.</li>
+        <li>MLOps: tracking, deployment, monitoring.</li>
+        <li>Build 2-3 end-to-end projects with real, messy data.</li>
+      </ol>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="demos.js"></script>
+  <script src="nn.js"></script>
+  <script src="pipeline.js"></script>
+  <script src="page.js"></script>
+</body>
+</html>

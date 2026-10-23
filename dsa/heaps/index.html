@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Heaps and Priority Queues - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>7. Heaps and priority queues</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../trees/index.html">&larr; Trees</a><a href="../graphs/index.html">Graphs &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is a heap?</h2>
+  <p>
+    A <strong>priority queue</strong> always gives you the most important item next: the smallest deadline, the shortest distance, the highest score. The usual way to build one is a
+    <strong>binary heap</strong>: a complete binary tree where every parent is &le; its children (a <strong>min-heap</strong>) or &ge; them (a <strong>max-heap</strong>).
+    The root is the minimum, available in <span class="big g">O(1)</span>; inserting and removing cost <span class="big g">O(log n)</span>.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Operation</th><th>Binary heap</th><th>Sorted array</th><th>Unsorted array</th></tr>
+      <tr><td>Peek min</td><td><span class="big g">O(1)</span></td><td><span class="big g">O(1)</span></td><td><span class="big y">O(n)</span></td></tr>
+      <tr><td>Insert</td><td><span class="big g">O(log n)</span></td><td><span class="big y">O(n)</span></td><td><span class="big g">O(1)</span></td></tr>
+      <tr><td>Remove min</td><td><span class="big g">O(log n)</span></td><td><span class="big g">O(1)</span> (from the end)</td><td><span class="big y">O(n)</span></td></tr>
+      <tr><td>Build from n items</td><td><span class="big g">O(n)</span></td><td><span class="big g">O(n log n)</span></td><td><span class="big g">O(1)</span></td></tr>
+    </table>
+  </div>
+<pre><code>import heapq
+h = []
+heapq.heappush(h, 5); heapq.heappush(h, 1); heapq.heappush(h, 3)
+heapq.heappop(h)            # 1     (Python's heapq is a min-heap)
+h[0]                        # peek: 3
+heapq.heapify(a)            # turn a list into a heap in O(n)
+heapq.heappush(h, -x)       # max-heap trick: store negatives
+heapq.nlargest(3, a)        # top-k helpers
+# C#: var pq = new PriorityQueue&lt;string, int&gt;(); pq.Enqueue("task", priority); pq.Dequeue();</code></pre>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="operations">Push and pop: sift up, sift down</h2>
+  <ul>
+    <li><strong>Push:</strong> put the new value in the next free spot (end of the array), then <em>sift up</em>: swap with its parent while it is smaller.</li>
+    <li><strong>Pop:</strong> take the root, move the last element to the root, then <em>sift down</em>: swap with the smaller child while it is larger.</li>
+  </ul>
+  <div class="demo" id="hp-demo">
+    <h3>Min-heap: tree view and array view</h3>
+    <div class="bar">
+      <label>Push in order <input type="text" class="wide" id="hp-vals" value="7, 3, 9, 1, 5, 8, 2"></label>
+      <label>then pop <input type="number" id="hp-pops" value="3" min="0" max="15" style="width:4rem"> times</label>
+      <button type="button" id="hp-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+
+  <h2 id="heapify">Building a heap in O(n)</h2>
+  <div class="demo" id="hf-demo">
+    <h3>Bottom-up heapify</h3>
+    <div class="bar"><label>Array <input type="text" class="wide" id="hf-vals" value="9, 4, 7, 1, 8, 2, 6, 3, 5"></label><button type="button" id="hf-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">Why O(n): half the nodes are leaves (0 work), a quarter sift down at most 1 level, an eighth at most 2... The sum n/4&middot;1 + n/8&middot;2 + n/16&middot;3 + ... converges to about n.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="patterns">Heap patterns</h2>
+  <div class="card arch">
+    <h3>Top-K: keep a heap of size k</h3>
+    <p>For the k <em>largest</em> items in a stream, keep a <strong>min</strong>-heap of size k: if a new item beats the smallest of the current top k (the root), replace it. O(n log k) time, O(k) memory, works on streams that do not fit in memory.</p>
+<pre><code>def k_largest(stream, k):
+    h = []
+    for x in stream:
+        if len(h) &lt; k: heapq.heappush(h, x)
+        elif x &gt; h[0]: heapq.heapreplace(h, x)     # pop root, push x
+    return sorted(h, reverse=True)</code></pre>
+  </div>
+  <div class="card arch">
+    <h3>Running median: two heaps</h3>
+    <p>Keep the smaller half in a max-heap and the larger half in a min-heap, balanced in size. The median is at the top of one or both. Each insert is O(log n), each median query O(1).</p>
+<pre><code>class MedianFinder:
+    def __init__(self): self.lo, self.hi = [], []      # lo: max-heap (negated), hi: min-heap
+    def add(self, x):
+        heapq.heappush(self.lo, -x)
+        heapq.heappush(self.hi, -heapq.heappop(self.lo))   # move the largest of lo to hi
+        if len(self.hi) &gt; len(self.lo):
+            heapq.heappush(self.lo, -heapq.heappop(self.hi))
+    def median(self):
+        if len(self.lo) &gt; len(self.hi): return -self.lo[0]
+        return (-self.lo[0] + self.hi[0]) / 2</code></pre>
+  </div>
+  <div class="card arch">
+    <h3>K-way merge</h3>
+    <p>Merge k sorted lists by keeping the current head of each in a heap: O(N log k). This is how external sorting merges sorted runs from disk, and how databases merge index segments.</p>
+  </div>
+  <div class="card arch">
+    <h3>Scheduling and simulation</h3>
+    <p>Process events in time order: push future events with their timestamps; always pop the earliest. Meeting rooms, CPU scheduling, discrete-event simulation, timers in event loops.</p>
+  </div>
+  <div class="card arch">
+    <h3>Greedy graph algorithms</h3>
+    <p>Dijkstra's shortest paths and Prim's minimum spanning tree repeatedly pick the closest unvisited vertex from a heap. See <a href="../graphs/index.html#dijkstra">graphs</a>.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="variants">Heap variants</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Heap</th><th>Insert</th><th>Pop min</th><th>Decrease key</th><th>Merge</th><th>Notes</th></tr>
+      <tr><td>Binary heap</td><td>O(log n)</td><td>O(log n)</td><td>O(log n)*</td><td>O(n)</td><td>Simple, array-based, the default. *needs an index map</td></tr>
+      <tr><td>d-ary heap</td><td>O(log<sub>d</sub> n)</td><td>O(d log<sub>d</sub> n)</td><td>O(log<sub>d</sub> n)</td><td>O(n)</td><td>Shallower; faster inserts and better cache use (d = 4 is common)</td></tr>
+      <tr><td>Binomial heap</td><td>O(1) amortised</td><td>O(log n)</td><td>O(log n)</td><td>O(log n)</td><td>Fast merging</td></tr>
+      <tr><td>Fibonacci heap</td><td>O(1)</td><td>O(log n) amortised</td><td>O(1) amortised</td><td>O(1)</td><td>Best theoretical Dijkstra, O(E + V log V); large constants</td></tr>
+      <tr><td>Pairing heap</td><td>O(1)</td><td>O(log n) amortised</td><td>o(log n) amortised</td><td>O(1)</td><td>Simple and fast in practice</td></tr>
+      <tr><td>Indexed priority queue</td><td>O(log n)</td><td>O(log n)</td><td>O(log n)</td><td>-</td><td>Binary heap plus a map from item to position</td></tr>
+    </table>
+  </div>
+  <p class="muted">Without decrease-key, Dijkstra simply pushes a new (distance, node) pair and skips stale entries when they are popped ("lazy deletion"). That is what most real implementations do.</p>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>Operating systems:</strong> priority-based process scheduling, timer queues.</li>
+    <li><strong>Networking:</strong> priority queuing of packets (quality of service), routing (Dijkstra in OSPF).</li>
+    <li><strong>Maps and games:</strong> shortest paths and A* pathfinding.</li>
+    <li><strong>Data processing:</strong> top-K queries (<code>ORDER BY ... LIMIT k</code>), external merge sort, streaming leaderboards.</li>
+    <li><strong>Compression:</strong> Huffman coding builds its tree by repeatedly merging the two rarest symbols (see <a href="../greedy-dc/index.html#huffman">greedy</a>).</li>
+    <li><strong>Job systems:</strong> task queues with priorities and deadlines; load balancers choosing the least-loaded server.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. K-th largest element in an array <span class="diff med">medium</span> <span class="tag">heap / quickselect</span></summary>
+    <h4>Approach</h4><p>Min-heap of size k: after processing all elements, the root is the k-th largest. O(n log k). Alternatively, quickselect (see <a href="../searching/index.html#quickselect">searching</a>) gives O(n) on average.</p>
+<pre><code>def kth_largest(a, k):
+    h = a[:k]; heapq.heapify(h)
+    for x in a[k:]:
+        if x &gt; h[0]: heapq.heapreplace(h, x)
+    return h[0]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q2. Last stone weight <span class="diff easy">easy</span> <span class="tag">max-heap simulation</span></summary>
+    <p class="q">Repeatedly smash the two heaviest stones; the difference (if any) goes back. What is left?</p>
+<pre><code>def last_stone(stones):
+    h = [-s for s in stones]; heapq.heapify(h)
+    while len(h) &gt; 1:
+        a, b = -heapq.heappop(h), -heapq.heappop(h)
+        if a != b: heapq.heappush(h, -(a - b))
+    return -h[0] if h else 0</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q3. K closest points to the origin <span class="diff med">medium</span> <span class="tag">top-K</span></summary>
+    <p>Max-heap of size k keyed by distance (push <code>(-d, point)</code>; pop when size exceeds k), or <code>heapq.nsmallest(k, pts, key=lambda p: p[0]**2 + p[1]**2)</code>. O(n log k).</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Find the median from a data stream <span class="diff hard">hard</span> <span class="tag">two heaps</span></summary>
+    <p>Two heaps (code above). <span class="big g">O(log n)</span> per insert, <span class="big g">O(1)</span> per median.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Meeting rooms II (minimum rooms needed) <span class="diff med">medium</span> <span class="tag">heap of end times</span></summary>
+<pre><code>def min_rooms(intervals):
+    intervals.sort()
+    ends = []                                  # end times of meetings in progress
+    for s, e in intervals:
+        if ends and ends[0] &lt;= s: heapq.heapreplace(ends, e)   # reuse the room that frees first
+        else: heapq.heappush(ends, e)
+    return len(ends)</code></pre>
+    <p><span class="big g">O(n log n)</span>. Alternative: sort starts and ends separately and sweep.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Task scheduler with cooldown <span class="diff med">medium</span> <span class="tag">greedy + heap</span></summary>
+    <p class="q">Tasks with the same letter need n idle slots between them. Minimum total time?</p>
+    <h4>Approach</h4><p>Greedy: in each cycle of n+1 slots, run the most frequent remaining tasks first (max-heap of counts). A formula also works: <code>max(len(tasks), (maxf - 1) * (n + 1) + count_of_maxf)</code>.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Reorganise a string so no two neighbours are equal <span class="diff med">medium</span> <span class="tag">max-heap</span></summary>
+    <p>Repeatedly place the most frequent remaining character that differs from the previous one: pop the top, append it, and push back the previously used character (with its count reduced). If the top count ever exceeds (n+1)/2, it is impossible.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Merge k sorted lists <span class="diff hard">hard</span> <span class="tag">k-way merge</span></summary>
+    <p>Full code on the <a href="../linked-lists/index.html#questions">linked lists page</a>. <span class="big g">O(N log k)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q9. Smallest range covering elements from k lists <span class="diff hard">hard</span> <span class="tag">heap + running max</span></summary>
+    <h4>Approach</h4><p>Keep one pointer per list in a min-heap and track the current maximum among them. The range [heap min, current max] covers all lists. Pop the minimum, advance that list, update the max, and record the best range; stop when any list runs out.</p>
+    <p><span class="big g">O(N log k)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Maximise capital (IPO) <span class="diff hard">hard</span> <span class="tag">two heaps, greedy</span></summary>
+    <p class="q">Start with capital w; each project needs capital c[i] and earns p[i]. Do at most k projects.</p>
+    <p>Sort projects by required capital. Each round, push every now-affordable project's profit into a max-heap, then take the most profitable one. <span class="big g">O(n log n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Sliding window median <span class="diff hard">hard</span> <span class="tag">two heaps + lazy deletion</span></summary>
+    <p>Two heaps as in the stream median, plus a hash map of "to be deleted" counts. When an element leaves the window, mark it and rebalance; remove marked items only when they reach the top of a heap. <span class="big g">O(n log k)</span>. (A sorted container such as <code>SortedList</code> gives a simpler solution.)</p>
+  </details>
+
+  <div class="pager"><a href="../trees/index.html">&larr; Trees</a><a href="../graphs/index.html">Next: Graphs &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

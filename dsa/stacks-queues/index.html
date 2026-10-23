@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stacks and Queues - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>4. Stacks and queues</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../linked-lists/index.html">&larr; Linked lists</a><a href="../hashing/index.html">Hashing &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Two simple rules that power a lot of computing</h2>
+  <div class="cols">
+    <div class="card arch">
+      <h3>Stack: Last In, First Out (LIFO)</h3>
+      <p>Like a pile of plates: you add (<code>push</code>) and remove (<code>pop</code>) only at the <strong>top</strong>. The last thing added is the first thing out.</p>
+      <p>Operations: <code>push</code>, <code>pop</code>, <code>peek</code>/<code>top</code>, <code>is_empty</code>, all <span class="big g">O(1)</span>.</p>
+    </div>
+    <div class="card arch">
+      <h3>Queue: First In, First Out (FIFO)</h3>
+      <p>Like a line at a shop: join at the <strong>back</strong> (<code>enqueue</code>), leave from the <strong>front</strong> (<code>dequeue</code>). The oldest item is served first.</p>
+      <p>Operations: <code>enqueue</code>, <code>dequeue</code>, <code>front</code>, <code>is_empty</code>, all <span class="big g">O(1)</span>.</p>
+    </div>
+  </div>
+<pre><code>stack = []                 # Python list: append/pop at the end are O(1)
+stack.append(1); stack.append(2)
+stack.pop()                # 2
+stack[-1]                  # peek: 1
+
+from collections import deque
+q = deque()                # double-ended queue: O(1) at both ends
+q.append(1); q.append(2)   # enqueue at the back
+q.popleft()                # dequeue from the front: 1   (never use list.pop(0): it is O(n))</code></pre>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="playground">Try them</h2>
+  <div class="demo">
+    <h3>Stack and ring-buffer queue</h3>
+    <div class="cols">
+      <div>
+        <div class="bar"><button type="button" id="sq-push" class="primary">push</button><button type="button" id="sq-pop">pop</button><button type="button" id="sq-peek">peek</button></div>
+        <div id="sq-stack"></div>
+        <div class="caption" id="sq-msg"></div>
+      </div>
+      <div>
+        <div class="bar"><button type="button" id="sq-enq" class="primary">enqueue</button><button type="button" id="sq-deq">dequeue</button></div>
+        <div id="sq-queue" class="stage"></div>
+        <div class="caption" id="sq-qmsg"></div>
+      </div>
+    </div>
+    <p class="muted">A <strong>ring buffer</strong> (circular queue) stores a queue in a fixed array. The head and tail indexes move forward and wrap around with <code>% capacity</code>, so dequeuing never shifts elements. Used for keyboard buffers, audio streams, network cards and log buffers.</p>
+  </div>
+
+  <h3>Variants</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Structure</th><th>What it adds</th><th>Python / C# / Java</th></tr>
+      <tr><td><strong>Deque</strong></td><td>Push and pop at <em>both</em> ends in O(1)</td><td><code>collections.deque</code> / <code>LinkedList&lt;T&gt;</code> / <code>ArrayDeque</code></td></tr>
+      <tr><td><strong>Circular queue / ring buffer</strong></td><td>Fixed capacity, no allocation, wraps around</td><td>Implement with an array and two indexes</td></tr>
+      <tr><td><strong>Priority queue</strong></td><td>Dequeue the <em>smallest</em> (or most urgent) item, not the oldest</td><td><code>heapq</code> / <code>PriorityQueue&lt;T,P&gt;</code> / <code>PriorityQueue</code>. See <a href="../heaps/index.html">heaps</a>.</td></tr>
+      <tr><td><strong>Monotonic stack / queue</strong></td><td>Kept sorted by discarding useless elements; answers "next greater" and "window max" in O(n)</td><td>A normal stack or deque used with a rule</td></tr>
+      <tr><td><strong>Blocking / concurrent queue</strong></td><td>Thread-safe producer-consumer hand-off</td><td><code>queue.Queue</code> / <code>BlockingCollection</code> / <code>BlockingQueue</code></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="brackets">Stack application: matching brackets</h2>
+  <p>The most recent unclosed bracket must be closed first, which is exactly LIFO. The same idea checks HTML/XML tags and nested JSON.</p>
+  <div class="demo" id="br-demo">
+    <h3>Bracket matcher</h3>
+    <div class="bar"><label>Input <input type="text" class="wide" id="br-s" value="{[()()]}"></label><button type="button" id="br-run" class="run">Run</button><span class="muted">try: <code>([)]</code>, <code>((</code>, <code>a*(b+c)</code></span></div>
+    <div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="monotonic-stack">Monotonic stack</h2>
+  <p>
+    A <strong>monotonic stack</strong> keeps its elements in increasing or decreasing order. When a new element arrives, it pops every element it "beats"; each popped element has just found its answer.
+    It solves "next greater / smaller element", "previous smaller", "how many days until a warmer temperature", "largest rectangle in a histogram" and "stock span", all in O(n).
+  </p>
+  <div class="demo" id="ng-demo">
+    <h3>Next greater element</h3>
+    <div class="bar"><label>Array <input type="text" class="wide" id="ng-arr" value="2, 7, 3, 5, 4, 6, 8, 1"></label><button type="button" id="ng-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+<pre class="pseudo">for each index i, value x:
+    while stack not empty and value[top] &lt; x:     // (use &gt; for "next smaller")
+        answer[top] = x;  pop
+    push i
+// remaining indexes have no answer</pre>
+
+  <!-- ===================================================== -->
+  <h2 id="monotonic-queue">Monotonic deque: sliding window maximum</h2>
+  <p>To get the maximum of every window of size k, keep a deque of indexes whose values decrease from front to back. The front is the maximum; drop it when it leaves the window, and drop smaller values from the back when a bigger one arrives.</p>
+  <div class="demo" id="sm-demo">
+    <h3>Sliding window maximum</h3>
+    <div class="bar"><label>Array <input type="text" class="wide" id="sm-arr" value="1, 3, -1, -3, 5, 3, 6, 7"></label><label>k <input type="number" id="sm-k" value="3" style="width:4rem"></label><button type="button" id="sm-run" class="run">Run</button></div>
+    <div class="stage"></div>
+  </div>
+  <p class="muted">Also used in DP optimisations ("the best of the last k states") and for streaming min/max over recent data.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="expressions">Stack application: evaluating expressions</h2>
+  <div class="demo" id="rpn-demo">
+    <h3>Postfix (RPN) evaluation</h3>
+    <div class="bar"><label>Expression <input type="text" class="wide" id="rpn-s" value="3 4 + 2 * 7 -"></label><button type="button" id="rpn-run" class="run">Run</button><span class="muted">tokens separated by spaces</span></div>
+    <div class="stage"></div>
+  </div>
+  <h3>Converting infix to postfix: Dijkstra's shunting-yard algorithm</h3>
+<pre class="pseudo">output = [], ops = stack
+for each token:
+    number            -&gt; append to output
+    "("               -&gt; push
+    ")"               -&gt; pop operators to output until "("; discard the "("
+    operator o        -&gt; while top of ops is an operator with higher precedence
+                           (or equal precedence and o is left-associative): pop it to output
+                         push o
+at the end: pop all remaining operators to output
+
+"3 + 4 * 2"  -&gt;  "3 4 2 * +"        "(3 + 4) * 2"  -&gt;  "3 4 + 2 *"</pre>
+  <p class="muted">Compilers, calculators and spreadsheet formula engines use this (or recursive-descent parsing, which uses the call stack instead).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="designs">Classic designs</h2>
+  <div class="card arch">
+    <h3>Min stack: push, pop, top and get_min all in O(1)</h3>
+    <p>Store, alongside each value, the minimum of the stack up to that point.</p>
+<pre><code>class MinStack:
+    def __init__(self): self.s = []
+    def push(self, x): self.s.append((x, min(x, self.s[-1][1]) if self.s else x))
+    def pop(self): self.s.pop()
+    def top(self): return self.s[-1][0]
+    def get_min(self): return self.s[-1][1]</code></pre>
+  </div>
+  <div class="card arch">
+    <h3>Queue from two stacks (amortised O(1))</h3>
+    <p>Push onto <code>inbox</code>. To dequeue, if <code>outbox</code> is empty, pour everything from inbox into outbox (reversing the order), then pop from outbox. Each element moves at most twice.</p>
+<pre><code>class Queue2:
+    def __init__(self): self.inbox, self.outbox = [], []
+    def push(self, x): self.inbox.append(x)
+    def pop(self):
+        if not self.outbox:
+            while self.inbox: self.outbox.append(self.inbox.pop())
+        return self.outbox.pop()</code></pre>
+  </div>
+  <div class="card arch">
+    <h3>The call stack</h3>
+    <p>Every function call pushes a <em>stack frame</em> (arguments, local variables, return address); returning pops it. Recursion is therefore a stack in disguise, and any recursive algorithm (like DFS) can be rewritten with an explicit stack, which avoids "stack overflow" on very deep inputs. See <a href="../recursion/index.html">recursion</a>.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Stacks</th><th>Queues</th></tr>
+      <tr><td>Undo/redo in editors (two stacks)</td><td>Print queues, task and job queues (Celery, Hangfire, SQS, Azure Queue Storage)</td></tr>
+      <tr><td>Browser back button</td><td>Message brokers (RabbitMQ, Kafka partitions are append-only logs read in order)</td></tr>
+      <tr><td>Function calls and recursion</td><td>Breadth-first search, level-order tree traversal</td></tr>
+      <tr><td>Parsing: brackets, HTML, compilers</td><td>Operating-system schedulers (ready queues), I/O buffers</td></tr>
+      <tr><td>Depth-first search, backtracking (maze solving)</td><td>Rate limiting and request buffering in web servers</td></tr>
+      <tr><td>Expression evaluation, calculators</td><td>Streaming: ring buffers for audio, video and telemetry</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Valid parentheses <span class="diff easy">easy</span> <span class="tag">stack</span></summary>
+    <p>Push opening brackets; each closing bracket must match the popped top; the stack must be empty at the end (animated above). <span class="big g">O(n)</span> time and space.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Min stack <span class="diff med">medium</span> <span class="tag">design</span></summary>
+    <p>Store (value, current minimum) pairs; see "Classic designs". Every operation <span class="big g">O(1)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Implement a queue using stacks <span class="diff easy">easy</span> <span class="tag">amortised</span></summary>
+    <p>Inbox/outbox stacks (code above). Each element is moved at most once from inbox to outbox, so the amortised cost per operation is <span class="big g">O(1)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Evaluate reverse Polish notation <span class="diff med">medium</span> <span class="tag">stack</span></summary>
+    <p>Numbers are pushed; an operator pops two values (right operand first!), applies itself, and pushes the result (animated above). Watch integer division towards zero: <code>int(a / b)</code> in Python. <span class="big g">O(n)</span>.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Daily temperatures <span class="diff med">medium</span> <span class="tag">monotonic stack</span></summary>
+    <p class="q">For each day, how many days until a warmer temperature?</p>
+<pre><code>def daily_temperatures(t):
+    res, st = [0] * len(t), []
+    for i, x in enumerate(t):
+        while st and t[st[-1]] &lt; x:
+            j = st.pop(); res[j] = i - j
+        st.append(i)
+    return res</code></pre>
+    <p><span class="big g">O(n)</span>: next greater element, storing the distance instead of the value.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Largest rectangle in a histogram <span class="diff hard">hard</span> <span class="tag">monotonic stack</span></summary>
+    <p class="q">Bars have width 1 and heights h. Find the largest rectangle.</p>
+    <h4>Approach</h4><p>For each bar, the widest rectangle using its full height stretches until the first shorter bar on each side. Keep an increasing stack; when a shorter bar arrives, pop: the popped bar's rectangle ends here and starts just after the new stack top.</p>
+<pre><code>def largest_rectangle(h):
+    st, best = [], 0
+    for i, x in enumerate(h + [0]):           # sentinel 0 flushes the stack
+        while st and h[st[-1]] &gt;= x:
+            height = h[st.pop()]
+            left = st[-1] + 1 if st else 0
+            best = max(best, height * (i - left))
+        st.append(i)
+    return best</code></pre>
+    <p><span class="big g">O(n)</span>. Extension: "maximal rectangle of 1s in a matrix" runs this on each row's running heights.</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Sliding window maximum <span class="diff hard">hard</span> <span class="tag">monotonic deque</span></summary>
+    <p>Deque of indexes with decreasing values (animated above). <span class="big g">O(n)</span> time, O(k) space. A heap gives O(n log n).</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Decode string <span class="diff med">medium</span> <span class="tag">stack</span></summary>
+    <p class="q"><code>"3[a2[c]]"</code> &rarr; <code>"accaccacc"</code>.</p>
+<pre><code>def decode(s):
+    st, cur, num = [], "", 0
+    for c in s:
+        if c.isdigit(): num = num * 10 + int(c)
+        elif c == "[": st.append((cur, num)); cur, num = "", 0
+        elif c == "]":
+            prev, k = st.pop(); cur = prev + cur * k
+        else: cur += c
+    return cur</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q9. Asteroid collision <span class="diff med">medium</span> <span class="tag">stack simulation</span></summary>
+    <p class="q">Positive values move right, negative left; when two meet, the smaller explodes (equal: both). What remains?</p>
+<pre><code>def asteroids(a):
+    st = []
+    for x in a:
+        alive = True
+        while alive and x &lt; 0 and st and st[-1] &gt; 0:
+            if st[-1] &lt; -x: st.pop(); continue
+            if st[-1] == -x: st.pop()
+            alive = False
+        if alive: st.append(x)
+    return st</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q10. Simplify a Unix path <span class="diff med">medium</span> <span class="tag">stack</span></summary>
+    <p class="q"><code>"/a/./b/../../c/"</code> &rarr; <code>"/c"</code>.</p>
+<pre><code>def simplify(path):
+    st = []
+    for part in path.split("/"):
+        if part == "..":
+            if st: st.pop()
+        elif part and part != ".": st.append(part)
+    return "/" + "/".join(st)</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q11. Basic calculator with + - and brackets <span class="diff hard">hard</span> <span class="tag">stack of signs</span></summary>
+    <p class="q">Evaluate <code>"1 - (4 + 5 - (2 - 3))"</code>.</p>
+    <h4>Approach</h4><p>Keep a running result and a sign. On "(", push the current result and sign, then start fresh; on ")", the inner result is multiplied by the pushed sign and added to the pushed result.</p>
+<pre><code>def calc(s):
+    res, num, sign, st = 0, 0, 1, []
+    for c in s:
+        if c.isdigit(): num = num * 10 + int(c)
+        elif c in "+-":
+            res += sign * num; num = 0; sign = 1 if c == "+" else -1
+        elif c == "(":
+            st.append((res, sign)); res, sign = 0, 1
+        elif c == ")":
+            res += sign * num; num = 0
+            prev, sg = st.pop(); res = prev + sg * res
+    return res + sign * num</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q12. Design a circular queue <span class="diff med">medium</span> <span class="tag">ring buffer</span></summary>
+<pre><code>class CircularQueue:
+    def __init__(self, k): self.a, self.head, self.size = [0] * k, 0, 0
+    def enqueue(self, x):
+        if self.size == len(self.a): return False
+        self.a[(self.head + self.size) % len(self.a)] = x; self.size += 1; return True
+    def dequeue(self):
+        if not self.size: return False
+        self.head = (self.head + 1) % len(self.a); self.size -= 1; return True
+    def front(self): return self.a[self.head] if self.size else -1
+    def rear(self):  return self.a[(self.head + self.size - 1) % len(self.a)] if self.size else -1</code></pre>
+    <p>All <span class="big g">O(1)</span> (see the ring buffer in the playground).</p>
+  </details>
+
+  <div class="pager"><a href="../linked-lists/index.html">&larr; Linked lists</a><a href="../hashing/index.html">Next: Hashing &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

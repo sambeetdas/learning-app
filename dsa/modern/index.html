@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modern and Probabilistic Algorithms - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>18. Probabilistic, big-data and latest algorithms</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../math/index.html">&larr; Math</a><a href="../patterns/index.html">Problem patterns &rarr;</a></nav>
+  </header>
+
+  <p>
+    Classic algorithms assume the data fits in memory and the answer must be exact. Modern systems often break both assumptions: billions of events per day, streams you see only once,
+    machines that fail, and embeddings with hundreds of dimensions. The algorithms on this page trade a little accuracy, or a tiny chance of error, for enormous savings in memory and time.
+    They run inside databases, CDNs, search engines, AI systems and every large web service.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Question at scale</th><th>Algorithm</th><th>Memory</th></tr>
+      <tr><td>"Have I seen this item before?"</td><td>Bloom / cuckoo / xor filter</td><td>~10 bits per item for 1% error</td></tr>
+      <tr><td>"How many distinct items?"</td><td>HyperLogLog</td><td>~12 KB for billions, ~1% error</td></tr>
+      <tr><td>"How often does x occur?" / "What are the top items?"</td><td>Count-Min sketch, Space-Saving</td><td>fixed, independent of the number of items</td></tr>
+      <tr><td>"What is the 99th percentile latency?"</td><td>t-digest, KLL, DDSketch</td><td>a few KB</td></tr>
+      <tr><td>"Pick a fair random sample of a stream"</td><td>Reservoir sampling</td><td>k items</td></tr>
+      <tr><td>"Which documents are near-duplicates?"</td><td>MinHash + LSH, SimHash</td><td>a short signature per document</td></tr>
+      <tr><td>"Which vectors are most similar to this one?"</td><td>HNSW, IVF-PQ, DiskANN</td><td>graph or compressed codes</td></tr>
+      <tr><td>"Which server owns this key?"</td><td>Consistent / rendezvous hashing</td><td>O(servers)</td></tr>
+      <tr><td>"Is this client sending too many requests?"</td><td>Token bucket, sliding window</td><td>O(1) per client</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="bloom">Bloom filters: membership with tiny memory</h2>
+  <div class="demo" id="bf-demo">
+    <h3>Bloom filter</h3>
+    <div class="bar">
+      <label>Add <input type="text" class="wide" id="bf-add" value="apple, banana, cherry, grape, lemon"></label>
+      <label>Query <input type="text" class="wide" id="bf-q" value="banana, mango, kiwi, plum, cherry, fig"></label>
+      <button type="button" id="bf-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+<pre><code>import hashlib, math
+class Bloom:
+    def __init__(self, n, fp=0.01):
+        self.m = math.ceil(-n * math.log(fp) / math.log(2) ** 2)    # optimal number of bits
+        self.k = max(1, round(self.m / n * math.log(2)))            # optimal number of hashes
+        self.bits = bytearray((self.m + 7) // 8)
+    def _pos(self, x):
+        h = hashlib.blake2b(str(x).encode()).digest()
+        a, b = int.from_bytes(h[:8], "little"), int.from_bytes(h[8:16], "little")
+        return [(a + i * b) % self.m for i in range(self.k)]        # double hashing: k hashes from 2
+    def add(self, x):
+        for p in self._pos(x): self.bits[p // 8] |= 1 &lt;&lt; (p % 8)
+    def __contains__(self, x):
+        return all(self.bits[p // 8] &gt;&gt; (p % 8) &amp; 1 for p in self._pos(x))</code></pre>
+  <ul>
+    <li><strong>Variants:</strong> counting Bloom filters (support deletion), <strong>cuckoo filters</strong> (deletion, better space at low error rates), <strong>xor and ribbon filters</strong> (static sets, ~20-30% smaller than Bloom), quotient filters (resizable, cache-friendly), learned Bloom filters (a model filters first).</li>
+    <li><strong>Used in:</strong> LSM-tree databases (RocksDB, Cassandra, HBase) to skip files that cannot hold a key; CDNs to avoid caching one-hit wonders; web crawlers to avoid revisiting URLs; spell checkers; Bitcoin light clients; malicious-URL lists in browsers.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="hll">HyperLogLog: counting distinct items</h2>
+  <p>
+    Hash every item to a random-looking bit string. In uniformly random bits, a run of k leading zeros appears roughly once every 2<sup>k</sup> items, so the longest run seen estimates log&#8322;(distinct count).
+    One estimate is noisy, so HyperLogLog splits items into m buckets by their first bits, keeps the maximum run per bucket, and combines them with a harmonic mean. With m = 16,384 buckets of 6 bits (12 KB) the typical error is about 0.8%, for counts in the billions.
+  </p>
+<pre class="pseudo">for each item x:
+    h = hash(x)
+    j = first p bits of h                  // which of the 2^p buckets
+    w = remaining bits
+    M[j] = max(M[j], leading_zeros(w) + 1)
+estimate = alpha * m^2 / sum(2^(-M[j]))    // plus small/large-range corrections
+merge two sketches = element-wise max     // so per-day sketches combine into per-month counts</pre>
+  <p class="muted">Used by Redis (<code>PFADD</code>/<code>PFCOUNT</code>), BigQuery and Snowflake (<code>APPROX_COUNT_DISTINCT</code>), Presto/Trino, Elasticsearch cardinality aggregations, and network monitoring (unique source IPs).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="count-min">Count-Min sketch and heavy hitters</h2>
+  <div class="demo" id="cm-demo">
+    <h3>Count-Min sketch</h3>
+    <div class="bar">
+      <label>Stream <input type="text" class="wide" id="cm-stream" value="cat dog cat bird cat dog fish cat owl dog cat ant"></label>
+      <label>estimate <input type="text" id="cm-q" value="cat" style="width:6rem"></label>
+      <button type="button" id="cm-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Top-k / heavy hitters:</strong> combine a Count-Min sketch with a small heap of the current top items, or use <strong>Space-Saving</strong> / <strong>Misra-Gries</strong>, which keep k counters and guarantee finding every item that occurs more than n/k times.</li>
+    <li><strong>Quantiles:</strong> <strong>t-digest</strong>, <strong>KLL</strong> and <strong>DDSketch</strong> estimate percentiles (p50, p99 latency) from streams with small, mergeable summaries; used by Prometheus-style monitoring, Datadog, Elasticsearch and Apache DataSketches.</li>
+    <li><strong>Uses:</strong> trending hashtags and searches, DDoS detection (which IPs send the most), database query planners (frequency estimates), ad-click counting.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="sampling">Random sampling and shuffling</h2>
+  <div class="demo" id="rs-demo">
+    <h3>Reservoir sampling (k = 3 from a stream of 12)</h3>
+    <div class="bar"><button type="button" id="rs-again">Run again with new random choices</button><button type="button" id="rs-sim" class="run">Simulate 10,000 runs</button></div>
+    <div class="stage"></div>
+    <div id="rs-hist"></div>
+  </div>
+<pre><code>import random
+def fisher_yates(a):                       # uniform shuffle in O(n): every permutation equally likely
+    for i in range(len(a) - 1, 0, -1):
+        j = random.randint(0, i)           # NOT randint(0, len(a)-1): that version is biased
+        a[i], a[j] = a[j], a[i]
+
+def weighted_pick(weights):                # pick index i with probability w[i] / sum(w)
+    prefix = list(itertools.accumulate(weights))
+    return bisect.bisect_right(prefix, random.random() * prefix[-1])
+# Many picks from fixed weights: Walker's alias method, O(1) per pick after O(n) setup.</code></pre>
+  <p class="muted"><strong>Randomised algorithms</strong> come in two flavours: <em>Las Vegas</em> (always correct, random running time: randomised quicksort, skip lists) and <em>Monte Carlo</em> (fixed time, small chance of a wrong answer: Miller-Rabin, Bloom filters, HyperLogLog).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="similarity">Near-duplicate detection: MinHash, LSH and SimHash</h2>
+  <ul>
+    <li><strong>Jaccard similarity</strong> of two sets = |A &cap; B| / |A &cup; B| (documents as sets of word shingles).</li>
+    <li><strong>MinHash:</strong> apply a random hash to every element and keep the minimum. The probability that two sets get the same minimum equals their Jaccard similarity. With 128 hash functions, each document becomes a 128-number signature whose agreement estimates similarity.</li>
+    <li><strong>Locality-sensitive hashing (LSH):</strong> split signatures into bands and hash each band; similar documents collide in at least one band with high probability. You only compare candidates that collide, instead of all n&sup2; pairs.</li>
+    <li><strong>SimHash:</strong> a single 64-bit fingerprint per document where similar documents differ in few bits (Hamming distance); used for web-scale near-duplicate detection.</li>
+    <li><strong>Uses:</strong> de-duplicating web crawls and training data for language models, plagiarism detection, clustering news stories, finding similar products.</li>
+  </ul>
+<pre><code>def minhash_signature(tokens, num=128, seed=1):
+    rnd = random.Random(seed)
+    salts = [rnd.getrandbits(64) for _ in range(num)]
+    return [min(hash((s, t)) for t in tokens) for s in salts]
+
+def estimated_jaccard(sig_a, sig_b):
+    return sum(x == y for x, y in zip(sig_a, sig_b)) / len(sig_a)</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="vector">Vector search: approximate nearest neighbours</h2>
+  <p>
+    Modern AI represents text, images and users as <strong>embedding vectors</strong> with hundreds of dimensions; "find similar" means "find the nearest vectors" (cosine or dot-product similarity).
+    Exact search compares the query with every vector: O(n&middot;d), too slow for millions. <strong>Approximate nearest neighbour (ANN)</strong> indexes return almost the same results in milliseconds.
+    They power semantic search, recommendations and retrieval-augmented generation (RAG) for chatbots.
+  </p>
+  <div class="demo" id="nsw-demo">
+    <h3>Greedy search on a navigable small-world graph</h3>
+    <div class="bar"><button type="button" id="nsw-new">New points and query</button></div>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Index</th><th>Idea</th><th>Trade-off</th></tr>
+      <tr><td><strong>HNSW</strong> (hierarchical navigable small world, 2016)</td><td>Layers of proximity graphs: sparse top layers for long jumps, dense bottom layer for precision; greedy search with a candidate list</td><td>Excellent speed and recall; memory-hungry; the default in most vector databases</td></tr>
+      <tr><td><strong>IVF</strong> (inverted file)</td><td>Cluster vectors with k-means; search only the few closest clusters</td><td>Fast, tunable (nprobe); recall depends on clustering</td></tr>
+      <tr><td><strong>PQ</strong> (product quantisation)</td><td>Compress each vector into a few bytes by quantising sub-vectors</td><td>10-100x less memory; approximate distances</td></tr>
+      <tr><td><strong>DiskANN / Vamana</strong></td><td>A graph index designed to live on SSD</td><td>Billion-scale on one machine</td></tr>
+      <tr><td><strong>ScaNN</strong></td><td>Anisotropic quantisation tuned for dot-product search</td><td>Google's state-of-the-art speed/recall</td></tr>
+      <tr><td><strong>LSH</strong> for vectors</td><td>Random hyperplanes: similar vectors fall on the same sides</td><td>Simple, provable; usually beaten by graphs in practice</td></tr>
+    </table>
+  </div>
+<pre><code>import numpy as np
+def cosine_top_k(query, matrix, k=5):      # exact search: fine up to ~1e5-1e6 vectors on a GPU/CPU
+    q = query / np.linalg.norm(query)
+    m = matrix / np.linalg.norm(matrix, axis=1, keepdims=True)
+    scores = m @ q
+    return np.argpartition(-scores, k)[:k]   # quickselect, then sort these k if needed
+
+# ANN with a library:
+import hnswlib
+index = hnswlib.Index(space="cosine", dim=384)
+index.init_index(max_elements=1_000_000, M=16, ef_construction=200)
+index.add_items(vectors)
+index.set_ef(64)                            # higher ef = better recall, slower
+labels, distances = index.knn_query(query_vectors, k=10)</code></pre>
+  <p class="muted">Libraries and databases: FAISS, hnswlib, Annoy, ScaNN; pgvector (PostgreSQL), Elasticsearch/OpenSearch, Azure AI Search, Milvus, Qdrant, Weaviate, Pinecone, Redis. See the <a href="../../ml/index.html#combine">ML topic's RAG pipeline</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="consistent">Consistent hashing</h2>
+  <p>With <code>server = hash(key) % N</code>, adding or removing one server changes N, and almost every key moves: a cache stampede or a massive data migration. <strong>Consistent hashing</strong> places servers and keys on a ring; a key belongs to the next server clockwise. Changing one server only moves the keys in its arc, about 1/N of them.</p>
+  <div class="demo">
+    <h3>The hash ring</h3>
+    <div class="bar">
+      <button type="button" id="ch-add" class="primary">Add a server</button>
+      <button type="button" id="ch-del">Remove a server</button>
+      <label>virtual nodes per server <select id="ch-vn"><option>1</option><option selected>3</option><option>8</option></select></label>
+    </div>
+    <div id="ch-stage" class="stage"></div>
+    <div class="caption" id="ch-msg"></div>
+  </div>
+  <ul>
+    <li><strong>Virtual nodes:</strong> each physical server appears at many points on the ring, which evens out the load and lets bigger servers take more points.</li>
+    <li><strong>Rendezvous (highest random weight) hashing:</strong> each key goes to the server with the highest <code>hash(key, server)</code>; simple and minimal movement without a ring.</li>
+    <li><strong>Jump consistent hash</strong> (Google, 2014): a few lines of arithmetic, no memory, perfectly balanced, for numbered buckets. <strong>Maglev hashing</strong> builds a lookup table for fast load balancing.</li>
+    <li><strong>Used by:</strong> Amazon Dynamo and DynamoDB, Cassandra, Riak, memcached client libraries, CDNs (Akamai), load balancers (Google Maglev, Envoy), distributed caches.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="rate-limiting">Rate limiting algorithms</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>How it works</th><th>Character</th></tr>
+      <tr><td><strong>Token bucket</strong></td><td>Tokens refill at rate r up to capacity b; each request spends one</td><td>Allows short bursts up to b, average rate r (AWS, Stripe, most API gateways)</td></tr>
+      <tr><td>Leaky bucket</td><td>Requests queue and drain at a constant rate</td><td>Smooth output; delays bursts</td></tr>
+      <tr><td>Fixed window counter</td><td>Count requests per clock minute</td><td>Simple; allows 2x bursts at window edges</td></tr>
+      <tr><td>Sliding window log</td><td>Store timestamps of recent requests</td><td>Exact; more memory</td></tr>
+      <tr><td>Sliding window counter</td><td>Weighted mix of the current and previous window counts</td><td>Good approximation with O(1) memory (Cloudflare)</td></tr>
+    </table>
+  </div>
+<pre><code>import time
+class TokenBucket:
+    def __init__(self, rate, capacity):
+        self.rate, self.cap = rate, capacity
+        self.tokens, self.last = capacity, time.monotonic()
+    def allow(self):
+        now = time.monotonic()
+        self.tokens = min(self.cap, self.tokens + (now - self.last) * self.rate)   # lazy refill
+        self.last = now
+        if self.tokens &gt;= 1: self.tokens -= 1; return True
+        return False</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="distributed">Algorithms behind distributed systems</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm / structure</th><th>Problem it solves</th><th>Where</th></tr>
+      <tr><td><strong>Merkle tree</strong></td><td>Find exactly which data differs between replicas by comparing hashes top-down</td><td>Cassandra/Dynamo anti-entropy, Git, IPFS, blockchains, certificate transparency</td></tr>
+      <tr><td><strong>Raft / Paxos</strong></td><td>Consensus: agree on one ordered log even when machines fail</td><td>etcd, Consul, ZooKeeper (ZAB), CockroachDB, Kafka KRaft</td></tr>
+      <tr><td><strong>Vector clocks / hybrid logical clocks</strong></td><td>Order events without synchronised clocks; detect concurrent updates</td><td>Dynamo-style stores, CockroachDB, MongoDB</td></tr>
+      <tr><td><strong>CRDTs</strong></td><td>Data types that merge concurrent edits automatically, without coordination</td><td>Collaborative editors (Figma-style multiplayer, Yjs, Automerge), Redis Enterprise, Riak</td></tr>
+      <tr><td><strong>Gossip protocols</strong></td><td>Spread membership and state information epidemically</td><td>Cassandra, Consul (SWIM), Bitcoin</td></tr>
+      <tr><td><strong>Snowflake IDs / UUIDv7</strong></td><td>Unique, roughly time-ordered IDs without a central counter</td><td>Twitter/X, Discord, databases (good B-tree locality)</td></tr>
+      <tr><td><strong>MapReduce / external sorting</strong></td><td>Process data larger than one machine: map, shuffle by key, reduce</td><td>Hadoop, Spark, BigQuery, data warehouses</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="learned">Learned and AI-discovered algorithms</h2>
+  <ul>
+    <li><strong>Learned indexes (2018):</strong> Kraska et al. showed that a small model predicting a key's position in a sorted array can replace or accelerate B-trees (RMI, PGM-index, ALEX), with smaller indexes and faster lookups on suitable data.</li>
+    <li><strong>Learned Bloom filters</strong> and learned cardinality estimation in query optimisers use models as a first filter, backed by a classic structure for guarantees.</li>
+    <li><strong>AlphaDev (2023):</strong> DeepMind's reinforcement-learning agent discovered faster assembly routines for sorting 3, 4 and 5 elements; they were merged into LLVM's libc++ standard library.</li>
+    <li><strong>AlphaTensor (2022) and AlphaEvolve (2025):</strong> AI systems discovered new matrix-multiplication schemes (AlphaEvolve: 4&times;4 complex matrices in 48 multiplications) and improved data-centre scheduling heuristics.</li>
+    <li><strong>Algorithms with predictions:</strong> a research area designing algorithms (caching, scheduling, online decisions) that exploit ML predictions when they are good and stay safe when they are wrong.</li>
+  </ul>
+
+  <h2 id="timeline">Recent milestones at a glance</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Year</th><th>Result</th><th>Topic page</th></tr>
+      <tr><td>2016</td><td>HNSW graphs for vector search; pdqsort (later adopted by Go and Rust)</td><td>this page, <a href="../sorting/index.html#real-world">sorting</a></td></tr>
+      <tr><td>2017-18</td><td>Swiss tables (Abseil); learned indexes</td><td><a href="../hashing/index.html#modern">hashing</a>, this page</td></tr>
+      <tr><td>2019</td><td>Integer multiplication in O(n log n)</td><td><a href="../math/index.html#fft">math</a></td></tr>
+      <tr><td>2022</td><td>Almost-linear-time maximum flow; near-linear negative-weight shortest paths; AlphaTensor; Python 3.11 adopts Powersort</td><td><a href="../graphs-advanced/index.html#research">advanced graphs</a></td></tr>
+      <tr><td>2023</td><td>AlphaDev's sorting routines in LLVM libc++; SIEVE cache eviction</td><td>this page, <a href="../advanced/index.html#caches">advanced structures</a></td></tr>
+      <tr><td>2024</td><td>Dijkstra shown universally optimal; Rust adopts driftsort/ipnsort; matrix-multiplication exponent about 2.371</td><td><a href="../graphs-advanced/index.html#research">advanced graphs</a></td></tr>
+      <tr><td>2025</td><td>Directed shortest paths beat the sorting barrier (O(m log<sup>2/3</sup> n)); open-addressing hash tables beat Yao's conjecture; AlphaEvolve</td><td><a href="../graphs/index.html#dijkstra">graphs</a>, <a href="../hashing/index.html#modern">hashing</a></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions (design and coding)</h2>
+
+  <details class="prob"><summary>Q1. Design a rate limiter <span class="diff med">medium</span> <span class="tag">token bucket</span></summary>
+    <p>One token bucket per client key (user, API key, IP) stored in memory or Redis. For a distributed setup, keep the bucket state in Redis and update it atomically with a Lua script (read tokens and timestamp, refill, decrement, write back). Return HTTP 429 with a <code>Retry-After</code> header when empty.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Count unique visitors per day across 100 servers <span class="diff med">medium</span> <span class="tag">HyperLogLog</span></summary>
+    <p>Each server keeps a HyperLogLog sketch per day; merge sketches with an element-wise max to get the global count (and to roll days up into weeks). 12 KB per sketch instead of a set of all user IDs; about 1% error.</p>
+  </details>
+
+  <details class="prob"><summary>Q3. Avoid re-crawling URLs with limited memory <span class="diff med">medium</span> <span class="tag">Bloom filter</span></summary>
+    <p>Check a Bloom filter before crawling; add each URL after crawling. A false positive skips a few new URLs (acceptable); a false negative can never happen, so you never crawl twice. Size it with m = -n ln(p) / (ln 2)&sup2;.</p>
+  </details>
+
+  <details class="prob"><summary>Q4. Random pick with weights <span class="diff med">medium</span> <span class="tag">prefix sums + binary search</span></summary>
+    <p>Build prefix sums of the weights; draw r uniformly in [0, total) and return <code>bisect_right(prefix, r)</code> (code above). O(log n) per pick. For many picks from fixed weights, the alias method gives O(1).</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Shuffle an array fairly <span class="diff med">medium</span> <span class="tag">Fisher-Yates</span></summary>
+    <p>Fisher-Yates (code above): for i from n-1 down to 1, swap a[i] with a[j], j uniform in [0, i]. The common mistake of picking j from the whole array produces n<sup>n</sup> equally likely outcomes, which cannot divide evenly into n! permutations, so it is biased.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. Random node from a linked list of unknown length, in one pass <span class="diff med">medium</span> <span class="tag">reservoir, k = 1</span></summary>
+<pre><code>def random_node(head):
+    chosen, i, node = None, 1, head
+    while node:
+        if random.randrange(i) == 0: chosen = node.val     # keep with probability 1/i
+        node, i = node.next, i + 1
+    return chosen</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q7. Find the top 100 search queries of the day from a stream <span class="diff hard">hard</span> <span class="tag">heavy hitters</span></summary>
+    <p>Exact: a hash map of counts plus a min-heap of size 100 (needs memory for every distinct query). At huge scale: a Count-Min sketch for frequencies plus a heap of the current top 100, or the Space-Saving algorithm with a few thousand counters. Shard by query hash across machines and merge each shard's top list.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Distribute cache keys across servers that come and go <span class="diff med">medium</span> <span class="tag">consistent hashing</span></summary>
+    <p>A sorted list of virtual-node positions; look up the first position &ge; hash(key) with binary search (wrapping around). Adding a server inserts its virtual nodes and moves only about 1/N of the keys (see the demo above).</p>
+<pre><code>import bisect
+class Ring:
+    def __init__(self, nodes, vn=100):
+        self.ring = sorted((h(f"{n}#{i}"), n) for n in nodes for i in range(vn))
+        self.keys = [p for p, _ in self.ring]
+    def owner(self, key):
+        i = bisect.bisect_left(self.keys, h(key)) % len(self.ring)
+        return self.ring[i][1]</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q9. Find near-duplicate documents among 10 million <span class="diff hard">hard</span> <span class="tag">MinHash + LSH</span></summary>
+    <p>Shingle each document (e.g. 5-word windows), compute a 128-value MinHash signature, split it into 32 bands of 4 values, and hash each band into buckets. Only documents sharing a bucket are compared exactly. Tune bands and rows so pairs above your similarity threshold almost always collide.</p>
+  </details>
+
+  <details class="prob"><summary>Q10. Build semantic search over a million documents <span class="diff hard">hard</span> <span class="tag">embeddings + ANN</span></summary>
+    <p>Embed each chunk with a sentence-embedding model; store vectors in an HNSW index (pgvector, FAISS, a vector database). For a query, embed it, retrieve the top 50 by cosine similarity, optionally combine with keyword search (BM25) and re-rank with a cross-encoder. Measure recall against exact search on a sample to tune M and ef.</p>
+  </details>
+
+  <details class="prob"><summary>Q11. Generate unique, sortable IDs without a central database <span class="diff med">medium</span> <span class="tag">Snowflake</span></summary>
+    <p>64 bits = 41-bit millisecond timestamp + 10-bit machine ID + 12-bit per-millisecond sequence. IDs are unique, roughly time-ordered (good for B-tree indexes), and generated locally. UUIDv7 is the standardised equivalent with 128 bits.</p>
+  </details>
+
+  <div class="pager"><a href="../math/index.html">&larr; Math</a><a href="../patterns/index.html">Next: Problem-solving patterns &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

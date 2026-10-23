@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trees and BSTs - DSA</title>
+  <link rel="stylesheet" href="../assets/dsa.css">
+</head>
+<body>
+  <header class="top">
+    <h1>6. Trees and binary search trees</h1>
+    <nav><a href="../index.html">DSA home</a><a href="../hashing/index.html">&larr; Hashing</a><a href="../heaps/index.html">Heaps &rarr;</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What is a tree?</h2>
+  <p>
+    A <strong>tree</strong> is a hierarchy: one <strong>root</strong> node, and every other node has exactly one <strong>parent</strong>. There are no cycles, so there is exactly one path between any two nodes.
+    File systems, the HTML DOM, organisation charts, JSON documents and database indexes are all trees.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td>Root / leaf</td><td>The top node / a node with no children</td></tr>
+      <tr><td>Depth of a node</td><td>Number of edges from the root to it</td></tr>
+      <tr><td>Height of a tree</td><td>Number of edges (or levels) on the longest root-to-leaf path</td></tr>
+      <tr><td>Subtree</td><td>A node together with all its descendants</td></tr>
+      <tr><td>Binary tree</td><td>Every node has at most two children: left and right</td></tr>
+      <tr><td>Full / complete / perfect</td><td>Full: 0 or 2 children everywhere. Complete: every level filled except possibly the last, which fills left to right (heaps). Perfect: all levels completely full (2<sup>h+1</sup>-1 nodes).</td></tr>
+      <tr><td>Balanced</td><td>Height is O(log n), e.g. left and right subtree heights differ by at most 1 everywhere (AVL)</td></tr>
+      <tr><td>Degenerate</td><td>Every node has one child: really a linked list, height n</td></tr>
+    </table>
+  </div>
+<pre><code>class TreeNode:
+    def __init__(self, val, left=None, right=None):
+        self.val, self.left, self.right = val, left, right
+# A complete binary tree can instead live in an array: children of index i are 2i+1 and 2i+2, parent is (i-1)//2.</code></pre>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="traversals">Traversals</h2>
+  <p>"Visiting every node" can be done in several orders. Depth-first orders use recursion (the call stack); breadth-first uses a queue.</p>
+  <div class="demo" id="tr-demo">
+    <h3>Tree traversal</h3>
+    <div class="bar"><label>Order <select id="tr-kind"><option value="pre">Preorder (node, left, right)</option><option value="in" selected>Inorder (left, node, right)</option><option value="post">Postorder (left, right, node)</option><option value="level">Level order (BFS)</option></select></label></div>
+    <div class="stage"></div>
+  </div>
+  <h3>Iterative versions (no recursion limit)</h3>
+<pre><code>def inorder_iterative(root):
+    out, st, cur = [], [], root
+    while cur or st:
+        while cur:                 # go left as far as possible
+            st.append(cur); cur = cur.left
+        cur = st.pop()
+        out.append(cur.val)        # visit
+        cur = cur.right
+    return out
+
+def preorder_iterative(root):
+    out, st = [], [root] if root else []
+    while st:
+        n = st.pop(); out.append(n.val)
+        if n.right: st.append(n.right)   # push right first so left is processed first
+        if n.left: st.append(n.left)
+    return out</code></pre>
+  <p class="muted"><strong>Morris traversal</strong> does inorder in O(1) extra space by temporarily threading right pointers back to ancestors.</p>
+
+  <h3>The recursive recipe for tree problems</h3>
+<pre class="pseudo">solve(node):
+    if node is empty: return the base value        (0, None, True, ...)
+    left  = solve(node.left)
+    right = solve(node.right)
+    combine left, right and node.val into this node's answer
+    (optionally update a global best, e.g. diameter or max path sum)
+    return what the PARENT needs from this subtree</pre>
+  <p>Height: <code>1 + max(left, right)</code>. Size: <code>1 + left + right</code>. Balanced: both balanced and heights differ by at most 1. Most tree questions are this template with a different "combine".</p>
+
+  <!-- ===================================================== -->
+  <h2 id="bst">Binary search trees (BST)</h2>
+  <p>
+    A <strong>BST</strong> adds one rule: for every node, keys in the left subtree are smaller and keys in the right subtree are larger. Then searching is like binary search: each comparison discards a whole subtree.
+    Operations cost <span class="big g">O(h)</span>, where h is the height: <span class="big g">O(log n)</span> if balanced, but <span class="big y">O(n)</span> if keys arrive in sorted order and the tree degenerates into a stick.
+  </p>
+  <div class="demo" id="bst-demo">
+    <h3>BST operations</h3>
+    <div class="bar">
+      <label>Operation <select id="bst-op"><option value="insert">Insert</option><option value="search">Search</option><option value="del">Delete</option></select></label>
+      <label>Tree from <input type="text" class="wide" id="bst-vals" value="50, 30, 70, 20, 40, 60, 80, 35, 45, 75"></label>
+      <label>value <input type="number" id="bst-x" value="65" style="width:5rem"></label>
+      <button type="button" id="bst-run" class="run">Run</button>
+    </div>
+    <div class="stage"></div>
+    <p class="cap muted">Try deleting 20 (leaf), 80 (one child), 30 or 50 (two children).</p>
+  </div>
+  <h3>Ordered operations a BST gives you (and a hash map does not)</h3>
+  <ul>
+    <li><strong>Min / max:</strong> walk left / right as far as possible.</li>
+    <li><strong>Floor / ceiling:</strong> the largest key &le; x / the smallest key &ge; x, by a single root-to-leaf walk.</li>
+    <li><strong>Successor / predecessor</strong> of a node, and <strong>sorted iteration</strong> (inorder).</li>
+    <li><strong>Range queries:</strong> all keys between a and b in O(h + k) for k results.</li>
+    <li><strong>Rank / k-th smallest:</strong> store subtree sizes in each node ("order-statistic tree").</li>
+  </ul>
+<pre><code>def is_valid_bst(node, lo=float('-inf'), hi=float('inf')):
+    if not node: return True
+    if not (lo &lt; node.val &lt; hi): return False
+    return is_valid_bst(node.left, lo, node.val) and is_valid_bst(node.right, node.val, hi)</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="balanced">Self-balancing trees</h2>
+  <p>To guarantee O(log n), a balanced BST restructures itself after inserts and deletes using <strong>rotations</strong>: local re-wirings of three nodes that keep the BST order but change the shape.</p>
+<pre class="pseudo">rotate_right(y):              rotate_left(x):
+       y              x              x                  y
+      / \            / \            / \                / \
+     x   C   --&gt;    A   y          A   y     --&gt;      x   C
+    / \                / \            / \            / \
+   A   B              B   C          B   C          A   B</pre>
+  <div class="demo" id="avl-demo">
+    <h3>AVL insertion with rotations</h3>
+    <div class="bar"><label>Insert in order <input type="text" class="wide" id="avl-vals" value="10, 20, 30, 40, 50, 25"></label><button type="button" id="avl-run" class="run">Run</button><span class="muted">try: <code>30, 20, 10</code> (LL), <code>30, 10, 20</code> (LR)</span></div>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Tree</th><th>Balance rule</th><th>Strengths</th><th>Used in</th></tr>
+      <tr><td><strong>AVL</strong></td><td>Subtree heights differ by &le; 1</td><td>Strictly balanced, fastest lookups</td><td>Read-heavy in-memory indexes</td></tr>
+      <tr><td><strong>Red-black</strong></td><td>Nodes coloured red/black; no red node has a red child; every root-to-leaf path has the same number of black nodes (height &le; 2 log n)</td><td>Fewer rotations on insert/delete</td><td>Java <code>TreeMap</code>, C++ <code>std::map</code>, C# <code>SortedDictionary</code>, the Linux kernel</td></tr>
+      <tr><td><strong>Splay tree</strong></td><td>Recently accessed nodes are rotated to the root</td><td>Amortised O(log n); great for skewed access</td><td>Caches, some allocators</td></tr>
+      <tr><td><strong>Treap</strong></td><td>BST on keys + heap on random priorities</td><td>Simple, expected O(log n), easy split/merge</td><td>Competitive programming, randomised structures</td></tr>
+      <tr><td><strong>Skip list</strong> (not a tree)</td><td>Random express lanes over a linked list</td><td>Simple, concurrent-friendly</td><td>Redis sorted sets, LevelDB/RocksDB memtables</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="btree">B-trees and B+ trees: trees for disks and databases</h2>
+  <p>
+    Reading from disk (or SSD) is thousands of times slower than reading memory, and data comes in whole pages (4-16 KB). A <strong>B-tree</strong> stores <em>many</em> keys per node (often hundreds),
+    so the tree is very shallow: with 500 keys per node, 3 levels hold 125 million keys, so any lookup needs about 3 page reads.
+  </p>
+<pre class="pseudo">                    [ 30 | 60 ]                         every node holds between t-1 and 2t-1 keys
+                 /       |       \                       all leaves are at the same depth
+      [10 | 20]      [40 | 50]      [70 | 80 | 90]       a full node SPLITS in two and pushes its middle key up
+
+B+ tree: all values live in the leaves, and the leaves are linked:  [10 20] -&gt; [30 40 50] -&gt; [60 70 80 90]
+         so a range scan is "find the start, then walk the leaf chain".</pre>
+  <ul>
+    <li><strong>Used by:</strong> almost every relational database index (PostgreSQL, MySQL InnoDB, SQL Server), file systems (NTFS, ext4 directories, Btrfs, APFS), and key-value stores.</li>
+    <li><strong>Alternative for write-heavy workloads:</strong> LSM trees (Cassandra, RocksDB), see <a href="../advanced/index.html#lsm">advanced structures</a>.</li>
+  </ul>
+
+  <h2 id="other">Other important trees</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Tree</th><th>Purpose</th><th>See</th></tr>
+      <tr><td>Heap</td><td>Fast access to the minimum or maximum</td><td><a href="../heaps/index.html">Heaps</a></td></tr>
+      <tr><td>Trie (prefix tree)</td><td>Strings sharing prefixes; autocomplete</td><td><a href="../advanced/index.html#trie">Advanced</a></td></tr>
+      <tr><td>Segment tree / Fenwick tree</td><td>Range queries with updates</td><td><a href="../advanced/index.html#segment-tree">Advanced</a></td></tr>
+      <tr><td>Suffix tree / array</td><td>Fast substring search over a text</td><td><a href="../strings/index.html#suffix">Strings</a></td></tr>
+      <tr><td>k-d tree, quadtree, R-tree</td><td>Spatial data: nearest restaurants, map tiles, collision detection, geographic indexes (PostGIS)</td><td><a href="../math/index.html#geometry">Math and geometry</a></td></tr>
+      <tr><td>Merkle tree</td><td>Each node stores the hash of its children: verify huge data sets by comparing hashes (Git, blockchains, database replication, BitTorrent)</td><td>-</td></tr>
+      <tr><td>Expression / syntax tree</td><td>Parsed code and formulas; compilers walk it</td><td>-</td></tr>
+      <tr><td>Decision tree</td><td>Machine learning models and rule engines</td><td><a href="../../ml/index.html#algorithms">ML topic</a></td></tr>
+    </table>
+  </div>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <ul>
+    <li><strong>File systems and the DOM:</strong> folders and HTML elements are n-ary trees; <code>du</code> computes sizes with a postorder traversal.</li>
+    <li><strong>Databases:</strong> B+ tree indexes make <code>WHERE id = ?</code> and <code>ORDER BY</code> fast.</li>
+    <li><strong>Language runtimes:</strong> sorted maps and sets (red-black trees); compilers build syntax trees.</li>
+    <li><strong>Networking:</strong> routers use tries/radix trees for longest-prefix IP matching.</li>
+    <li><strong>Games and graphics:</strong> scene graphs, BSP trees, bounding-volume hierarchies for ray tracing.</li>
+    <li><strong>Version control and blockchains:</strong> Merkle trees detect exactly which parts changed.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="questions">Practice questions</h2>
+
+  <details class="prob"><summary>Q1. Maximum depth of a binary tree <span class="diff easy">easy</span> <span class="tag">recursion template</span></summary>
+<pre><code>def max_depth(n):
+    return 0 if not n else 1 + max(max_depth(n.left), max_depth(n.right))</code></pre>
+    <p><span class="big g">O(n)</span> time, O(h) space. BFS counting levels also works.</p>
+  </details>
+
+  <details class="prob"><summary>Q2. Invert (mirror) a binary tree <span class="diff easy">easy</span></summary>
+<pre><code>def invert(n):
+    if n: n.left, n.right = invert(n.right), invert(n.left)
+    return n</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q3. Same tree / symmetric tree <span class="diff easy">easy</span></summary>
+<pre><code>def same(a, b):
+    if not a or not b: return a is b
+    return a.val == b.val and same(a.left, b.left) and same(a.right, b.right)
+
+def symmetric(root):
+    def mirror(a, b):
+        if not a or not b: return a is b
+        return a.val == b.val and mirror(a.left, b.right) and mirror(a.right, b.left)
+    return mirror(root, root)</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q4. Level order traversal (list per level) <span class="diff med">medium</span> <span class="tag">BFS</span></summary>
+<pre><code>from collections import deque
+def levels(root):
+    res, q = [], deque([root] if root else [])
+    while q:
+        res.append([])
+        for _ in range(len(q)):            # exactly the nodes of this level
+            n = q.popleft(); res[-1].append(n.val)
+            if n.left: q.append(n.left)
+            if n.right: q.append(n.right)
+    return res</code></pre>
+    <p>Variants: right side view (last of each level), zigzag order, average per level.</p>
+  </details>
+
+  <details class="prob"><summary>Q5. Validate a BST <span class="diff med">medium</span> <span class="tag">bounds</span></summary>
+    <p>Pass down the allowed (low, high) range (code above). Checking only each node against its children is a classic mistake: a deep descendant can violate an ancestor. Alternatively, an inorder traversal must be strictly increasing.</p>
+  </details>
+
+  <details class="prob"><summary>Q6. k-th smallest element in a BST <span class="diff med">medium</span> <span class="tag">inorder</span></summary>
+<pre><code>def kth_smallest(root, k):
+    st, cur = [], root
+    while True:
+        while cur: st.append(cur); cur = cur.left
+        cur = st.pop(); k -= 1
+        if k == 0: return cur.val
+        cur = cur.right</code></pre>
+    <p><span class="big g">O(h + k)</span>. With subtree sizes stored, O(h).</p>
+  </details>
+
+  <details class="prob"><summary>Q7. Lowest common ancestor (BST and general tree) <span class="diff med">medium</span></summary>
+    <p><strong>BST:</strong> walk from the root; if both values are smaller go left, if both larger go right, otherwise the current node is the LCA. O(h).</p>
+<pre><code>def lca(n, p, q):                  # general binary tree
+    if not n or n is p or n is q: return n
+    l, r = lca(n.left, p, q), lca(n.right, p, q)
+    return n if l and r else l or r</code></pre>
+    <p>For many queries on a fixed tree, use binary lifting (O(log n) per query), see <a href="../graphs-advanced/index.html#lca">advanced graphs</a>.</p>
+  </details>
+
+  <details class="prob"><summary>Q8. Diameter of a binary tree <span class="diff med">medium</span> <span class="tag">global best</span></summary>
+<pre><code>def diameter(root):
+    best = 0
+    def h(n):
+        nonlocal best
+        if not n: return 0
+        l, r = h(n.left), h(n.right)
+        best = max(best, l + r)          # longest path passing through n
+        return 1 + max(l, r)             # what the parent needs: height
+    h(root); return best</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q9. Path sum II (all root-to-leaf paths with a given sum) <span class="diff med">medium</span> <span class="tag">backtracking</span></summary>
+<pre><code>def path_sum(root, target):
+    res, path = [], []
+    def dfs(n, rem):
+        if not n: return
+        path.append(n.val); rem -= n.val
+        if not n.left and not n.right and rem == 0: res.append(path[:])
+        dfs(n.left, rem); dfs(n.right, rem)
+        path.pop()                        # undo the choice
+    dfs(root, target); return res</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q10. Construct a tree from preorder and inorder <span class="diff med">medium</span> <span class="tag">divide and conquer</span></summary>
+    <p>The first preorder value is the root; its position in the inorder list splits left and right subtrees. Use a hash map from value to inorder index for O(n) total.</p>
+<pre><code>def build(pre, ino):
+    idx = {v: i for i, v in enumerate(ino)}; it = iter(pre)
+    def go(lo, hi):
+        if lo &gt; hi: return None
+        v = next(it); n = TreeNode(v)
+        n.left = go(lo, idx[v] - 1); n.right = go(idx[v] + 1, hi)
+        return n
+    return go(0, len(ino) - 1)</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q11. Balanced binary tree check <span class="diff easy">easy</span></summary>
+    <p>Return the height from each subtree, or -1 as soon as an imbalance is found, so the whole check is one O(n) pass instead of O(n log n).</p>
+  </details>
+
+  <details class="prob"><summary>Q12. Binary tree maximum path sum <span class="diff hard">hard</span> <span class="tag">global best</span></summary>
+    <p class="q">A path can start and end anywhere; values may be negative.</p>
+<pre><code>def max_path_sum(root):
+    best = float('-inf')
+    def gain(n):
+        nonlocal best
+        if not n: return 0
+        l, r = max(gain(n.left), 0), max(gain(n.right), 0)   # drop negative branches
+        best = max(best, n.val + l + r)                      # path bending at n
+        return n.val + max(l, r)                             # path continuing upwards
+    gain(root); return best</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q13. Serialise and deserialise a binary tree <span class="diff hard">hard</span> <span class="tag">preorder with nulls</span></summary>
+<pre><code>def serialize(root):
+    out = []
+    def go(n):
+        if not n: out.append("#"); return
+        out.append(str(n.val)); go(n.left); go(n.right)
+    go(root); return ",".join(out)
+
+def deserialize(s):
+    it = iter(s.split(","))
+    def go():
+        v = next(it)
+        if v == "#": return None
+        n = TreeNode(int(v)); n.left = go(); n.right = go(); return n
+    return go()</code></pre>
+  </details>
+
+  <details class="prob"><summary>Q14. Convert a sorted array into a balanced BST <span class="diff easy">easy</span> <span class="tag">divide and conquer</span></summary>
+    <p>Pick the middle element as the root and recurse on both halves: height O(log n), O(n) time.</p>
+  </details>
+
+  <div class="pager"><a href="../hashing/index.html">&larr; Hashing</a><a href="../heaps/index.html">Next: Heaps &rarr;</a></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/dsa.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>
