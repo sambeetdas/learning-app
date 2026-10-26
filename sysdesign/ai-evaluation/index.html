@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evaluating RAG, LLM and AI Systems - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Evaluating RAG, LLM and AI systems</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    Traditional software is tested with exact assertions. AI systems are <strong>non-deterministic</strong>, usually have <strong>no single correct answer</strong>, and fail in many subtle ways:
+    retrieving the wrong passage, inventing a fact, ignoring an instruction, calling the wrong tool, leaking data, being slow or expensive. You cannot improve what you do not measure,
+    so evaluation is a core part of the design, not an afterthought. This page defines the metrics at every layer, shows how they are computed, and how to run evaluation offline (before release) and online (in production).
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="layers">The evaluation layers</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Layer</th><th>Question</th><th>Example metrics</th></tr>
+      <tr><td><strong>1. Retrieval</strong> (RAG, search)</td><td>Did we fetch the right information?</td><td>Recall@k, precision@k, MRR, nDCG, context precision/recall</td></tr>
+      <tr><td><strong>2. Generation</strong></td><td>Is the answer correct, grounded, relevant and well-formed?</td><td>Faithfulness / groundedness, answer relevance, correctness, completeness, citation accuracy, format validity</td></tr>
+      <tr><td><strong>3. Task / agent</strong></td><td>Did the system accomplish the user's goal?</td><td>Task success rate, tool-call accuracy, trajectory quality, steps and cost per task</td></tr>
+      <tr><td><strong>4. Safety and responsibility</strong></td><td>Is it safe, fair and secure?</td><td>Harmful-content rate, jailbreak / prompt-injection success rate, PII leakage, bias, over-refusal</td></tr>
+      <tr><td><strong>5. Operations</strong></td><td>Is it fast, reliable and affordable?</td><td>TTFT, latency p95, throughput, error rate, tokens and cost per request, cache hit rate</td></tr>
+      <tr><td><strong>6. User and business</strong></td><td>Does it help people and the business?</td><td>Satisfaction, thumbs-up rate, resolution / deflection rate, acceptance rate, time saved, retention</td></tr>
+    </table>
+  </div>
+  <p class="muted">Evaluate the layers separately as well as end to end: if answers are bad, component metrics tell you whether to fix retrieval, the prompt, the model or the tools.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="retrieval">Retrieval metrics</h2>
+  <p>For each test question you need to know which documents (or chunks) are relevant, ideally with graded relevance (0 = irrelevant, 3 = perfect). Then compare the ranked list the retriever returned.</p>
+  <div class="demo">
+    <h3>Retrieval metrics calculator</h3>
+    <div class="bar">
+      <label>k (cut-off) <input type="range" id="rk" min="1" max="10" value="5"> <b id="rk-v">5</b></label>
+      <label>Relevant documents that exist in total <input type="number" id="rtot" value="6" min="1" style="width:5rem"></label>
+      <span class="muted">(includes relevant documents the retriever missed)</span>
+      <button type="button" id="rpreset">Load example</button>
+    </div>
+    <div class="split"><div id="rlist"></div><div id="rout"></div></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>Definition</th><th>Use it to</th></tr>
+      <tr><td><strong>Recall@k</strong></td><td>Relevant items in the top k / all relevant items</td><td>Check that the answer is <em>available</em> to the LLM (the most important RAG retrieval metric)</td></tr>
+      <tr><td><strong>Precision@k</strong></td><td>Relevant items in the top k / k</td><td>Check how much noise goes into the prompt (cost and distraction)</td></tr>
+      <tr><td><strong>Hit rate@k</strong></td><td>Share of questions with at least one relevant item in the top k</td><td>A simple, robust headline number</td></tr>
+      <tr><td><strong>MRR</strong> (mean reciprocal rank)</td><td>Average of 1 / rank of the first relevant item</td><td>Reward putting a good result first</td></tr>
+      <tr><td><strong>MAP</strong> (mean average precision)</td><td>Average of precision at each relevant item's rank</td><td>Reward ranking all relevant items high</td></tr>
+      <tr><td><strong>nDCG@k</strong></td><td>Discounted cumulative gain of the ranking divided by that of the ideal ranking; uses graded relevance</td><td>The standard ranking metric for search and rerankers</td></tr>
+      <tr><td><strong>Context precision / recall</strong> (RAG frameworks)</td><td>LLM-judged: are the retrieved chunks relevant, and do they contain everything needed for the reference answer?</td><td>Evaluate without hand-labelled document ids</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="generation">Generation metrics for RAG and LLM answers</h2>
+  <div class="demo" id="faith-demo">
+    <h3>Faithfulness (groundedness) check, claim by claim</h3>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>What it measures</th><th>How it is computed</th></tr>
+      <tr><td><strong>Faithfulness / groundedness</strong></td><td>Is every claim in the answer supported by the retrieved context?</td><td>Split the answer into claims; an LLM judge (or NLI model) checks each against the context; score = supported / total</td></tr>
+      <tr><td><strong>Hallucination rate</strong></td><td>Share of answers containing at least one unsupported claim</td><td>1 - (answers with faithfulness = 1) / all answers</td></tr>
+      <tr><td><strong>Answer relevance</strong></td><td>Does the answer address the question asked?</td><td>LLM judge rating, or similarity between the question and questions regenerated from the answer</td></tr>
+      <tr><td><strong>Answer correctness</strong></td><td>Is it right compared with a reference answer?</td><td>LLM judge vs reference; or exact match / token F1 for short factual answers</td></tr>
+      <tr><td><strong>Completeness</strong></td><td>Does it cover all parts of the question / all key points?</td><td>Checklist of key facts per test case, judged</td></tr>
+      <tr><td><strong>Citation precision / recall</strong></td><td>Do cited sources actually support the sentences that cite them, and is every claim cited?</td><td>Judge each (sentence, citation) pair</td></tr>
+      <tr><td><strong>Negative rejection</strong></td><td>Does it say "I don't know" when the context lacks the answer?</td><td>Include unanswerable questions in the test set</td></tr>
+      <tr><td><strong>Noise robustness</strong></td><td>Does irrelevant retrieved content mislead it?</td><td>Inject distractor chunks and re-test</td></tr>
+      <tr><td><strong>Coherence, fluency</strong></td><td>Is it well written and logically structured?</td><td>LLM judge on a 1-5 rubric</td></tr>
+      <tr><td><strong>Instruction following / format validity</strong></td><td>Respects length, tone, language, JSON schema</td><td>Programmatic checks (schema validation, regex) plus judge</td></tr>
+    </table>
+  </div>
+  <h3>Reference-based text metrics (and their limits)</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>Idea</th><th>Good for</th><th>Caution</th></tr>
+      <tr><td>Exact match / accuracy</td><td>Output equals the reference</td><td>Classification, short answers, extraction</td><td>Too strict for free text</td></tr>
+      <tr><td>Token F1</td><td>Word overlap precision and recall</td><td>Short factual QA</td><td>Ignores meaning</td></tr>
+      <tr><td>BLEU / ROUGE / METEOR / GLEU</td><td>n-gram overlap with references</td><td>Translation, summarisation baselines</td><td>Weak correlation with human judgement for open-ended answers</td></tr>
+      <tr><td>BERTScore / embedding similarity</td><td>Similarity of meaning via embeddings</td><td>Paraphrase-tolerant comparison</td><td>High similarity does not guarantee correctness</td></tr>
+      <tr><td>pass@k</td><td>Share of problems where at least one of k generated programs passes the tests</td><td>Code generation</td><td>Needs good tests</td></tr>
+      <tr><td>Perplexity</td><td>How surprised the model is by reference text</td><td>Comparing language models during training</td><td>Not a measure of answer quality</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="agents">Agent and task metrics</h2>
+  <div class="demo">
+    <h3>Scoring an agent trajectory</h3>
+    <div class="bar"><label>Run <select id="traj"><option value="good">Efficient success</option><option value="wander">Success with wasted steps</option><option value="bad">Wrong tool and failure</option></select></label></div>
+    <div id="traj-out"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>Definition</th></tr>
+      <tr><td><strong>Task success rate</strong></td><td>Share of tasks whose final outcome meets the goal (checked by state assertions, tests, or a judge with a rubric)</td></tr>
+      <tr><td><strong>Intent resolution / task adherence</strong></td><td>Did the agent understand what was asked and stay within instructions and policies?</td></tr>
+      <tr><td><strong>Tool selection accuracy</strong></td><td>Share of steps that chose an appropriate tool</td></tr>
+      <tr><td><strong>Tool argument accuracy</strong></td><td>Share of tool calls with valid, correct parameters (schema-valid and semantically right)</td></tr>
+      <tr><td><strong>Trajectory efficiency</strong></td><td>Steps, tool calls, tokens and wall time compared with a reference trajectory</td></tr>
+      <tr><td><strong>Recovery rate</strong></td><td>Share of tool errors the agent handled correctly (retry, alternative, ask the user)</td></tr>
+      <tr><td><strong>Human intervention / escalation rate</strong></td><td>How often a person had to step in or approve</td></tr>
+      <tr><td><strong>Policy / safety violations</strong></td><td>Unauthorised actions, data access outside scope, unsafe outputs</td></tr>
+      <tr><td><strong>Cost and latency per task</strong></td><td>Tokens, tool costs and time per completed task (not per call)</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="safety">Safety, security and responsible AI metrics</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>How to measure</th></tr>
+      <tr><td><strong>Harmful content rate</strong> (hate, violence, sexual, self-harm)</td><td>Content-safety classifiers on outputs over normal and adversarial test sets; severity levels</td></tr>
+      <tr><td><strong>Jailbreak / attack success rate</strong></td><td>Share of red-team prompts that make the system violate policy</td></tr>
+      <tr><td><strong>Indirect prompt-injection success rate</strong></td><td>Plant instructions in documents, emails or web pages the system reads; count successful hijacks</td></tr>
+      <tr><td><strong>PII / secret leakage rate</strong></td><td>Probe for personal data, system prompts and credentials; scan outputs</td></tr>
+      <tr><td><strong>Unauthorised data exposure</strong></td><td>Ask as low-privilege users for documents they cannot see (permission-trimmed retrieval tests)</td></tr>
+      <tr><td><strong>Bias and fairness</strong></td><td>Compare quality and refusal rates across demographic variants of the same prompt; stereotyping tests</td></tr>
+      <tr><td><strong>Over-refusal rate</strong></td><td>Share of safe, legitimate requests wrongly refused (safety must not destroy usefulness)</td></tr>
+      <tr><td><strong>Protected material</strong></td><td>Detection of copyrighted text or code reproduced verbatim</td></tr>
+    </table>
+  </div>
+
+  <h2 id="ops">Operational and business metrics</h2>
+  <div class="cols">
+    <div class="card arch"><h3>Operational</h3><ul>
+      <li>Time to first token (p50/p95), time per output token, end-to-end latency (p50/p95/p99)</li>
+      <li>Throughput and goodput (requests meeting the latency SLO)</li>
+      <li>Error, timeout and rate-limit (429) rates; availability</li>
+      <li>Input/output tokens per request, cost per request / session / task</li>
+      <li>Cache hit rates (prompt cache, semantic cache), GPU utilisation</li>
+    </ul></div>
+    <div class="card arch"><h3>User and business</h3><ul>
+      <li>Thumbs-up ratio, CSAT, regenerate / edit rate</li>
+      <li>Resolution or deflection rate (support bots), escalation to a human</li>
+      <li>Acceptance rate and retention of accepted suggestions (copilots)</li>
+      <li>Time saved per task, conversion, adoption and weekly active users</li>
+      <li>Cost per successful outcome (the metric that ties quality to money)</li>
+    </ul></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="methods">How to evaluate: methods</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Method</th><th>Strengths</th><th>Watch out for</th></tr>
+      <tr><td><strong>Programmatic checks</strong></td><td>Cheap, deterministic: schema validity, regex, unit tests for code, exact answers</td><td>Only for checkable properties</td></tr>
+      <tr><td><strong>LLM-as-judge</strong></td><td>Scales human-like grading with rubrics (1-5 scores), pairwise comparisons, or reference-guided grading</td><td>Position bias (prefers the first answer), verbosity bias, self-preference; mitigate by swapping order, rubrics with examples, a different judge model, and calibration against humans</td></tr>
+      <tr><td><strong>Human evaluation</strong></td><td>The ground truth for quality and nuance</td><td>Slow and costly; measure inter-annotator agreement (Cohen's kappa)</td></tr>
+      <tr><td><strong>Red teaming</strong></td><td>Finds safety and security failures</td><td>Needs creativity and coverage; automate with attack generators</td></tr>
+      <tr><td><strong>A/B tests and online metrics</strong></td><td>Measures real impact on users</td><td>Needs traffic, guardrails and statistical rigour</td></tr>
+    </table>
+  </div>
+  <div class="demo">
+    <h3>Is the new version really better? (pairwise win rate)</h3>
+    <div class="calc-grid">
+      <label>Comparisons judged<input type="number" id="ab-n" value="200"></label>
+      <label>New version wins<input type="number" id="ab-w" value="92"></label>
+      <label>Ties<input type="number" id="ab-t" value="40"></label>
+    </div>
+    <div class="readout" id="ab-out"></div>
+    <h3 style="margin-top:1rem">Does the LLM judge agree with humans? (Cohen's kappa)</h3>
+    <div class="calc-grid">
+      <label>Both say "good"<input type="number" id="k-gg" value="70"></label>
+      <label>Judge good, human bad<input type="number" id="k-gb" value="10"></label>
+      <label>Judge bad, human good<input type="number" id="k-bg" value="8"></label>
+      <label>Both say "bad"<input type="number" id="k-bb" value="32"></label>
+    </div>
+    <div class="readout" id="k-out"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="datasets">Building evaluation datasets</h2>
+  <ul>
+    <li><strong>Sources:</strong> real (anonymised) production questions, subject-matter experts, synthetic questions generated from your documents by an LLM (reviewed by humans), and adversarial cases from red teaming.</li>
+    <li><strong>Coverage:</strong> common and rare intents, easy and hard questions, multi-hop questions, unanswerable questions, ambiguous ones, different languages and user roles (permissions).</li>
+    <li><strong>Labels:</strong> reference answers, key facts, relevant document ids with graded relevance, expected tool calls for agents, and the expected refusal for disallowed requests.</li>
+    <li><strong>Size:</strong> start with 50-200 well-chosen cases to iterate quickly; grow to 1,000+ for release decisions; keep a hidden hold-out set to avoid overfitting prompts to the test set.</li>
+    <li><strong>Maintenance:</strong> add every production failure as a new test case (regression set); refresh when documents change; version datasets alongside prompts and indexes.</li>
+    <li><strong>Repeat runs:</strong> outputs vary between runs; run each case several times (or at temperature 0) and report averages with confidence intervals.</li>
+  </ul>
+
+  <h2 id="pipeline">Offline and online evaluation in practice</h2>
+  <div class="demo" id="ev-demo">
+    <h3>The evaluation loop</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <h3 id="targets">Example release gates (starting points, tune for your domain)</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>Example gate</th></tr>
+      <tr><td>Retrieval recall@10</td><td>&ge; 0.85 on the golden set</td></tr>
+      <tr><td>Faithfulness / groundedness</td><td>&ge; 0.90 average; hallucination rate &le; 3%</td></tr>
+      <tr><td>Answer correctness (judge, 1-5)</td><td>&ge; 4.0 average and no regression &gt; 0.1 vs the current version</td></tr>
+      <tr><td>Negative rejection</td><td>&ge; 90% of unanswerable questions correctly declined</td></tr>
+      <tr><td>Agent task success</td><td>&ge; 85% on the task suite; zero critical policy violations</td></tr>
+      <tr><td>Jailbreak / injection success</td><td>&le; 1% on the red-team suite</td></tr>
+      <tr><td>Latency</td><td>TTFT p95 &le; 1.5 s; full answer p95 &le; 8 s</td></tr>
+      <tr><td>Cost</td><td>&le; budgeted cost per request (e.g. $0.02)</td></tr>
+    </table>
+  </div>
+
+  <h2 id="code">Code: computing metrics</h2>
+<pre><code>import math
+def retrieval_metrics(ranked_ids, relevance, k):     # relevance: {doc_id: grade 0..3}
+    top = ranked_ids[:k]
+    rel = [1 if relevance.get(d, 0) &gt; 0 else 0 for d in top]
+    total_rel = sum(1 for g in relevance.values() if g &gt; 0)
+    precision = sum(rel) / k
+    recall = sum(rel) / total_rel if total_rel else 0
+    mrr = next((1 / (i + 1) for i, r in enumerate(rel) if r), 0)
+    dcg = sum((2 ** relevance.get(d, 0) - 1) / math.log2(i + 2) for i, d in enumerate(top))
+    ideal = sorted(relevance.values(), reverse=True)[:k]
+    idcg = sum((2 ** g - 1) / math.log2(i + 2) for i, g in enumerate(ideal))
+    return {"precision@k": precision, "recall@k": recall, "mrr": mrr, "ndcg@k": dcg / idcg if idcg else 0}
+
+FAITHFULNESS_JUDGE = """You are grading whether an answer is supported by the context.
+1. List every factual claim in the ANSWER.
+2. For each claim, output SUPPORTED, CONTRADICTED or NOT_FOUND based ONLY on the CONTEXT.
+Return JSON: {"claims": [{"claim": "...", "verdict": "..."}]}
+CONTEXT: {context}
+ANSWER: {answer}"""
+# faithfulness = supported / number of claims; run the judge at temperature 0 and spot-check against humans.</code></pre>
+
+  <h2 id="tools">Tools and cloud services</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Tool</th><th>What it offers</th></tr>
+      <tr><td>Microsoft Foundry evaluations</td><td>Built-in evaluators: groundedness, relevance, retrieval, coherence, fluency, similarity and NLP metrics (F1, BLEU, ROUGE, METEOR, GLEU), risk and safety evaluators, and agent evaluators (for example intent resolution, tool call accuracy, task adherence); runs offline and on production traces</td></tr>
+      <tr><td>Amazon Bedrock Evaluations</td><td>Model evaluation and RAG (knowledge base) evaluation with LLM-as-a-judge or human reviewers, covering quality metrics such as correctness, completeness and faithfulness, plus responsible-AI metrics</td></tr>
+      <tr><td>SageMaker Clarify</td><td>Foundation-model evaluation for accuracy, robustness, toxicity and bias</td></tr>
+      <tr><td>Open source</td><td>RAGAS (RAG metrics), DeepEval, promptfoo (prompt and red-team testing), TruLens, Arize Phoenix (tracing + evals), MLflow LLM evaluation, OpenAI Evals</td></tr>
+    </table>
+  </div>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

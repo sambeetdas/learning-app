@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System Design - Learning App</title>
+  <link rel="stylesheet" href="assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>System Design</h1>
+    <nav><a href="../index.html">&larr; All topics</a><a href="basics/index.html">Start: Fundamentals &rarr;</a></nav>
+  </header>
+
+  <p>
+    <strong>System design</strong> is deciding how the pieces of a software system fit together so it meets its goals: the right features, fast enough, available enough, secure, affordable, and able to grow.
+    It covers which components you need (load balancers, caches, databases, queues, models...), how data flows between them, where it is stored, and what happens when something fails.
+  </p>
+  <p>
+    This topic has two parts. <strong>Fundamentals</strong> pages teach the building blocks and the reasoning (estimation, databases, caching, messaging, reliability, security, AI systems).
+    <strong>Case studies</strong> apply them end to end to real products, from a URL shortener to a payment system, a stock exchange, RAG assistants and multi-agent AI.
+    Every design has animated request flows you can step through, capacity and compute estimates, the database choices and why, trade-offs, failure handling, and the matching <strong>Azure and AWS</strong> services and reference architectures.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="anatomy">Anatomy of an internet-scale system</h2>
+  <p>Most large systems share the same skeleton. Pick a flow and press Play to follow a request (and the data it creates) end to end.</p>
+  <div class="demo" id="anatomy-demo">
+    <h3>End-to-end request flows</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div id="anatomy-legend"></div>
+
+  <!-- ===================================================== -->
+  <h2 id="fundamentals">Part 1: Fundamentals</h2>
+  <div class="hub" id="fund-list"></div>
+
+  <h2 id="cases">Part 2: Case studies, basic to advanced</h2>
+  <p>Each case follows the same structure: requirements &rarr; capacity and compute estimates &rarr; API &rarr; data model and database choice &rarr; architecture with animated flows &rarr; deep dives &rarr; scaling &rarr; trade-offs &rarr; failures &rarr; Azure and AWS mapping &rarr; interview follow-ups.</p>
+  <h3>Basic <span class="lvl basic">start here</span></h3><div class="hub" id="lvl-Basic"></div>
+  <h3>Intermediate <span class="lvl intermediate">classic interview designs</span></h3><div class="hub" id="lvl-Intermediate"></div>
+  <h3>Advanced <span class="lvl advanced">infrastructure and hard problems</span></h3><div class="hub" id="lvl-Advanced"></div>
+  <h3>AI systems <span class="lvl ai">RAG, agents, LLM platforms, ML</span></h3><div class="hub" id="lvl-AI"></div>
+
+  <!-- ===================================================== -->
+  <h2 id="method">How to approach any design</h2>
+  <ol>
+    <li><strong>Clarify requirements:</strong> functional (what it does) and non-functional (scale, latency, availability, consistency, cost, security). Agree what is out of scope.</li>
+    <li><strong>Estimate:</strong> users, QPS (average and peak), read/write ratio, storage, bandwidth, compute. This decides the architecture (see <a href="estimation/index.html">estimation</a>).</li>
+    <li><strong>Define the API and data model:</strong> the main calls, the main entities, and where each lives (see <a href="estimation/index.html#choose-db">choosing a database</a>).</li>
+    <li><strong>Draw the high-level design:</strong> clients, edge, services, data stores, async paths. Walk through the key flows.</li>
+    <li><strong>Deep-dive</strong> the hardest parts: the hot path, the bottleneck, consistency, the tricky algorithm.</li>
+    <li><strong>Scale and harden:</strong> caching, partitioning, replication, queues, rate limits; what fails and how the system recovers.</li>
+    <li><strong>Discuss trade-offs and operations:</strong> monitoring, deployments, security, cost, and how it evolves.</li>
+  </ol>
+  <p>The <a href="interview/index.html">interview page</a> turns this into a timed, step-by-step playbook.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="blocks">Building blocks: Azure and AWS cheat sheet</h2>
+  <p>The generic component on the left is what you draw in a design; the cloud services are typical managed implementations. Links go to the official documentation (checked October 2026).</p>
+  <div id="blocks-table"></div>
+
+  <h2 id="references">Key references</h2>
+  <div class="cloud-cols">
+    <div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div>
+    <div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div>
+  </div>
+  <p class="muted">Related topics in this app: <a href="../streaming-api/index.html">Streaming APIs</a> (polling, SSE, WebSockets), <a href="../dns/index.html">DNS</a>, <a href="../cdn/index.html">CDN</a>, <a href="../dsa/index.html">Data structures and algorithms</a> (consistent hashing, Bloom filters, HyperLogLog), <a href="../ml/index.html">Machine learning</a> and <a href="../pytorch/index.html">PyTorch</a>.</p>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="assets/core.js"></script>
+  <script src="assets/sd.js"></script>
+  <script src="hub.js"></script>
+  <script src="assets/page.js"></script>
+</body>
+</html>

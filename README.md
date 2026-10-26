@@ -5,13 +5,15 @@ A small static learning site built with plain HTML, CSS and jQuery. The home pag
 ## Topics
 
 | Topic | Folder | What it covers |
-|---|---|---|
+| --- | --- | --- |
 | Streaming API | [streaming-api/](streaming-api/) | Short polling, long polling, SSE, HTTP streaming (NDJSON) and WebSocket, with animated diagrams and system-design notes |
 | DNS | [dns/](dns/) | Resolvers and the root/TLD/authoritative hierarchy, caching and TTL, record types, anycast, DNSSEC, traffic steering, security, troubleshooting; step-through resolution demo |
 | CDN | [cdn/](cdn/) | Edge caching and origin shield, Cache-Control and cache keys, invalidation, use cases, security, metrics; interactive edge cache simulator |
 | Machine Learning | [ml/](ml/) | Learning types, use cases, algorithms, data pitfalls, overfitting, metrics, ensembles, multi-model pipelines, deep learning, MLOps, responsible AI; six animated demos |
 | PyTorch and Deep Learning | [pytorch/](pytorch/) | History, tensors, autograd, nn.Module, training loop, all major deep learning algorithms with code, PyTorch internals, scaling, deployment; nine animated demos |
 | Data Structures and Algorithms | [dsa/](dsa/) | 19 linked pages, from Big-O to advanced and recent algorithms, each with step-through animations, pseudocode, Python and solved practice questions (see below) |
+| Playwright with Python | [playwright/](playwright/) | 15 pages from beginner to advanced: locators, auto-waiting, pytest, network mocking, API testing, tracing, CI, emulation, automation use cases; then AI: agents driving browsers (Playwright MCP server, playwright-cli), testing AI and agentic apps, and four documented end-to-end projects (see below) |
+| System Design | [sysdesign/](sysdesign/) | 12 fundamentals pages (estimation and database choice, scaling, data, caching, messaging, reliability, AI systems, AI evaluation...) and 49 end-to-end designs from basic to advanced, including 15 AI systems; animated request flows and Azure and AWS references (see below) |
 
 ## Run it
 
@@ -26,15 +28,6 @@ From the VS Code terminal (no installs needed; uses PowerShell only):
 Press `Ctrl+C` to stop. Files are served with `no-cache`, so edits show up on refresh.
 
 You can also open `index.html` directly in a browser; no server is required. jQuery is loaded from a CDN, so you need internet access.
-
-### Deploy to GitHub Pages
-
-The GitHub Actions workflow deploys the site when changes are pushed to `main`, or
-when started manually from the Actions tab. Before the first deployment, enable
-GitHub Pages in the repository settings: open **Settings → Pages** and set
-**Build and deployment → Source** to **GitHub Actions**. Rerun the workflow from
-the Actions tab if its initial run failed because Pages was not enabled. Once the
-workflow finishes, the deployment URL is available in its run summary.
 
 ### Docker (optional)
 
@@ -83,10 +76,21 @@ learning-app/
 │   ├── viz.js          matmul, broadcasting, autograd graph, activations, convolution, attention
 │   ├── steppers.js     PyTorch call stack, training loop, history timeline
 │   └── page.js
-└── dsa/                Data Structures and Algorithms (multi-page topic)
-    ├── index.html      hub: roadmap and cheat sheets
-    ├── assets/         shared dsa.css, dsa.js (step player + drawing helpers), page.js
-    └── <page>/         one folder per page: index.html + demo.js
+├── dsa/                Data Structures and Algorithms (multi-page topic)
+│   ├── index.html      hub: roadmap and cheat sheets
+│   ├── assets/         shared dsa.css, dsa.js (step player + drawing helpers), page.js
+│   └── <page>/         one folder per page: index.html + demo.js
+├── playwright/         Playwright with Python (multi-page topic)
+│   ├── index.html      hub: architecture animation, learning path, use cases, the ShopBot example app
+│   ├── hub.js
+│   ├── assets/         pw.css, core.js (step player), pw.js (page list, diagrams, copy buttons, code tabs), page.js
+│   └── <page>/         index.html + demo.js
+└── sysdesign/          System Design (multi-page topic)
+    ├── index.html      hub: anatomy of a system, page lists, building-blocks table (Azure / AWS)
+    ├── hub.js
+    ├── assets/         sd.css, core.js (step player), sd.js (catalog, diagrams, case renderer), page.js
+    ├── <fundamental>/  index.html + demo.js
+    └── <case>/         index.html (shell) + data.js (the case study as data)
 ```
 
 ## The DSA topic
@@ -106,6 +110,57 @@ All animations use the shared toolkit in `dsa/assets/dsa.js`:
   `frames` (state snapshots plus a `msg` and an optional `line`).
 - Drawing helpers: `cells`, `bars`, `stack`, `list`, `tree`, `ntree`, `graph`, `grid`, `legend`.
 - Mark colours: `a` (blue), `b` (orange), `c` (red), `ok` (green), `p` (purple), `dim`.
+
+## The Playwright topic
+
+`playwright/` teaches Playwright for Python in five parts:
+
+- **Beginner:** introduction, getting-started, locators, actions-assertions.
+- **Intermediate:** pytest, network-api.
+- **Advanced:** debugging-ci, advanced, automation.
+- **AI and agents:** ai-agents, ai-testing.
+- **Projects:** project-chatbot-tests, project-test-generator, project-explorer-agent, project-agent-eval.
+
+The project pages are documentation. Each one shows the project's layout and every file's code inside the page, and no runnable project files are included in this repository.
+
+The examples target an imaginary local shop called "ShopBot", which is described on the hub page. The code was written for Playwright 1.64 and pytest-playwright 0.10. The LLM examples use the Anthropic Python SDK, behind an interface so that a fake model can be swapped in for tests.
+
+## The System Design topic
+
+`sysdesign/` has a hub, 12 fundamentals pages and 49 case studies.
+
+- **Fundamentals:** basics, estimation (traffic, compute, GPU/token calculators and a database chooser), scaling, data,
+  caching, messaging, reliability, architecture, security-ops, ai-foundations, ai-evaluation (RAG, LLM and agent
+  metrics with calculators), interview.
+- **Case studies** by level:
+  - Basic: URL shortener, rate limiter, unique IDs, notifications, crawler, typeahead, leaderboard.
+  - Intermediate: feed, chat, file sync, video streaming, ride hailing, proximity, e-commerce, tickets, hotels, email,
+    payments, search.
+  - Advanced: KV store, cache, message queue, observability, scheduler, ad clicks, stock exchange, collaborative editor,
+    video calls, live streaming, maps, games, IoT, multi-tenant SaaS.
+  - AI: RAG, agents, multi-agent, LLM gateway, LLM serving, coding assistant, semantic search, document AI, voice,
+    recommendations, ML platform, training cluster, LLMOps, image generation, moderation.
+
+Each case follows the same structure:
+
+1. Requirements.
+2. Capacity and compute estimates.
+3. API.
+4. Data model and database choice.
+5. An animated architecture diagram with several request flows.
+6. Deep dives.
+7. Scaling.
+8. Trade-offs.
+9. Failure modes.
+10. Evaluation metrics (AI cases).
+11. Azure and AWS services and reference architectures.
+12. Interview questions.
+
+Cases are pure data: `sysdesign/<case>/data.js` calls `SD.renderCase({...})`, and `sd.js` draws everything.
+
+- Diagrams are SVG on a grid. A node is `[id, label, kind, col, row, sub]`.
+- Flows are lists of hops, `[from, to, label, message, kind]`. The kind is `req`, `resp`, `async` or `err`. Each hop is animated as a moving packet.
+- Cloud services and reference links come from the `CAT` and `REF` tables in `sd.js`, so they are maintained in one place. The links were checked in October 2026.
 
 ## Add a topic
 

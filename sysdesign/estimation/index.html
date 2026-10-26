@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estimating Compute and Choosing a Database - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Estimating compute and choosing a database</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    Two decisions shape every design more than any other: <strong>how much capacity</strong> you need (servers, storage, bandwidth, GPUs) and <strong>where the data lives</strong>.
+    Rough, order-of-magnitude estimates are enough: knowing whether you need 3 servers or 300, 50 GB or 50 PB, tells you which architecture is even possible.
+    This page gives the method, rules of thumb, three calculators, and a decision tool for databases with the matching Azure and AWS services.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="method">The estimation method</h2>
+  <ol>
+    <li><strong>Users:</strong> registered users &rarr; daily active users (DAU, often 10-50% of registered) &rarr; concurrent users (often 5-10% of DAU at peak).</li>
+    <li><strong>Traffic:</strong> actions per user per day &times; DAU / 86,400 = average requests per second (QPS). Multiply by a <strong>peak factor</strong> (2-10&times;) for the busiest minute.</li>
+    <li><strong>Split reads and writes:</strong> most products are read-heavy (10:1 to 100:1); this decides caching and replication.</li>
+    <li><strong>Storage:</strong> writes per day &times; size per item &times; retention &times; replication factor (+ indexes and overhead, often +30-50%).</li>
+    <li><strong>Bandwidth:</strong> QPS &times; response size (egress) and writes &times; payload size (ingress).</li>
+    <li><strong>Compute:</strong> peak QPS &times; CPU time per request / (cores per server &times; target utilisation) &rArr; servers; add spare capacity to survive losing a zone.</li>
+    <li><strong>Memory:</strong> cache the hot fraction of the data (often the 20% that receives 80% of reads) and count connections/sessions.</li>
+    <li><strong>Sanity check:</strong> compare with known systems and with the per-node limits below.</li>
+  </ol>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Handy number</th><th>Value</th></tr>
+      <tr><td>Seconds per day</td><td>86,400 &asymp; 10<sup>5</sup> (so 1 million requests/day &asymp; 12 per second)</td></tr>
+      <tr><td>Seconds per month / year</td><td>&asymp; 2.6 million / 31.5 million</td></tr>
+      <tr><td>1 KB &times; 1 million</td><td>1 GB; 1 MB &times; 1 million = 1 TB; 1 KB &times; 1 billion = 1 TB</td></tr>
+      <tr><td>1 Gbit/s</td><td>&asymp; 125 MB/s &asymp; 10 TB per day</td></tr>
+      <tr><td>Characters in a typical text message / tweet</td><td>~100-300 bytes of text, ~1 KB with metadata</td></tr>
+      <tr><td>A photo (compressed)</td><td>~200 KB-2 MB; a thumbnail ~10-30 KB</td></tr>
+      <tr><td>A minute of video</td><td>~5-50 MB depending on resolution (1080p H.264 ~ 5 Mbit/s &asymp; 40 MB/min)</td></tr>
+      <tr><td>One LLM token</td><td>&asymp; 4 characters / 0.75 English words</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="calculator">Traffic, compute and storage calculator</h2>
+  <div class="demo" id="calc">
+    <h3>Back-of-the-envelope calculator</h3>
+    <div class="bar"><label>Load a preset <select id="preset">
+      <option value="web">Online store (1 M DAU)</option><option value="social">Social feed (100 M DAU)</option><option value="chat">Chat app (50 M DAU)</option>
+      <option value="url">URL shortener (10 M DAU)</option><option value="iot">IoT telemetry (5 M devices)</option><option value="api">Internal API (10 k users)</option>
+    </select></label></div>
+    <div class="calc-grid">
+      <label>Daily active users<input type="number" id="dau"></label>
+      <label>Requests per user per day<input type="number" id="rpu"></label>
+      <label>Peak-to-average factor<input type="number" id="peak" step="0.5"></label>
+      <label>Share of requests that are writes (%)<input type="number" id="wpct" step="0.5"></label>
+      <label>CPU time per request (ms)<input type="number" id="cpu" step="0.5"></label>
+      <label>Average latency per request (ms)<input type="number" id="lat"></label>
+      <label>vCPUs per server<input type="number" id="cores"></label>
+      <label>Target CPU utilisation (%)<input type="number" id="util"></label>
+      <label>Availability zones (spread servers across)<input type="number" id="zones" min="1" max="3"></label>
+      <label>Cache hit rate (%)<input type="number" id="hit"></label>
+      <label>Average response size (KB)<input type="number" id="resp"></label>
+      <label>Data stored per write (KB)<input type="number" id="wsize" step="0.1"></label>
+      <label>Retention (years)<input type="number" id="years" step="0.5"></label>
+      <label>Replication factor<input type="number" id="repl"></label>
+      <label>Hot data cached (% of 1 year)<input type="number" id="hot"></label>
+    </div>
+    <div id="calc-out"></div>
+  </div>
+
+  <h3>Little's law: how many requests are in flight?</h3>
+  <p><strong>Concurrency = throughput &times; latency.</strong> 3,000 requests/s that each take 200 ms means about 600 requests in progress at any moment. That number sizes thread pools, connection pools, WebSocket servers and GPU batch slots. Halving latency halves the concurrency you must hold.</p>
+
+  <h3 id="rules">Per-node capacity rules of thumb</h3>
+  <p>These are rough orders of magnitude for planning on modern cloud hardware; real numbers depend heavily on the workload, so <strong>load test before committing</strong>.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Component</th><th>Rough capacity per node</th><th>Notes</th></tr>
+      <tr><td>Web/API server (simple handler, cached data)</td><td>1,000-10,000 req/s</td><td>Per 4-8 vCPU instance; drops to tens or hundreds for CPU-heavy work (image processing, PDF rendering)</td></tr>
+      <tr><td>Static files from a CDN edge</td><td>Effectively unlimited for you</td><td>The CDN provider scales it</td></tr>
+      <tr><td>Relational database (one primary)</td><td>~5,000-50,000 simple queries/s; ~1,000-20,000 writes/s</td><td>Depends on indexes, row size, working set in RAM; storage up to tens of TB</td></tr>
+      <tr><td>Redis / in-memory cache</td><td>~100,000+ operations/s per shard</td><td>Sub-millisecond; memory-bound (tens to hundreds of GB per node)</td></tr>
+      <tr><td>Kafka / event stream broker</td><td>~50-200 MB/s per broker</td><td>Throughput scales with partitions and brokers</td></tr>
+      <tr><td>NoSQL partition (DynamoDB / Cosmos DB)</td><td>~1,000 writes/s and 3,000 reads/s per partition</td><td>Documented per-partition limits; scale by spreading keys across many partitions</td></tr>
+      <tr><td>WebSocket gateway</td><td>~50,000-500,000 idle connections</td><td>Memory per connection (a few to tens of KB) is the limit, not CPU</td></tr>
+      <tr><td>Search node (OpenSearch / AI Search)</td><td>Hundreds to a few thousand queries/s</td><td>Shards and replicas scale query throughput</td></tr>
+      <tr><td>GPU serving a 7-8 B LLM</td><td>Thousands of output tokens/s per GPU with batching</td><td>A 70 B model needs several GPUs; measure with your serving stack</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="gpu">Estimating GPUs and tokens for AI workloads</h2>
+  <p>LLM serving is limited by two things: <strong>GPU memory</strong> (model weights plus the KV cache that grows with every token of every active request) and <strong>throughput</strong> (output tokens per second). Size for whichever runs out first. If you use a hosted model API instead, the same token numbers drive cost and quota (tokens per minute).</p>
+  <div class="demo" id="gpu-calc">
+    <h3>LLM serving calculator</h3>
+    <div class="bar"><label>Preset <select id="gpreset">
+      <option value="8b">8 B model, chat (FP16)</option><option value="70b">70 B model, chat (FP8)</option><option value="70b-rag">70 B model, RAG with long prompts (FP8)</option><option value="api">Hosted API (cost only)</option>
+    </select></label></div>
+    <div class="calc-grid">
+      <label>Peak requests per second<input type="number" id="g-rps" step="0.5"></label>
+      <label>Input tokens per request<input type="number" id="g-in"></label>
+      <label>Output tokens per request<input type="number" id="g-out"></label>
+      <label>Model parameters (billions)<input type="number" id="g-params"></label>
+      <label>Bytes per parameter (2 = FP16, 1 = FP8/INT8, 0.5 = INT4)<input type="number" id="g-bytes" step="0.5"></label>
+      <label>KV cache per token (MB)<input type="number" id="g-kv" step="0.01"></label>
+      <label>GPU memory (GB)<input type="number" id="g-mem"></label>
+      <label>Output tokens/s per GPU (measured, batched)<input type="number" id="g-tps"></label>
+      <label>Output speed per request (tokens/s)<input type="number" id="g-speed"></label>
+      <label>Price per million input tokens ($)<input type="number" id="g-pin" step="0.01"></label>
+      <label>Price per million output tokens ($)<input type="number" id="g-pout" step="0.01"></label>
+      <label>Hours at peak per day<input type="number" id="g-hours"></label>
+    </div>
+    <div id="gpu-out"></div>
+  </div>
+  <ul>
+    <li><strong>Weights:</strong> parameters &times; bytes per parameter. A 70 B model is ~140 GB in FP16, ~70 GB in FP8, ~35 GB in INT4: it needs at least two 80 GB GPUs in FP16 before any KV cache.</li>
+    <li><strong>KV cache per token</strong> &asymp; 2 &times; layers &times; KV heads &times; head dimension &times; bytes. Models with grouped-query attention store far less (Llama-3-70B: about 0.3 MB per token in FP16). Long prompts (RAG, agents) multiply this.</li>
+    <li><strong>Prefill vs decode:</strong> processing the prompt (prefill) is compute-bound and fast per token; generating (decode) is memory-bandwidth-bound and is usually the bottleneck. Time to first token grows with prompt length; inter-token latency grows with batch size.</li>
+    <li><strong>Levers:</strong> quantisation, continuous batching, prefix (prompt) caching, smaller models for easy requests (routing), speculative decoding, shorter prompts, and capping output length. See <a href="../ai-foundations/index.html">AI foundations</a> and the <a href="../llm-serving/index.html">LLM serving design</a>.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="choose-db">Choosing a database</h2>
+  <p>Start from the <strong>access patterns</strong> (what you read and write, how often, how fast, with what guarantees), not from a favourite technology. Answer the questions and the tool ranks database families, with typical Azure and AWS services.</p>
+  <div class="demo" id="dbtool">
+    <h3>Database chooser</h3>
+    <div class="split">
+      <div id="db-questions"></div>
+      <div><div id="db-out"></div></div>
+    </div>
+  </div>
+
+  <h3 id="db-families">Database families compared</h3>
+  <div id="db-table"></div>
+
+  <h3>Questions to ask before choosing</h3>
+  <ol>
+    <li><strong>Data shape:</strong> rows with relationships, self-contained documents, key-value pairs, time-stamped measurements, a graph, text, vectors, files?</li>
+    <li><strong>Access patterns:</strong> lookups by key, range scans, ad-hoc queries and joins, full-text search, aggregations over months of data, similarity search?</li>
+    <li><strong>Consistency:</strong> do you need multi-row ACID transactions (money, inventory), or is per-item atomicity and eventual consistency enough (likes, views, feeds)?</li>
+    <li><strong>Scale:</strong> data size, read and write throughput, growth rate. Does it fit on one well-sized server (often yes, up to a few TB and thousands of writes per second)?</li>
+    <li><strong>Latency and geography:</strong> sub-millisecond? Users on several continents? Writes in several regions?</li>
+    <li><strong>Operations and cost:</strong> managed service availability, backups, team skills, licensing, cost per GB and per operation.</li>
+  </ol>
+  <div class="card note">
+    <h3>Polyglot persistence: most real systems use several stores</h3>
+    <p>An online store typically uses a <strong>relational database</strong> for orders and payments, a <strong>document or key-value store</strong> for the product catalogue and carts, <strong>Redis</strong> for sessions and hot data, a <strong>search engine</strong> for product search, <strong>object storage</strong> for images, a <strong>stream</strong> for events, and a <strong>warehouse</strong> for analytics. Keep one source of truth per piece of data and feed the others from it (change data capture or events), rather than writing to several stores from the application.</p>
+  </div>
+
+  <h3>Common mistakes</h3>
+  <ul>
+    <li>Choosing NoSQL "for scale" when the data fits comfortably in a managed relational database, then re-implementing joins and transactions in code.</li>
+    <li>Designing NoSQL tables like relational ones: in key-value and wide-column stores, design the keys from the queries (one table per access pattern is normal).</li>
+    <li>Hot partitions: a partition key with few values (country, today's date) concentrates load on one node.</li>
+    <li>Using the primary database for analytics; run reporting on replicas or a warehouse.</li>
+    <li>Storing large blobs in the database instead of object storage.</li>
+    <li>Ignoring how data will be deleted (retention, GDPR) and how it will be backed up and restored.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols">
+    <div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div>
+    <div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div>
+  </div>
+
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What Playwright is and how it works - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .bp { border: 2px solid var(--c-ext); border-radius: 12px; padding: .5rem .7rem .7rem; background: var(--bg); }
+    .bp > .bt { font: 700 .8rem system-ui; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .4rem; }
+    .ctxs { display: flex; gap: .7rem; flex-wrap: wrap; }
+    .ctx { flex: 1 1 230px; border: 2px dashed var(--c-svc); border-radius: 10px; padding: .45rem .6rem; transition: opacity .25s, border-color .25s; min-width: 0; }
+    .ctx.new { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
+    .ctx.gone { opacity: .35; border-color: var(--bad); }
+    .ctx h4 { margin: 0 0 .3rem; font-size: .85rem; }
+    .jar { font: .75rem ui-monospace, Consolas, monospace; padding: .2rem .45rem; border-radius: 6px; background: var(--code-bg); margin-bottom: .4rem; }
+    .jar.hot { outline: 2px solid var(--warn); }
+    .tiles { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .tile { flex: 1 1 140px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: .75rem; min-width: 0; }
+    .tile .u { background: var(--panel); padding: .15rem .4rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); }
+    .tile .b { padding: .3rem .4rem; min-height: 2.2rem; }
+    .tile.act { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+    .tile.ok .b { color: var(--good); } .tile.bad .b { color: var(--bad); }
+    .empty { font-size: .8rem; color: var(--muted); padding: .6rem 0; }
+    .tree { line-height: 1.35; }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>What Playwright is and how it works</h1><nav></nav></header>
+
+  <p>
+    <strong>Playwright</strong> is an open-source browser automation library from Microsoft. From a Python program you launch a real browser
+    (Chromium, Firefox or WebKit), open pages, click, type, read the page and check what it shows, exactly like a user would, only faster and repeatably.
+    It is used mostly for <strong>end-to-end (E2E) testing</strong> of web applications, but also for scraping, robotic process automation, screenshots and PDFs,
+    monitoring, and as the browser that <strong>AI agents</strong> use to act on the web.
+  </p>
+  <p>
+    This page explains where Playwright came from, the problems it solves, the three objects you will use in every script (browser, context, page),
+    how it compares with Selenium, Cypress and Puppeteer, when it is the wrong tool, and how a typical Python test project is laid out.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="what">What Playwright is</h2>
+  <p>Playwright gives you one API to control three browser <em>engines</em>:</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Engine</th><th>Browsers built on it</th><th>How Playwright gets it</th></tr>
+      <tr><td><strong>Chromium</strong></td><td>Google Chrome, Microsoft Edge, Opera, Brave</td><td>Downloads a pinned Chromium build (<code>playwright install chromium</code>) or drives your installed Chrome / Edge with <code>channel="chrome"</code> / <code>"msedge"</code></td></tr>
+      <tr><td><strong>Firefox</strong></td><td>Mozilla Firefox</td><td>Downloads a lightly patched Firefox build</td></tr>
+      <tr><td><strong>WebKit</strong></td><td>Apple Safari (macOS and iOS)</td><td>Downloads a WebKit build, so you can test Safari-like behaviour on Windows and Linux</td></tr>
+    </table>
+  </div>
+  <p>Around that core you get the things a test suite needs: <strong>auto-waiting</strong> (actions wait until the element is ready), <strong>web-first assertions</strong> that retry,
+    user-facing <strong>locators</strong> such as <code>get_by_role("button", name="Search")</code>, <strong>network interception</strong>, isolated <strong>browser contexts</strong>,
+    device emulation, a <strong>trace viewer</strong> for debugging, a code generator, and a pytest plugin (<code>pytest-playwright</code>).</p>
+  <pre><code>from playwright.sync_api import sync_playwright, expect
+
+with sync_playwright() as p:                      # starts the Playwright driver
+    browser = p.chromium.launch()                 # one browser process (headless by default)
+    page = browser.new_page()                     # a tab in a fresh, isolated context
+    page.goto("http://127.0.0.1:8000/products")
+    page.get_by_role("link", name="Ceramic Mug").click()
+    expect(page.get_by_role("heading", level=1)).to_have_text("Ceramic Mug")
+    browser.close()</code></pre>
+
+  <h2 id="history">A short history</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>When</th><th>What happened</th></tr>
+      <tr><td>2017</td><td>Google's Chrome team releases <strong>Puppeteer</strong>, a Node.js library for driving Chrome through the Chrome DevTools Protocol (CDP). It shows how fast and reliable protocol-level automation can be, but it is Chrome-only and JavaScript-only.</td></tr>
+      <tr><td>2019</td><td>Several of the engineers behind Puppeteer move to <strong>Microsoft</strong> and start a new project with a broader goal: every engine, every language, built for testing.</td></tr>
+      <tr><td>January 2020</td><td><strong>Playwright</strong> is released as open source (Node.js) with Chromium, Firefox and WebKit support from day one.</td></tr>
+      <tr><td>2020</td><td>Version 1.0. <strong>Playwright for Python</strong> appears the same year (<code>pip install playwright</code>), followed by Java and .NET. All of them share one driver, so features land in every language at once.</td></tr>
+      <tr><td>2021</td><td>The trace viewer arrives, and the <code>pytest-playwright</code> plugin becomes the standard way to write Python tests. (Node gets its own test runner, Playwright Test.)</td></tr>
+      <tr><td>2022</td><td>The "locators first" API: <code>get_by_role</code>, <code>get_by_label</code>, <code>get_by_text</code>, <code>get_by_test_id</code> and friends become the recommended way to find elements.</td></tr>
+      <tr><td>2024 - 2025</td><td>ARIA snapshots (<code>to_match_aria_snapshot</code>), and the <strong>Playwright MCP server</strong>, which lets LLM agents drive a browser through the accessibility tree.</td></tr>
+      <tr><td>2026</td><td>Release 1.64 (used on these pages). The Python package ships the MCP server (<code>playwright mcp</code>) and agent-friendly CLIs (<code>playwright cli</code>, <code>playwright trace</code>).</td></tr>
+    </table>
+  </div>
+  <p class="muted">Playwright ships a new minor version roughly every month. Each release pins specific browser builds, which is why you re-run <code>playwright install</code> after upgrading.</p>
+
+  <h2 id="why">Why it exists</h2>
+  <p>Before Playwright, most browser tests used <strong>Selenium WebDriver</strong>. Selenium is a W3C standard and is still widely used, but test suites built in the 2010s were famous for being <strong>flaky</strong>: they passed and failed at random. The common causes:</p>
+  <div class="cols">
+    <div class="card note">
+      <h3>The Selenium-era problems</h3>
+      <ul>
+        <li><strong>No built-in waiting.</strong> You had to add <code>WebDriverWait</code> (or worse, <code>time.sleep(2)</code>) before every interaction. Too short is flaky, too long is slow.</li>
+        <li><strong>Stale elements.</strong> You held a reference to a DOM node; the page re-rendered; you got <code>StaleElementReferenceException</code>.</li>
+        <li><strong>Covered elements.</strong> A click landed on a spinner or cookie banner instead of the button ("element click intercepted").</li>
+        <li><strong>Heavy set-up.</strong> Separate driver binaries per browser version, Selenium Grid for parallelism, a fresh browser per test for isolation.</li>
+        <li><strong>Little control of the network.</strong> Mocking an API or simulating an error needed a proxy.</li>
+      </ul>
+    </div>
+    <div class="card arch">
+      <h3>What modern web apps need</h3>
+      <ul>
+        <li>Single-page apps that render asynchronously, stream data, and change the DOM constantly.</li>
+        <li>Shadow DOM (web components), iframes, multiple tabs and pop-ups, file uploads and downloads.</li>
+        <li>Testing on Safari's engine without owning a Mac farm.</li>
+        <li>Fast, isolated tests that can run in parallel on a CI machine.</li>
+        <li>Tools to understand failures after the fact (traces, videos, screenshots).</li>
+      </ul>
+    </div>
+  </div>
+  <p>Playwright's answer: <strong>locators are lazy and re-resolved on every use</strong> (no stale elements), <strong>every action waits</strong> for the element to be visible, stable, enabled and not covered,
+    <strong>assertions retry</strong> until the page reaches the expected state, <strong>browser contexts</strong> give each test a clean profile in milliseconds, and the driver talks to the browsers over fast
+    bidirectional protocols, so it can also intercept network traffic and listen to events.</p>
+
+  <h2 id="concepts">Core concepts: browser, context, page</h2>
+  <p>Every Playwright program works with the same hierarchy. Learn these three objects and the rest of the API falls into place.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Object</th><th>What it is</th><th>Cost</th><th>Typical lifetime</th></tr>
+      <tr><td><code>Browser</code></td><td>One running browser process (Chromium, Firefox or WebKit), started with <code>p.chromium.launch()</code></td><td>Expensive: hundreds of milliseconds to start, tens of MB of memory</td><td>The whole test session</td></tr>
+      <tr><td><code>BrowserContext</code></td><td>An isolated, incognito-like profile inside the browser: its own cookies, local storage, cache, permissions, viewport, locale, time zone and network routes</td><td>Cheap: a few milliseconds</td><td>One test (or one user in a multi-user test)</td></tr>
+      <tr><td><code>Page</code></td><td>A single tab (or pop-up window) inside a context. You navigate, find elements and act through it</td><td>Cheap</td><td>One test, or as long as the tab is open</td></tr>
+    </table>
+  </div>
+  <p>Pages in the <em>same</em> context share cookies (like two tabs of the same browser window). Pages in <em>different</em> contexts share nothing, even though they run in one browser process. That is how one test can log in as Alice while another runs as a guest, in parallel, without interfering. Step through the animation.</p>
+  <div class="demo" id="ctx-demo">
+    <h3>One browser, two isolated contexts</h3>
+    <div class="stage"></div>
+  </div>
+  <pre><code>from playwright.sync_api import sync_playwright, expect
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    alice = browser.new_context()                 # profile 1
+    page_a = alice.new_page()
+    page_a.goto("http://127.0.0.1:8000/login")
+    page_a.get_by_label("Email").fill("alice@example.com")
+    page_a.get_by_label("Password").fill("wonderland")
+    page_a.get_by_role("button", name="Log in").click()
+    expect(page_a.get_by_test_id("user-name")).to_have_text("Alice")
+
+    tab2 = alice.new_page()                       # same context: shares Alice's cookie
+    tab2.goto("http://127.0.0.1:8000/account")
+    expect(tab2.get_by_test_id("user-name")).to_have_text("Alice")
+
+    guest = browser.new_context()                 # profile 2: empty cookie jar
+    page_g = guest.new_page()
+    page_g.goto("http://127.0.0.1:8000/account")  # not logged in, so ShopBot redirects
+    expect(page_g).to_have_url("http://127.0.0.1:8000/login")
+    browser.close()</code></pre>
+  <div class="callout tip"><strong>Tip.</strong> <code>browser.new_page()</code> is a shortcut that creates a new context with one page in it. It is fine for scripts; in tests, the pytest plugin gives you a fresh <code>context</code> and <code>page</code> per test automatically.</div>
+
+  <h2 id="architecture">One driver, many languages</h2>
+  <p>The Python package contains a small <strong>driver</strong> (a bundled Node.js program). Your Python code sends it JSON messages over a pipe; the driver speaks each browser's protocol. The Node.js, Java and .NET packages use the same driver, which is why the APIs are almost identical across languages
+    (Python uses <code>snake_case</code>: <code>get_by_role</code>, <code>to_have_text</code>). The animation below follows a pytest run.</p>
+  <div class="demo" id="run-demo">
+    <h3>What happens during a pytest-playwright run</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div id="run-legend"></div>
+  <p>Two consequences worth knowing early:</p>
+  <ul>
+    <li><strong>The sync API is a thin wrapper.</strong> <code>playwright.sync_api</code> runs an event loop internally (using greenlets), so you cannot call it from inside <code>asyncio</code> code such as a Jupyter cell or a FastAPI handler. Use <code>playwright.async_api</code> there.</li>
+    <li><strong>The browser builds are pinned to the package version.</strong> Upgrading <code>playwright</code> means running <code>playwright install</code> again.</li>
+  </ul>
+
+  <h2 id="compare">Playwright compared with Selenium, Cypress and Puppeteer</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Playwright</th><th>Selenium WebDriver</th><th>Cypress</th><th>Puppeteer</th></tr>
+      <tr><td><strong>Languages</strong></td><td>Python, JavaScript/TypeScript, Java, .NET</td><td>Java, Python, C#, JavaScript, Ruby (and more via community bindings)</td><td>JavaScript/TypeScript only</td><td>JavaScript/TypeScript (Python ports are unofficial)</td></tr>
+      <tr><td><strong>Browsers</strong></td><td>Chromium, Chrome, Edge, Firefox, WebKit</td><td>Chrome, Edge, Firefox, Safari (real Safari on macOS), others with a driver</td><td>Chrome-family, Edge, Firefox; WebKit experimental</td><td>Chrome / Chromium, Firefox</td></tr>
+      <tr><td><strong>How it drives the browser</strong></td><td>Out of process, over CDP and patched protocols</td><td>Out of process, W3C WebDriver (HTTP) and WebDriver BiDi</td><td>Runs inside the browser, next to your app</td><td>Out of process, CDP and WebDriver BiDi</td></tr>
+      <tr><td><strong>Waiting</strong></td><td>Automatic actionability checks before every action; retrying <code>expect</code> assertions</td><td>Manual: implicit waits or <code>WebDriverWait</code> + expected conditions</td><td>Automatic retries of commands and assertions</td><td>Partial: locator API waits; assertions are up to you</td></tr>
+      <tr><td><strong>Parallelism and isolation</strong></td><td>Cheap browser contexts per test; <code>pytest -n auto</code> with pytest-xdist</td><td>New browser per test; Selenium Grid or pytest-xdist</td><td>One spec file per machine; parallel runs via paid cloud or third-party tools</td><td>Browser contexts; you build the runner</td></tr>
+      <tr><td><strong>Network control</strong></td><td>Built in: <code>page.route()</code> to mock, modify, block or replay HAR</td><td>Limited (BiDi / CDP features or a proxy)</td><td>Built in: <code>cy.intercept()</code></td><td>Built in request interception</td></tr>
+      <tr><td><strong>Multiple tabs and windows</strong></td><td>Yes, each tab is a <code>Page</code>; several users at once via contexts</td><td>Yes, by switching window handles</td><td>No (one tab per test)</td><td>Yes</td></tr>
+      <tr><td><strong>Iframes and shadow DOM</strong></td><td><code>frame_locator()</code>; locators pierce open shadow roots automatically</td><td><code>switch_to.frame()</code>; shadow roots via <code>shadow_root</code></td><td>Iframes need workarounds; shadow DOM via an option</td><td>Frames API; shadow DOM via special selectors</td></tr>
+      <tr><td><strong>Debugging</strong></td><td>Inspector, codegen, trace viewer with DOM snapshots, video</td><td>Logs, screenshots; IDE debugging</td><td>Interactive runner with time travel</td><td>DevTools, screenshots</td></tr>
+      <tr><td><strong>Best fit</strong></td><td>Modern web apps, cross-engine E2E, Python teams, AI agents</td><td>Large existing suites, real Safari, many languages, Grid infrastructure</td><td>Front-end teams in JS who want an interactive runner</td><td>Chrome automation scripts in Node</td></tr>
+    </table>
+  </div>
+  <p class="muted">All four tools are actively maintained and keep converging (Selenium is adopting WebDriver BiDi; Puppeteer added Firefox). Choose on languages, browsers and your team's existing infrastructure, not on hype.</p>
+
+  <h2 id="when-not">When not to use Playwright</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Situation</th><th>Why Playwright is the wrong tool</th><th>Use instead</th></tr>
+      <tr><td>Testing a Python function or class</td><td>A browser adds seconds and flakiness to something that needs microseconds</td><td>Plain pytest unit tests</td></tr>
+      <tr><td>Load or stress testing (1000s of users)</td><td>Each browser uses a CPU core and hundreds of MB; you would measure your test machine, not the server</td><td>Locust, k6, JMeter (and a handful of Playwright journeys for client-side timings)</td></tr>
+      <tr><td>Native mobile or desktop apps</td><td>Playwright drives web pages, not native UI widgets. Device emulation is a desktop browser pretending to be a phone</td><td>Appium, platform UI test frameworks, real-device clouds</td></tr>
+      <tr><td>Certifying real Safari on iPhone</td><td>WebKit is Safari's engine, not Safari itself (no Apple-specific features or real device quirks)</td><td>Real devices or a device cloud; keep Playwright WebKit for fast feedback</td></tr>
+      <tr><td>Scraping static HTML or a JSON API</td><td>A browser is slower and heavier than an HTTP request</td><td><code>httpx</code> / <code>requests</code> + an HTML parser</td></tr>
+      <tr><td>Checking every edge case of business logic through the UI</td><td>UI tests are the slowest, most expensive layer; hundreds of them make CI slow</td><td>API and unit tests for the logic; a few E2E tests for the critical journeys</td></tr>
+      <tr><td>Bypassing CAPTCHAs, bot protection or a site's terms</td><td>Automation does not give you permission</td><td>An official API, or ask the owner</td></tr>
+    </table>
+  </div>
+
+  <h2 id="usecases">Use cases, with a one-line example each</h2>
+  <p>All examples target ShopBot (see the <a href="../index.html#shopbot">example app</a>); later pages cover each one in depth.</p>
+  <div class="usecases">
+    <div><b>End-to-end testing</b>Walk through a user journey and check the result.<br><code>page.get_by_role("button", name="Place order").click()</code></div>
+    <div><b>Regression and smoke tests in CI</b>Run the suite on every pull request, on several browsers, in parallel.<br><code>pytest -n auto --browser chromium --browser firefox</code></div>
+    <div><b>API testing</b>Call the back end with the same tool and the same cookies.<br><code>page.request.post("/api/cart", data={"product_id": 1, "qty": 2})</code></div>
+    <div><b>Visual regression</b>Take stable screenshots and compare them with a baseline (Pillow or a plugin).<br><code>page.screenshot(path="home.png", animations="disabled")</code></div>
+    <div><b>Accessibility testing</b>Assert on the accessibility tree that screen readers see.<br><code>expect(page.get_by_role("search")).to_match_aria_snapshot(...)</code></div>
+    <div><b>Mobile and device emulation</b>Viewport, user agent, touch and pixel ratio of a real device.<br><code>browser.new_context(**p.devices["iPhone 15"])</code></div>
+    <div><b>Network mocking</b>Fake a back-end response, an error or an empty list.<br><code>page.route("**/api/products", lambda r: r.fulfill(json=[]))</code></div>
+    <div><b>Web scraping and data extraction</b>Read JavaScript-rendered content (respect terms and robots.txt).<br><code>page.get_by_test_id("product-card").all_inner_texts()</code></div>
+    <div><b>Browser automation (RPA)</b>Fill forms and upload files in tools that have no API.<br><code>page.get_by_label("Avatar").set_input_files("me.png")</code></div>
+    <div><b>Synthetic monitoring</b>Run a buy journey every few minutes in production and alert on failure.<br><code>expect(page.get_by_test_id("order-id")).to_be_visible()</code></div>
+    <div><b>Screenshots and PDFs</b>Thumbnails, social cards, invoices and reports from HTML (PDF needs Chromium).<br><code>page.pdf(path="report.pdf")</code></div>
+    <div><b>Performance checks</b>Read navigation timings and web vitals from a real browser.<br><code>page.evaluate("performance.getEntriesByType('navigation')[0].duration")</code></div>
+    <div><b>AI agent browsing</b>Give an LLM a browser through the built-in MCP server.<br><code>playwright mcp --browser chrome --headless --isolated</code></div>
+    <div><b>Testing AI apps</b>Wait for a streamed chatbot answer to finish, then check it cites a source.<br><code>expect(page.get_by_test_id("bot-message")).to_contain_text("[shipping]")</code></div>
+    <div><b>AI-generated and self-healing tests</b>Give an LLM the page structure so it can write or repair a test.<br><code>page.get_by_role("main").aria_snapshot()</code></div>
+    <div><b>Exploratory testing agents</b>Record everything an agent did so a human can replay it.<br><code>context.tracing.start(screenshots=True, snapshots=True)</code></div>
+  </div>
+
+  <h2 id="layout">How a test project is laid out</h2>
+  <p>A Playwright test project in Python is an ordinary pytest project. A typical layout (you will build it on the next page):</p>
+<pre class="tree"><code>shopbot-e2e/
+├── pyproject.toml          # dependencies + [tool.pytest.ini_options] (base URL, browser, tracing)
+├── .venv/                  # virtual environment (not committed)
+├── tests/
+│   ├── conftest.py         # shared fixtures: context options, logged-in page, test data
+│   ├── test_search.py      # one file per feature or user journey
+│   ├── test_cart.py
+│   └── test_checkout.py
+├── pages/                  # optional page objects (see the pytest page)
+│   ├── __init__.py
+│   └── products_page.py
+├── test-results/           # traces, screenshots, videos written by pytest-playwright (not committed)
+└── .github/workflows/e2e.yml   # CI job (see the debugging and CI page)</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Piece</th><th>Role</th></tr>
+      <tr><td><code>pytest-playwright</code></td><td>The pytest plugin: provides the <code>browser</code>, <code>context</code> and <code>page</code> fixtures and the <code>--browser</code>, <code>--headed</code>, <code>--base-url</code>, <code>--tracing</code> options</td></tr>
+      <tr><td><code>conftest.py</code></td><td>Where you customise fixtures, for example <code>browser_context_args</code> to set viewport and locale for every test</td></tr>
+      <tr><td><code>test_*.py</code></td><td>Test functions that take <code>page</code> as an argument, act, and assert with <code>expect</code></td></tr>
+      <tr><td><code>test-results/</code></td><td>Per-test output folder (traces you open with <code>playwright show-trace</code>)</td></tr>
+    </table>
+  </div>
+
+  <h2 id="mistakes">Common misconceptions</h2>
+  <ul>
+    <li><strong>"Playwright is a test runner."</strong> In Python it is a library. pytest is the runner; <code>pytest-playwright</code> connects the two. The Node.js "Playwright Test" runner, its config file and its UI mode are not part of the Python package.</li>
+    <li><strong>"WebKit means Safari."</strong> It is the same engine, good for catching most Safari bugs, but not the shipping Safari app.</li>
+    <li><strong>"One new browser per test is safest."</strong> A new <em>context</em> gives the same isolation and is far cheaper.</li>
+    <li><strong>"Headless behaves differently, so always test headed."</strong> Headless is the normal mode for CI; use headed (<code>--headed</code>) for watching and debugging.</li>
+    <li><strong>"Auto-waiting means I never need to think about timing."</strong> It removes most waits, but you still have to assert on the right <em>outcome</em> (for example wait for the confirmation text, not for an arbitrary time).</li>
+    <li><strong>"Playwright can test anything with a UI."</strong> Only web content (and Electron, from Node). Native apps need other tools.</li>
+  </ul>
+
+  <h2 id="cheatsheet">Cheat sheet: vocabulary</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td>Driver</td><td>The bundled Node.js process that translates API calls into browser protocol messages</td></tr>
+      <tr><td><code>Browser</code> / <code>BrowserType</code></td><td>A running browser / the factory that launches one (<code>p.chromium</code>, <code>p.firefox</code>, <code>p.webkit</code>)</td></tr>
+      <tr><td><code>BrowserContext</code></td><td>Isolated profile: cookies, storage, permissions, viewport, routes</td></tr>
+      <tr><td><code>Page</code></td><td>A tab; <code>Frame</code> is a document inside it (the main frame or an iframe)</td></tr>
+      <tr><td>Locator</td><td>A lazy description of how to find element(s), resolved every time you use it</td></tr>
+      <tr><td>Actionability</td><td>The checks (visible, stable, receives events, enabled, editable) an action waits for</td></tr>
+      <tr><td>Web-first assertion</td><td><code>expect(...)</code> assertions that retry until they pass or time out</td></tr>
+      <tr><td>Headless / headed</td><td>Without / with a visible browser window</td></tr>
+      <tr><td>Channel</td><td>A branded browser installed on the machine: <code>chrome</code>, <code>msedge</code>, <code>chrome-beta</code>...</td></tr>
+      <tr><td>Trace</td><td>A zip recording of a test: actions, DOM snapshots, network, console; open with <code>playwright show-trace</code></td></tr>
+      <tr><td>Codegen</td><td>A recorder that writes Python code as you click around (<code>playwright codegen</code>)</td></tr>
+      <tr><td>MCP server</td><td><code>playwright mcp</code>: exposes browser actions as tools an LLM can call</td></tr>
+    </table>
+  </div>
+
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>Two tests run in parallel against ShopBot: one logs in as Alice and adds a mug to the cart, the other checks that a guest's cart is empty. Should they share a browser? A context?</summary>
+    <p>They can share a <strong>browser</strong> (one process, cheap to reuse) but each needs its <strong>own context</strong>. Contexts do not share cookies, so the guest test never sees Alice's session cookie or her cart. This is exactly what pytest-playwright does: the <code>browser</code> fixture is session-scoped, <code>context</code> and <code>page</code> are created per test.</p>
+  </details>
+  <details class="prob"><summary>Your team must prove that checkout works in Safari on iPhones. Is Playwright WebKit enough?</summary>
+    <p>It is a good, fast first line of defence (same engine, emulated iPhone viewport and user agent with <code>p.devices["iPhone 15"]</code>), but it is not Safari on a real iPhone. For a sign-off, add a small set of runs on real devices or a device cloud. Keep the bulk of the suite in Playwright for speed.</p>
+  </details>
+  <details class="prob"><summary>Pick the right tool: (a) check that <code>/api/products</code> returns four products, (b) check that 2,000 simultaneous users can search, (c) check that the search page works in Firefox.</summary>
+    <p>(a) An API test (Playwright's <code>page.request</code>/<code>APIRequestContext</code> or httpx), no browser needed. (b) A load-testing tool such as Locust or k6. (c) A Playwright E2E test with <code>pytest --browser firefox</code>.</p>
+  </details>
+  <details class="prob"><summary>Write a script that opens ShopBot's products page in two contexts, one with the viewport of an iPhone 15 and one with a 1280 × 800 desktop viewport, and prints the viewport size of each page.</summary>
+<pre><code>from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    phone = browser.new_context(**p.devices["iPhone 15"])
+    desktop = browser.new_context(viewport={"width": 1280, "height": 800})
+    for ctx in (phone, desktop):
+        page = ctx.new_page()
+        page.goto("http://127.0.0.1:8000/products")
+        print(page.viewport_size)       # {'width': 393, 'height': 659} then {'width': 1280, 'height': 800}
+    browser.close()</code></pre>
+  </details>
+  <details class="prob"><summary>Why can Playwright's Python, Java and .NET packages add a new feature in the same release?</summary>
+    <p>All language packages are thin clients over the same driver, which contains the real automation logic (waiting, selectors, protocol handling). A feature implemented in the driver only needs a small binding in each language.</p>
+  </details>
+
+  <h2 id="refs">References</h2>
+  <ul>
+    <li><a href="https://playwright.dev/python/docs/intro">Playwright for Python: installation and introduction</a></li>
+    <li><a href="https://playwright.dev/python/docs/browser-contexts">Isolation and browser contexts</a></li>
+    <li><a href="https://playwright.dev/python/docs/browsers">Browsers and channels</a></li>
+    <li><a href="https://github.com/microsoft/playwright-python">microsoft/playwright-python on GitHub</a></li>
+  </ul>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

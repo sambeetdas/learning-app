@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beyond testing: scraping, automation and monitoring - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .gantt { display: grid; grid-template-columns: minmax(9rem, max-content) 1fr; gap: 3px .6rem; align-items: center; font-size: .8rem; }
+    .gantt .lbl { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gantt .track { position: relative; height: 1.25rem; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+    .gantt .seg { position: absolute; top: 0; bottom: 0; }
+    .gantt .seg.wait { background: color-mix(in srgb, var(--muted) 22%, var(--bg)); }
+    .gantt .seg.run { background: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
+    .gantt .seg.done { background: color-mix(in srgb, var(--good) 45%, var(--bg)); }
+    .gantt .seg.fail { background: color-mix(in srgb, var(--bad) 50%, var(--bg)); }
+    .gantt .now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); }
+    .slots { display: flex; gap: .4rem; flex-wrap: wrap; margin: .5rem 0; align-items: center; font-size: .82rem; }
+    .slots .slot { min-width: 7.5rem; padding: .25rem .5rem; border: 2px dashed var(--line); border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: .75rem; }
+    .slots .slot.busy { border-style: solid; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+    .mon { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem; }
+    @media (max-width: 700px) { .mon { grid-template-columns: 1fr; } }
+    .mon .panel { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; font-size: .85rem; }
+    .mon .panel h4 { margin: 0 0 .3rem; font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .runbars { display: flex; align-items: flex-end; gap: 6px; height: 110px; padding-top: .3rem; }
+    .runbars div { flex: 1 1 0; border-radius: 3px 3px 0 0; position: relative; min-height: 4px; }
+    .runbars div.ok { background: color-mix(in srgb, var(--good) 50%, var(--bg)); }
+    .runbars div.bad { background: color-mix(in srgb, var(--bad) 55%, var(--bg)); }
+    .runbars div.cur { outline: 2px solid var(--accent); }
+    .runbars span { position: absolute; bottom: -1.2rem; left: 0; right: 0; text-align: center; font-size: .65rem; color: var(--muted); }
+    .notes { font-family: ui-monospace, Consolas, monospace; font-size: .75rem; }
+    .notes div { padding: .2rem .35rem; border-radius: 4px; margin: .15rem 0; }
+    .notes .alert { background: color-mix(in srgb, var(--bad) 14%, var(--bg)); }
+    .notes .rec { background: color-mix(in srgb, var(--good) 14%, var(--bg)); border: 0; }
+    .decide label { display: block; margin: .2rem 0; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Beyond testing: scraping, automation and monitoring</h1><nav></nav></header>
+
+  <p>
+    Everything that makes Playwright good for testing (a real browser, auto-waiting, locators that survive layout changes, network control) also makes it a
+    general <strong>browser automation</strong> tool. Teams use it to pull data from JavaScript-heavy sites, to fill in forms in internal tools that have no API,
+    to turn HTML into <strong>PDF invoices and screenshots</strong>, and to run a <strong>synthetic user</strong> against production every few minutes.
+  </p>
+  <p>
+    This page covers those jobs with working Python against ShopBot, and the responsibilities that come with them: respecting robots.txt, terms and rate limits,
+    not defeating protections you are not authorised to bypass, and recognising when a plain HTTP client is the better tool.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">What people automate with Playwright</h2>
+  <div class="usecases">
+    <div><b>Price and catalogue monitoring</b>Track your own products across your storefronts, or competitors' public prices where their terms allow it.</div>
+    <div><b>Data extraction for analysis</b>Export tables from dashboards and portals that only offer an HTML view.</div>
+    <div><b>RPA in internal tools</b>Fill the same form in a legacy admin system 300 times from a spreadsheet; download the monthly report.</div>
+    <div><b>Invoices and reports as PDF</b>Render an HTML template with the browser's print engine: proper fonts, CSS, page numbers.</div>
+    <div><b>Screenshots and social cards</b>Thumbnails of user pages, Open Graph images, documentation screenshots kept up to date.</div>
+    <div><b>Synthetic monitoring</b>Log in, search, add to cart and chat every 5 minutes in production; alert on failure or slowness.</div>
+    <div><b>Archiving and compliance</b>Capture what a page showed on a date (screenshot + HTML + PDF) for audit trails.</div>
+    <div><b>Feeding AI systems</b>Collect clean text from your own help centre for a RAG index; give an agent a browser.</div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="responsible">Scraping responsibly</h2>
+  <p>Being technically able to load a page does not make it acceptable to harvest it. Before you write a scraper, check these, in this order:</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Check</th><th>What to do</th></tr>
+      <tr><td><strong>Is there an API or export?</strong></td><td>Prefer an official API, data feed or bulk download. It is faster, stable and clearly permitted.</td></tr>
+      <tr><td><strong>Terms of service</strong></td><td>Many sites forbid automated access or reuse of their content. If the terms say no, the answer is no (or ask for permission). Logging in usually means you accepted those terms.</td></tr>
+      <tr><td><strong>robots.txt</strong></td><td>Honour <code>Disallow</code> rules and <code>Crawl-delay</code> for your user agent. It is a convention, not a licence: an allowed path can still be forbidden by the terms.</td></tr>
+      <tr><td><strong>Personal data</strong></td><td>Names, emails, profiles: data protection law (GDPR, UK GDPR and others) applies even when the data is public. Collect only what you need, have a lawful basis, and secure it.</td></tr>
+      <tr><td><strong>Copyright and database rights</strong></td><td>Facts may be free to use; articles, images and curated databases often are not.</td></tr>
+      <tr><td><strong>Load</strong></td><td>One request at a time (or a small fixed number), a delay between requests, back off on 429/503, run off-peak, cache what you have already fetched.</td></tr>
+      <tr><td><strong>Identify yourself</strong></td><td>Use a descriptive user agent with a contact address, so the site owner can reach you instead of blocking you.</td></tr>
+    </table>
+  </div>
+  <div class="callout">This page is not legal advice. For anything beyond your own sites or clearly permitted public data, ask your legal or data-protection team first.</div>
+
+  <div class="demo" id="polite-demo">
+    <h3>A polite scraper, a hybrid login and a throttled response</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div id="polite-legend"></div>
+
+  <h3>Checking robots.txt and setting a user agent</h3>
+  <p>The standard library's <code>urllib.robotparser</code> reads the rules. A missing robots.txt (404) means "no rules", so <code>can_fetch</code> returns <code>True</code>; a 401/403 makes it return <code>False</code> for everything.</p>
+  <div class="codefile"><div class="fname">scrape_products.py</div>
+<pre><code>import csv
+import time
+from urllib import robotparser
+from urllib.parse import urljoin
+from playwright.sync_api import sync_playwright
+
+BASE = "http://127.0.0.1:8000"
+USER_AGENT = "ShopBotCatalogueBot/1.0 (+mailto:data-team@example.com)"
+DELAY = 1.0                                     # seconds between page loads
+
+def allowed(url: str) -&gt; bool:
+    rp = robotparser.RobotFileParser(urljoin(BASE, "/robots.txt"))
+    rp.read()                                   # 404 = no rules = everything allowed
+    return rp.can_fetch(USER_AGENT, url)
+
+def scrape(path: str = "/products", out: str = "products.csv") -&gt; list[dict]:
+    url = urljoin(BASE, path)
+    if not allowed(url):
+        raise SystemExit(f"robots.txt disallows {url}")
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(user_agent=USER_AGENT)
+        page = context.new_page()
+        page.goto(url)
+        rows = []
+        for card in page.get_by_test_id("product-card").all():
+            link = card.get_by_role("link")
+            rows.append({
+                "name": link.inner_text(),
+                "url": urljoin(BASE, link.get_attribute("href")),
+                "price": float(card.locator(".price").inner_text().lstrip("£")),
+                "in_stock": card.get_by_text("In stock", exact=True).count() == 1,
+            })
+        for row in rows:                        # detail pages: one at a time, with a delay
+            time.sleep(DELAY)
+            page.goto(row["url"])
+            reviews = page.get_by_role("list", name="Reviews").get_by_role("listitem")
+            row["reviews"] = reviews.filter(has_not_text="No reviews yet").count()
+        browser.close()
+    with open(out, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
+
+if __name__ == "__main__":
+    scrape()</code></pre></div>
+  <pre class="term"><code><span class="c"># products.csv</span>
+name,url,price,in_stock,reviews
+Ceramic Mug,http://127.0.0.1:8000/products/1,12.0,True,2
+Cast Iron Pan,http://127.0.0.1:8000/products/2,39.5,True,1
+Desk Lamp,http://127.0.0.1:8000/products/3,24.99,False,0
+Notebook Set,http://127.0.0.1:8000/products/4,9.5,True,0</code></pre>
+  <p class="muted">Note the <code>filter(has_not_text=...)</code>: products without reviews show a single "No reviews yet." list item, which a naive count reports as one review. Always check your extraction against a page you have looked at by hand.</p>
+
+  <h3>Rate limiting and backing off</h3>
+  <p>Wrap navigation in a small helper that enforces a minimum gap between requests and respects <code>429 Too Many Requests</code> / <code>503</code> with their <code>Retry-After</code> header.</p>
+<pre><code>import time
+from playwright.sync_api import Page
+
+class PoliteBrowser:
+    """page.goto with a minimum delay between requests and Retry-After handling."""
+    def __init__(self, page: Page, min_delay: float = 1.0, max_retries: int = 3):
+        self.page, self.min_delay, self.max_retries, self._last = page, min_delay, max_retries, 0.0
+
+    def goto(self, url: str):
+        for attempt in range(self.max_retries + 1):
+            wait = self.min_delay - (time.monotonic() - self._last)
+            if wait &gt; 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
+            response = self.page.goto(url)
+            if response is None or response.status not in (429, 503):
+                return response
+            retry_after = response.headers.get("retry-after", "")
+            time.sleep(int(retry_after) if retry_after.isdigit() else 2 ** attempt * 5)
+        raise RuntimeError(f"gave up on {url}: still throttled")</code></pre>
+  <p class="muted"><code>response.headers</code> has lower-case keys. If a site keeps returning 429 at one request per second, it is telling you to slow down further or stop.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="tables">Extracting tables to CSV</h2>
+  <p>HTML tables are the most common thing people want out of a portal. Two approaches: locators (readable, auto-waiting) or one <code>evaluate</code> call (fast for big tables, because it is a single round trip to the browser).</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="With locators">
+<pre><code>import csv
+from playwright.sync_api import Locator
+
+def table_to_csv(table: Locator, path: str) -&gt; list[list[str]]:
+    headers = table.locator("thead th").all_inner_texts()
+    rows = [row.locator("td").all_inner_texts() for row in table.locator("tbody tr").all()]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        writer.writerows(rows)
+    return [headers] + rows
+
+page.goto("/cart")
+table_to_csv(page.get_by_role("table"), "cart.csv")
+# [['Product', 'Qty', 'Price'], ['Ceramic Mug', '2', '£24.00'], ['Notebook Set', '3', '£28.50']]</code></pre>
+    </div>
+    <div class="tabpane" data-tab="One evaluate call">
+<pre><code>rows = page.get_by_role("table").evaluate(
+    "t =&gt; [...t.rows].map(r =&gt; [...r.cells].map(c =&gt; c.innerText.trim()))"
+)
+# the header row is included: rows[0] == ['Product', 'Qty', 'Price']</code></pre>
+    </div>
+    <div class="tabpane" data-tab="With pandas">
+<pre><code># pip install pandas lxml  -- parses every &lt;table&gt; in the HTML the browser rendered
+from io import StringIO
+import pandas as pd
+
+frames = pd.read_html(StringIO(page.content()))
+frames[0].to_csv("cart.csv", index=False)</code></pre>
+    </div>
+  </div>
+  <p class="muted">Before running any extraction, wait for the data to be there. A web-first assertion such as <code>expect(page.locator("tbody tr")).not_to_have_count(0)</code> avoids scraping an empty table that has not loaded yet.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="pagination">Pagination and infinite scroll</h2>
+  <p>ShopBot fits on one page, so these two patterns are generic; both were tested against small fake pages served with <code>page.route</code>.</p>
+  <div class="cols">
+    <div>
+      <h3>"Next" links</h3>
+<pre><code>from urllib.parse import urljoin
+
+def scrape_paginated(page, start_url: str) -&gt; list[str]:
+    items, url = [], start_url
+    while url:
+        page.goto(url)
+        items += page.locator(".item").all_inner_texts()
+        nxt = page.get_by_role("link", name="Next")
+        url = (urljoin(page.url, nxt.get_attribute("href"))
+               if nxt.count() else None)
+    return items</code></pre>
+      <p class="muted">Add a page limit and a visited set for safety: some sites loop. If the URL has <code>?page=N</code>, generating URLs directly is simpler still.</p>
+    </div>
+    <div>
+      <h3>Infinite scroll</h3>
+<pre><code>from playwright.sync_api import expect
+
+def scroll_until_done(page, items, max_rounds=50):
+    previous = -1
+    for _ in range(max_rounds):
+        count = items.count()
+        if count == previous:
+            break
+        previous = count
+        page.mouse.wheel(0, 10_000)
+        try:   # wait for new items, not a fixed sleep
+            expect(items).not_to_have_count(count, timeout=3_000)
+        except AssertionError:
+            break          # nothing more arrived
+    return items.all_inner_texts()
+
+posts = scroll_until_done(page, page.locator(".post"))</code></pre>
+    </div>
+  </div>
+  <div class="callout tip">An infinite-scroll page almost always fetches JSON as you scroll. Open the network tab (or <code>page.on("response", ...)</code>): calling that endpoint directly, if the terms allow, is faster and more reliable than scrolling. <code>page.expect_response("**/api/feed*")</code> lets you capture those JSON bodies while scrolling.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="logins">Handling logins</h2>
+  <p>Log in once through the UI, save the cookies and local storage with <code>storage_state</code>, and reuse them on every later run. Keep credentials in environment variables or a secrets manager, never in the script, and never commit <code>state.json</code> (it is as good as a password).</p>
+<pre><code>import os
+from playwright.sync_api import expect
+
+STATE = "state.json"            # add to .gitignore
+
+def logged_in_context(browser, base_url="http://127.0.0.1:8000"):
+    if os.path.exists(STATE):
+        return browser.new_context(storage_state=STATE, base_url=base_url)
+    context = browser.new_context(base_url=base_url)
+    page = context.new_page()
+    page.goto("/login")
+    page.get_by_label("Email").fill(os.environ["SHOP_USER"])
+    page.get_by_label("Password").fill(os.environ["SHOP_PASSWORD"])
+    page.get_by_role("button", name="Log in").click()
+    expect(page.get_by_test_id("user-name")).to_be_visible()
+    context.storage_state(path=STATE)
+    page.close()
+    return context
+
+context = logged_in_context(browser)
+page = context.new_page()
+page.goto("/products")
+page.request.post("/api/cart", data={"product_id": 1, "qty": 2})   # shares the login cookies</code></pre>
+  <p>If the saved session has expired, the site redirects to <code>/login</code>: detect that (<code>if "/login" in page.url</code>), delete the state file and log in again. For sites with multi-factor authentication or SSO, log in by hand once in a headed browser and save the state; do not automate around MFA. The <a href="../network-api/index.html">network and authentication page</a> covers storage state in depth.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="async">Concurrency with the async API</h2>
+  <p>Most automation time is spent waiting for the network. With <code>playwright.async_api</code> one Python process can drive several pages at once: create one coroutine per URL and run them with <code>asyncio.gather</code>. Always cap concurrency with an <code>asyncio.Semaphore</code>; without it, 500 URLs open 500 tabs, exhaust memory and hammer the site.</p>
+<pre><code>import asyncio
+from playwright.async_api import async_playwright
+
+BASE = "http://127.0.0.1:8000"
+MAX_PAGES = 3                         # concurrent pages: tune for your machine and the site
+
+async def scrape_product(context, sem: asyncio.Semaphore, pid: int) -&gt; dict:
+    async with sem:                   # wait here until one of the 3 slots is free
+        page = await context.new_page()
+        try:
+            response = await page.goto(f"/products/{pid}")
+            if not response or not response.ok:
+                raise RuntimeError(f"product {pid}: HTTP {response.status if response else '?'}")
+            name = await page.get_by_role("heading", level=1).inner_text()
+            price = await page.locator(".price").first.inner_text()
+            return {"id": pid, "name": name, "price": price}
+        finally:
+            await page.close()
+            await asyncio.sleep(0.5)  # politeness delay while still holding the slot
+
+async def main(ids: list[int]) -&gt; None:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        context = await browser.new_context(base_url=BASE)
+        sem = asyncio.Semaphore(MAX_PAGES)
+        results = await asyncio.gather(
+            *(scrape_product(context, sem, i) for i in ids),
+            return_exceptions=True,   # one failure must not cancel the rest
+        )
+        await browser.close()
+    for r in results:
+        print("FAILED" if isinstance(r, Exception) else "ok", r)
+
+asyncio.run(main([1, 2, 3, 4, 99]))</code></pre>
+  <pre class="term"><code>ok {'id': 1, 'name': 'Ceramic Mug', 'price': '£12.00'}
+ok {'id': 2, 'name': 'Cast Iron Pan', 'price': '£39.50'}
+ok {'id': 3, 'name': 'Desk Lamp', 'price': '£24.99'}
+ok {'id': 4, 'name': 'Notebook Set', 'price': '£9.50'}
+FAILED product 99: HTTP 404</code></pre>
+
+  <div class="demo" id="sem-demo">
+    <h3>asyncio.gather with a semaphore: who runs when</h3>
+    <div class="bar"><label>Semaphore limit <select id="sem-limit"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>8</option></select></label><span class="readout" id="sem-readout"></span></div>
+    <div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Choice</th><th>When</th></tr>
+      <tr><td>Pages in <strong>one context</strong> (above)</td><td>Same user, shared cookies; cheapest. Fine for public pages and a single logged-in account.</td></tr>
+      <tr><td><strong>One context per task</strong></td><td>Tasks must not share cookies or storage (different accounts, clean sessions). Contexts are cheap (milliseconds), browsers are not.</td></tr>
+      <tr><td><strong>Several processes</strong> (multiprocessing, a job queue)</td><td>CPU-bound extraction, thousands of URLs, or crash isolation. Each process has its own browser.</td></tr>
+    </table>
+  </div>
+  <p class="muted">Playwright objects belong to the event loop (async) or thread (sync) that created them. Do not share a sync <code>page</code> between threads; use the async API, or one Playwright instance per thread or process.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="pdf">Screenshots and PDFs for reports and invoices</h2>
+  <p>The browser is an excellent rendering engine: you design the document in HTML and CSS, and Chromium's print pipeline produces a PDF with real text, fonts and page breaks. <code>page.pdf()</code> works only in <strong>Chromium</strong> (headless or headed with a Chromium-based browser); Firefox and WebKit raise an error.</p>
+  <div class="codefile"><div class="fname">invoice_pdf.py</div>
+<pre><code>import html
+from playwright.sync_api import sync_playwright
+
+INVOICE = """&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset="utf-8"&gt;&lt;style&gt;
+  body {{ font-family: system-ui; margin: 0; }}  h1 {{ color: #2563eb; }}
+  table {{ width: 100%; border-collapse: collapse; }}
+  td, th {{ border-bottom: 1px solid #ddd; padding: 6px; text-align: left; }}
+&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+&lt;h1&gt;Invoice {number}&lt;/h1&gt;&lt;p&gt;Customer: {customer}&lt;/p&gt;
+&lt;table&gt;&lt;tr&gt;&lt;th&gt;Item&lt;/th&gt;&lt;th&gt;Qty&lt;/th&gt;&lt;th&gt;Price&lt;/th&gt;&lt;/tr&gt;{rows}&lt;/table&gt;
+&lt;p&gt;&lt;strong&gt;Total: &amp;pound;{total:.2f}&lt;/strong&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;"""
+
+FOOTER = ('&lt;div style="font-size:8px;width:100%;text-align:center"&gt;'
+          'Page &lt;span class="pageNumber"&gt;&lt;/span&gt; of &lt;span class="totalPages"&gt;&lt;/span&gt;&lt;/div&gt;')
+
+def render_invoice(page, number: str, customer: str, lines, path: str) -&gt; None:
+    rows = "".join(f"&lt;tr&gt;&lt;td&gt;{html.escape(n)}&lt;/td&gt;&lt;td&gt;{q}&lt;/td&gt;&lt;td&gt;&amp;pound;{p * q:.2f}&lt;/td&gt;&lt;/tr&gt;"
+                   for n, q, p in lines)
+    total = sum(q * p for _, q, p in lines)
+    page.set_content(INVOICE.format(number=number, customer=html.escape(customer), rows=rows, total=total))
+    page.pdf(path=path, format="A4", print_background=True,
+             display_header_footer=True, header_template="&lt;span&gt;&lt;/span&gt;", footer_template=FOOTER,
+             margin={"top": "20mm", "bottom": "20mm"})
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()                 # PDF generation: Chromium only
+    page = browser.new_page()
+    render_invoice(page, "INV-1001", "Alice Example",
+                   [("Ceramic Mug", 2, 12.0), ("Notebook Set", 1, 9.5)], "invoice.pdf")
+    pdf_bytes = page.pdf()                        # without path: returns bytes (e.g. for an HTTP response)
+    browser.close()</code></pre></div>
+  <p class="muted"><code>html.escape</code> matters: customer names come from users, and unescaped HTML in a template can inject markup or scripts into your own document renderer. Do not render templates from untrusted URLs with network access on a server; use <code>set_content</code> with your own HTML.</p>
+
+  <h3>Screenshots</h3>
+<pre><code>page.goto("/products")
+page.screenshot(path="products-full.png", full_page=True)                     # whole scrollable page
+page.get_by_test_id("product-card").first.screenshot(path="first-card.png")  # one element
+page.set_viewport_size({"width": 1200, "height": 630})                        # social card size
+page.screenshot(path="social-card.png", clip={"x": 0, "y": 0, "width": 1200, "height": 630})
+png_bytes = page.screenshot(type="jpeg", quality=80)                          # bytes, no file
+
+page.emulate_media(media="screen")    # PDF with screen styles instead of print styles
+page.pdf(path="products-screen.pdf")</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Option</th><th>Effect</th></tr>
+      <tr><td><code>format="A4"</code> / <code>width</code>, <code>height</code></td><td>Paper size; CSS <code>@page { size: A4 }</code> wins if you also pass <code>prefer_css_page_size=True</code></td></tr>
+      <tr><td><code>print_background=True</code></td><td>Keep background colours and images (off by default, like the browser's print dialog)</td></tr>
+      <tr><td><code>display_header_footer</code> + templates</td><td>Header and footer HTML; classes <code>pageNumber</code>, <code>totalPages</code>, <code>date</code>, <code>title</code>, <code>url</code> are filled in</td></tr>
+      <tr><td><code>landscape</code>, <code>scale</code>, <code>page_ranges</code>, <code>margin</code></td><td>Layout control</td></tr>
+      <tr><td><code>tagged=True</code>, <code>outline=True</code></td><td>Accessible (tagged) PDF and a document outline from headings</td></tr>
+    </table>
+  </div>
+  <p>The CLI does quick one-offs: <code>playwright screenshot --full-page URL out.png</code> and <code>playwright pdf URL out.pdf</code>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="rpa">RPA: filling forms and downloading files</h2>
+  <p>Robotic process automation is the same code as an end-to-end test, run for its effect instead of its assertions. Keep the assertions anyway: they are how the robot knows a step really worked before it moves on. Here the robot places a ShopBot order and downloads the invoice.</p>
+  <div class="codefile"><div class="fname">place_order.py</div>
+<pre><code>from pathlib import Path
+from playwright.sync_api import sync_playwright, expect
+
+def place_order_and_download(page, customer: dict, out_dir: Path) -&gt; tuple[str, Path]:
+    page.goto("/products/1")
+    page.get_by_label("Quantity").fill("2")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_have_text("Added to cart")
+
+    page.goto("/checkout")
+    page.get_by_label("Full name").fill(customer["name"])
+    page.get_by_label("Email").fill(customer["email"])
+    page.get_by_label("Postcode").fill(customer["postcode"])
+    page.get_by_label("I accept the terms").check()
+    page.get_by_role("button", name="Place order").click()
+    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()   # do not continue on an error page
+    order_id = page.get_by_test_id("order-id").inner_text()
+
+    with page.expect_download() as info:
+        page.get_by_role("link", name="Download invoice").click()
+    download = info.value
+    target = out_dir / download.suggested_filename          # "invoice-275215.txt"
+    download.save_as(target)
+    return order_id, target
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    context = browser.new_context(base_url="http://127.0.0.1:8000")
+    page = context.new_page()
+    out = Path("invoices"); out.mkdir(exist_ok=True)
+    order_id, file = place_order_and_download(
+        page, {"name": "Alice Example", "email": "alice@example.com", "postcode": "SW1A 1AA"}, out)
+    print(order_id, file.read_text())          # Invoice for order 275215
+    browser.close()</code></pre></div>
+  <p>For a batch (rows from a CSV or spreadsheet), process one row per fresh page or context, record each outcome (<code>done</code>, <code>failed: reason</code>) in an output file, and make the job <strong>resumable</strong> so a crash at row 180 does not resubmit rows 1 to 179. Uploads use <code>locator.set_input_files("report.pdf")</code>.</p>
+  <div class="callout">RPA against systems you do not own needs the owner's permission. On your own internal tools, ask whether a small API endpoint would be cheaper than maintaining a robot: UI robots break when the page changes.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="monitoring">Synthetic monitoring</h2>
+  <p>A synthetic monitor is a short, critical user journey run on a schedule against production (or staging). It catches what uptime pings miss: the home page returns 200 but search is broken, the cart button does nothing, or the AI chat never answers. Each run records <strong>timings per step</strong>, and an alert fires after <strong>N consecutive failures</strong> (one failure is often a network blip; alerting on every one teaches people to ignore alerts).</p>
+
+  <div class="demo" id="mon-demo">
+    <h3>The monitoring loop: runs, metrics, alerts and recovery</h3>
+    <div class="stage"></div>
+  </div>
+
+  <div class="codefile"><div class="fname">monitor.py</div>
+<pre><code>"""Synthetic monitor: run a short user journey, record timings, alert after repeated failures."""
+import json
+import os
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Protocol
+
+import httpx
+from playwright.sync_api import sync_playwright, expect
+
+BASE = os.getenv("BASE", "https://shop.example.com")
+FAIL_THRESHOLD = 2
+STATE = Path("monitor-state.json")
+METRICS = Path("metrics.jsonl")
+
+class Notifier(Protocol):
+    def send(self, text: str) -&gt; None: ...
+
+class SlackNotifier:
+    def __init__(self, webhook_url: str):
+        self.url = webhook_url
+    def send(self, text: str) -&gt; None:
+        httpx.post(self.url, json={"text": text}, timeout=10).raise_for_status()
+
+def run_journey(base_url: str) -&gt; dict:
+    timings, step = {}, "start"
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(base_url=base_url)
+        context.tracing.start(screenshots=True, snapshots=True)
+        page = context.new_page()
+        page.set_default_timeout(10_000)          # a monitor must fail fast
+        try:
+            for step, action in [
+                ("home", lambda: page.goto("/")),
+                ("search", lambda: (page.goto("/products?q=mug"),
+                                    expect(page.get_by_test_id("product-card")).to_have_count(1))),
+                ("add_to_cart", lambda: (page.goto("/products/1"),
+                                         page.get_by_role("button", name="Add to cart").click(),
+                                         expect(page.get_by_role("status")).to_have_text("Added to cart"))),
+                ("chat", lambda: (page.goto("/chat"),
+                                  page.get_by_placeholder("Ask a question").fill("How long does shipping take?"),
+                                  page.get_by_role("button", name="Send").click(),
+                                  expect(page.get_by_test_id("bot-message")).to_have_attribute("aria-busy", "false"))),
+            ]:
+                t0 = time.perf_counter()
+                action()
+                timings[step] = round((time.perf_counter() - t0) * 1000)
+            context.tracing.stop()
+            return {"ok": True, "timings_ms": timings}
+        except Exception as e:
+            trace = f"trace-{int(time.time())}.zip"
+            context.tracing.stop(path=trace)          # evidence for whoever is on call
+            return {"ok": False, "failed_step": step, "error": str(e).splitlines()[0],
+                    "trace": trace, "timings_ms": timings}
+        finally:
+            browser.close()
+
+def check_once(notifier: Notifier, base_url: str = BASE) -&gt; dict:
+    result = run_journey(base_url) | {"at": datetime.now(timezone.utc).isoformat(), "target": base_url}
+    with METRICS.open("a", encoding="utf-8") as f:     # or push to Prometheus, Datadog, CloudWatch...
+        f.write(json.dumps(result) + "\n")
+    state = json.loads(STATE.read_text()) if STATE.exists() else {"failures": 0, "alerting": False}
+    if result["ok"]:
+        if state["alerting"]:
+            notifier.send(f"RECOVERED: ShopBot journey OK ({sum(result['timings_ms'].values())} ms)")
+        state = {"failures": 0, "alerting": False}
+    else:
+        state["failures"] += 1
+        if state["failures"] &gt;= FAIL_THRESHOLD and not state["alerting"]:
+            notifier.send(f"ALERT: ShopBot '{result['failed_step']}' failed {state['failures']} times "
+                          f"in a row: {result['error']} (trace: {result['trace']})")
+            state["alerting"] = True
+    STATE.write_text(json.dumps(state))
+    return result
+
+if __name__ == "__main__":
+    result = check_once(SlackNotifier(os.environ["SLACK_WEBHOOK_URL"]))
+    raise SystemExit(0 if result["ok"] else 1)</code></pre></div>
+
+  <p>The notifier is an interface, so the alerting logic is testable without Slack. This test points the monitor at a port where nothing is listening, then at the real app:</p>
+  <div class="codefile"><div class="fname">test_monitor.py</div>
+<pre><code>import monitor
+
+class FakeNotifier:
+    def __init__(self):
+        self.sent = []
+    def send(self, text):
+        self.sent.append(text)
+
+def test_alert_after_two_failures_then_recovery(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "STATE", tmp_path / "state.json")
+    monkeypatch.setattr(monitor, "METRICS", tmp_path / "metrics.jsonl")
+    n = FakeNotifier()
+    down = "http://127.0.0.1:8099"                 # nothing listens here
+
+    r = monitor.check_once(n, down)
+    assert not r["ok"] and r["failed_step"] == "home" and n.sent == []   # one blip: no alert
+    monitor.check_once(n, down)
+    assert len(n.sent) == 1 and n.sent[0].startswith("ALERT")
+    monitor.check_once(n, down)
+    assert len(n.sent) == 1                        # no repeated alerts while still down
+
+    ok = monitor.check_once(n, "http://127.0.0.1:8000")
+    assert ok["ok"] and set(ok["timings_ms"]) == {"home", "search", "add_to_cart", "chat"}
+    assert n.sent[-1].startswith("RECOVERED")</code></pre></div>
+
+  <h3>Scheduling it</h3>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="cron (Linux)">
+<pre class="term"><code><span class="c"># every 5 minutes; flock stops overlapping runs if one hangs</span>
+*/5 * * * * cd /opt/monitor &amp;&amp; flock -n /tmp/monitor.lock .venv/bin/python monitor.py &gt;&gt; monitor.log 2&gt;&amp;1</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Windows Task Scheduler">
+<pre class="term"><code>schtasks /Create /SC MINUTE /MO 5 /TN "ShopBot monitor" /TR "C:\monitor\.venv\Scripts\python.exe C:\monitor\monitor.py"</code></pre>
+    </div>
+    <div class="tabpane" data-tab="GitHub Actions">
+<div class="codefile"><div class="fname">.github/workflows/monitor.yml</div>
+<pre><code>name: synthetic-monitor
+on:
+  schedule:
+    - cron: "*/15 * * * *"        # GitHub runs schedules best-effort; delays of minutes are normal
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install playwright httpx &amp;&amp; playwright install --with-deps chromium
+      - run: python monitor.py
+        env:
+          BASE: https://shop.example.com
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: trace, path: "trace-*.zip" }</code></pre></div>
+    </div>
+  </div>
+  <p class="muted">On an ephemeral runner the state file does not survive between runs, so either alert on each failed run (simpler) or keep the failure counter in your metrics system and alert there. For production monitoring use a dedicated test account, mark its orders as synthetic so they never ship or count in sales figures, and run from more than one region so a single network path does not page you at 3am.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="headless">Headless or headed</h2>
+  <div class="cols">
+    <div>
+<pre><code># production jobs and CI: headless (the default)
+browser = p.chromium.launch()
+
+# developing or debugging: watch it, slowed down
+browser = p.chromium.launch(headless=False, slow_mo=250)
+
+# a branded browser installed on the machine
+browser = p.chromium.launch(channel="chrome")</code></pre>
+    </div>
+    <div>
+      <ul>
+        <li><strong>Headless</strong>: no window, less memory, runs on servers without a display. Use it for scheduled jobs.</li>
+        <li><strong>Headed</strong>: see what happens; combine with <code>page.pause()</code> to open the Inspector. On a Linux server without a display, run headed under <code>xvfb-run</code>.</li>
+        <li>Since Playwright 1.49 headless Chromium uses the lightweight <em>chromium-headless-shell</em> build; <code>channel="chromium"</code> opts into the full browser's "new headless" mode, which behaves more like headed Chrome.</li>
+        <li>If something works headed but not headless, compare viewport size, user agent and whether the page waits for focus or animations; take a screenshot or a trace of the headless run.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="bots">Bot detection, stealth and ethics</h2>
+  <p>Many sites detect automation (the <code>navigator.webdriver</code> flag, headless fingerprints, request rates, behaviour) and respond with CAPTCHAs or blocks. There are "stealth" plugins and residential proxy services that try to hide automation. The rule for this course is simple:</p>
+  <div class="callout"><strong>Do not bypass protections you are not authorised to bypass.</strong> A CAPTCHA, a login wall, a rate limit or a bot block is the site owner saying no. Circumventing it can breach the terms of service and, depending on the country, computer-misuse or anti-circumvention law. It also harms the site's real users.</div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Situation</th><th>Right approach</th></tr>
+      <tr><td>Your own site blocks your tests or monitor</td><td>Ask your team to allow-list the monitor (a header, IP range or test account), or use a staging environment with bot protection off. Turn off CAPTCHAs for test accounts rather than solving them.</td></tr>
+      <tr><td>A third-party site blocks your scraper</td><td>Stop. Look for an API, a data licence, or ask for permission. Slowing down and identifying yourself is fine; disguising yourself is not.</td></tr>
+      <tr><td>A vendor portal you pay for (invoices, reports)</td><td>Check the contract; ask the vendor for an export or API; if automation is allowed, run it at human pace with your own account.</td></tr>
+      <tr><td>Authorised security or bot-defence testing</td><td>Only with written scope from the owner; this is a penetration-testing engagement, not a scraping job.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="blocking">Resource blocking for speed</h2>
+  <p>A scraper does not need images, fonts, video or analytics. Aborting them with a route cuts bandwidth and load time, and stops your runs inflating someone's analytics. Block at the context level so every page is covered.</p>
+<pre><code>import re
+from playwright.sync_api import Route
+
+BLOCK_TYPES = {"image", "media", "font"}
+BLOCK_HOSTS = re.compile(r"(google-analytics|googletagmanager|doubleclick|hotjar|segment)\.")
+
+def block_heavy(route: Route):
+    request = route.request
+    if request.resource_type in BLOCK_TYPES or BLOCK_HOSTS.search(request.url):
+        return route.abort()
+    return route.continue_()
+
+context = browser.new_context()
+context.route("**/*", block_heavy)
+page = context.new_page()
+page.goto("http://127.0.0.1:8000/products")</code></pre>
+  <ul>
+    <li>Do not block stylesheets or scripts the page needs to render its data, and never block resources in tests that check layout or visuals.</li>
+    <li>A catch-all route is called for every request, which itself costs a little; a narrower pattern such as <code>"**/*.{png,jpg,jpeg,webp,woff2}"</code> avoids the round trip for the rest.</li>
+    <li>Routes disable the HTTP cache in Playwright, so measure before and after: on small pages the gain can be nil.</li>
+    <li>Other speed-ups: reuse one browser and create contexts per job, wait for specific elements rather than <code>wait_until="networkidle"</code>, and call JSON endpoints directly where allowed.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="http-client">When an HTTP client is the better tool</h2>
+  <p>A browser is heavy: on the test machine, fetching ShopBot's four products with <code>httpx</code> from <code>/api/products</code> took about 0.25 s, while launching Chromium and reading the same names from <code>/products</code> took about 4 s. If the data is in the HTML the server sends, or in a JSON API, you may not need a browser at all.</p>
+  <div class="cols">
+    <div>
+<pre><code>import httpx
+
+with httpx.Client(base_url="http://127.0.0.1:8000",
+                  headers={"User-Agent": "ShopBotCatalogueBot/1.0"},
+                  timeout=10) as client:
+    r = client.get("/api/products")
+    r.raise_for_status()
+    names = [p["name"] for p in r.json()]</code></pre>
+    </div>
+    <div>
+<pre><code># hybrid: log in with a browser (JavaScript, redirects),
+# then fetch data with a fast HTTP client
+page.goto("/login")
+page.get_by_label("Email").fill(user)
+page.get_by_label("Password").fill(password)
+page.get_by_role("button", name="Log in").click()
+page.wait_for_url("**/account")
+cookies = {c["name"]: c["value"] for c in context.cookies()}
+
+with httpx.Client(base_url=BASE, cookies=cookies) as client:
+    html = client.get("/account").text</code></pre>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>HTTP client (httpx, requests)</th><th>Playwright (real browser)</th></tr>
+      <tr><td>Speed and memory</td><td class="pro">Milliseconds per request, a few MB</td><td class="con">Seconds to start, 100+ MB per browser</td></tr>
+      <tr><td>JavaScript-rendered content</td><td class="con">Not executed; you see the raw HTML</td><td class="pro">Rendered exactly as users see it</td></tr>
+      <tr><td>Logins with JS, SSO redirects, MFA</td><td class="con">Hard to reproduce</td><td class="pro">Natural (and storage state can be reused)</td></tr>
+      <tr><td>Screenshots, PDFs, visual checks</td><td class="con">Impossible</td><td class="pro">Built in</td></tr>
+      <tr><td>Interaction (clicks, forms, uploads, downloads)</td><td>Only by reverse-engineering requests</td><td class="pro">As a user does it</td></tr>
+      <tr><td>Scale (thousands of URLs)</td><td class="pro">Easy with async and connection pooling</td><td>Needs concurrency limits and more machines</td></tr>
+      <tr><td>Stability when the UI changes</td><td class="pro">APIs change less often than layouts</td><td>Good with role-based locators, still breaks on redesigns</td></tr>
+      <tr><td>Best for</td><td>JSON APIs, static HTML, bulk downloads, health checks</td><td>SPAs, journeys, RPA, rendering, monitoring real user paths</td></tr>
+    </table>
+  </div>
+
+  <div class="demo" id="decide-demo">
+    <h3>Browser or HTTP client? Tick what applies</h3>
+    <div class="decide">
+      <label><input type="checkbox" value="api"> There is a documented JSON API or export for the data</label>
+      <label><input type="checkbox" value="js"> The content only appears after JavaScript runs</label>
+      <label><input type="checkbox" value="login"> Login involves JavaScript, SSO redirects or a one-off manual MFA step</label>
+      <label><input type="checkbox" value="render"> I need screenshots, PDFs or what the user actually sees</label>
+      <label><input type="checkbox" value="interact"> I must click, fill forms, upload or download like a user</label>
+      <label><input type="checkbox" value="volume"> Thousands of pages per run</label>
+      <label><input type="checkbox" value="terms"> The site's terms forbid automated access</label>
+    </div>
+    <div class="rec" id="decide-out"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="mistakes">Common mistakes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Mistake</th><th>Consequence</th><th>Fix</th></tr>
+      <tr><td><code>time.sleep(5)</code> to "let the page load"</td><td>Slow when the page is fast, broken when it is slow</td><td>Wait for the data: <code>expect(locator).to_be_visible()</code>, <code>not_to_have_count(0)</code>, <code>expect_response</code></td></tr>
+      <tr><td><code>asyncio.gather</code> over every URL with no semaphore</td><td>Hundreds of tabs, memory exhaustion, an angry (or blocked) site</td><td><code>asyncio.Semaphore(N)</code> plus a delay; <code>return_exceptions=True</code></td></tr>
+      <tr><td>Scraping without reading the terms or robots.txt</td><td>Legal risk, IP bans</td><td>Check API, terms and robots.txt first; identify your bot</td></tr>
+      <tr><td>Extracting with brittle CSS paths (<code>div &gt; div:nth-child(3) span</code>)</td><td>Breaks on the next redesign</td><td>Roles, labels, test ids, and <code>filter(has_text=...)</code></td></tr>
+      <tr><td>Not validating extracted data</td><td>Silent garbage ("No reviews yet" counted as a review, empty prices)</td><td>Check types and counts; fail loudly; compare against a page checked by hand</td></tr>
+      <tr><td>Committing <code>state.json</code> or hard-coding passwords</td><td>Leaked sessions and credentials</td><td>Environment variables or a secrets manager; <code>.gitignore</code> the state file</td></tr>
+      <tr><td>Calling <code>page.pdf()</code> on Firefox or WebKit</td><td>Error: PDF is Chromium-only</td><td>Use <code>p.chromium</code> for document rendering</td></tr>
+      <tr><td>RPA batch that is not resumable</td><td>A crash halfway causes duplicate submissions</td><td>Record each row's outcome; skip completed rows on restart</td></tr>
+      <tr><td>Alerting on every single monitor failure</td><td>Alert fatigue; real incidents get ignored</td><td>Alert after N consecutive failures; send a recovery message</td></tr>
+      <tr><td>Monitor creates real orders in production</td><td>Polluted sales data, shipped parcels</td><td>Dedicated test account, synthetic flag, or stop before payment</td></tr>
+      <tr><td>Using stealth plugins to dodge bot protection</td><td>Terms breach, possible legal exposure</td><td>Get permission, an allow-list, or an API</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Task</th><th>Code</th></tr>
+      <tr><td>Check robots.txt</td><td><code>rp = robotparser.RobotFileParser(url); rp.read(); rp.can_fetch(UA, page_url)</code></td></tr>
+      <tr><td>Identify your bot</td><td><code>browser.new_context(user_agent="MyBot/1.0 (+mailto:me@example.com)")</code></td></tr>
+      <tr><td>All matching elements</td><td><code>for card in page.get_by_test_id("product-card").all(): ...</code></td></tr>
+      <tr><td>Texts of many elements</td><td><code>locator.all_inner_texts()</code></td></tr>
+      <tr><td>Table in one call</td><td><code>table.evaluate("t =&gt; [...t.rows].map(r =&gt; [...r.cells].map(c =&gt; c.innerText))")</code></td></tr>
+      <tr><td>Scroll</td><td><code>page.mouse.wheel(0, 10_000)</code>, then <code>expect(items).not_to_have_count(n)</code></td></tr>
+      <tr><td>Save and reuse a login</td><td><code>context.storage_state(path="state.json")</code>; <code>browser.new_context(storage_state="state.json")</code></td></tr>
+      <tr><td>Concurrent pages</td><td><code>sem = asyncio.Semaphore(3)</code>; <code>async with sem: ...</code>; <code>await asyncio.gather(*tasks, return_exceptions=True)</code></td></tr>
+      <tr><td>PDF (Chromium)</td><td><code>page.pdf(path="x.pdf", format="A4", print_background=True)</code></td></tr>
+      <tr><td>Render your own HTML</td><td><code>page.set_content(html)</code></td></tr>
+      <tr><td>Screenshot</td><td><code>page.screenshot(path=..., full_page=True)</code>; <code>locator.screenshot(...)</code>; <code>clip={...}</code></td></tr>
+      <tr><td>Download</td><td><code>with page.expect_download() as d: link.click()</code>; <code>d.value.save_as(dir / d.value.suggested_filename)</code></td></tr>
+      <tr><td>Upload</td><td><code>page.get_by_label("Avatar").set_input_files("me.png")</code></td></tr>
+      <tr><td>Block resources</td><td><code>context.route("**/*", lambda r: r.abort() if r.request.resource_type == "image" else r.continue_())</code></td></tr>
+      <tr><td>Fail fast</td><td><code>page.set_default_timeout(10_000)</code></td></tr>
+      <tr><td>Trace a failing run</td><td><code>context.tracing.start(screenshots=True, snapshots=True)</code> ... <code>context.tracing.stop(path="trace.zip")</code></td></tr>
+      <tr><td>Watch it run</td><td><code>launch(headless=False, slow_mo=250)</code></td></tr>
+      <tr><td>Cookies for httpx</td><td><code>{c["name"]: c["value"] for c in context.cookies()}</code></td></tr>
+      <tr><td>CLI one-offs</td><td><code>playwright screenshot --full-page URL out.png</code>, <code>playwright pdf URL out.pdf</code></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>1. Export the Office category to CSV, sorted by price <span class="diff easy">easy</span></summary>
+    <p class="q">Using ShopBot's category filter, write <code>office.csv</code> with name and price, cheapest first.</p>
+<pre><code>import csv
+from playwright.sync_api import sync_playwright, expect
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page(base_url="http://127.0.0.1:8000")
+    page.goto("/products")
+    page.get_by_label("Category").select_option("office")
+    page.get_by_role("button", name="Search").click()
+    expect(page.get_by_test_id("result-count")).to_have_text("2 results")
+    rows = [{"name": c.get_by_role("link").inner_text(),
+             "price": float(c.locator(".price").inner_text().lstrip("£"))}
+            for c in page.get_by_test_id("product-card").all()]
+    browser.close()
+
+rows.sort(key=lambda r: r["price"])
+with open("office.csv", "w", newline="", encoding="utf-8") as f:
+    w = csv.DictWriter(f, fieldnames=["name", "price"])
+    w.writeheader()
+    w.writerows(rows)          # Notebook Set 9.5, Desk Lamp 24.99</code></pre>
+  </details>
+
+  <details class="prob"><summary>2. Screenshot every product page concurrently, at most two at a time <span class="diff med">medium</span></summary>
+    <p class="q">Use the async API, one context, a semaphore of 2, and save <code>shots/product-{id}.png</code>. Return how many succeeded.</p>
+<pre><code>import asyncio
+from pathlib import Path
+from playwright.async_api import async_playwright
+
+async def shoot(context, sem, pid, out: Path):
+    async with sem:
+        page = await context.new_page()
+        try:
+            await page.goto(f"/products/{pid}")
+            await page.screenshot(path=out / f"product-{pid}.png", full_page=True)
+        finally:
+            await page.close()
+
+async def main():
+    out = Path("shots"); out.mkdir(exist_ok=True)
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        context = await browser.new_context(base_url="http://127.0.0.1:8000")
+        sem = asyncio.Semaphore(2)
+        results = await asyncio.gather(*(shoot(context, sem, i, out) for i in range(1, 5)),
+                                       return_exceptions=True)
+        await browser.close()
+    return sum(not isinstance(r, Exception) for r in results)
+
+print(asyncio.run(main()))     # 4</code></pre>
+  </details>
+
+  <details class="prob"><summary>3. Make the order robot resumable <span class="diff med">medium</span></summary>
+    <p class="q">You have <code>customers.csv</code> (name, email, postcode). Place one order per row with <code>place_order_and_download</code> from the RPA section, but skip rows already recorded in <code>results.csv</code> and record failures without stopping.</p>
+<pre><code>import csv
+from pathlib import Path
+
+def done_emails(path=Path("results.csv")) -&gt; set[str]:
+    if not path.exists():
+        return set()
+    with path.open(encoding="utf-8") as f:
+        return {r["email"] for r in csv.DictReader(f) if r["status"] == "ok"}
+
+def run_batch(browser, out_dir=Path("invoices")):
+    out_dir.mkdir(exist_ok=True)
+    done = done_emails()
+    new_file = not Path("results.csv").exists()
+    with open("customers.csv", encoding="utf-8") as src, \
+         open("results.csv", "a", newline="", encoding="utf-8") as res:
+        writer = csv.DictWriter(res, fieldnames=["email", "status", "order_id", "detail"])
+        if new_file:
+            writer.writeheader()
+        for row in csv.DictReader(src):
+            if row["email"] in done:
+                continue
+            context = browser.new_context(base_url="http://127.0.0.1:8000")   # clean cart per order
+            try:
+                order_id, file = place_order_and_download(context.new_page(), row, out_dir)
+                writer.writerow({"email": row["email"], "status": "ok", "order_id": order_id, "detail": file.name})
+            except Exception as e:
+                writer.writerow({"email": row["email"], "status": "failed", "order_id": "", "detail": str(e).splitlines()[0]})
+            finally:
+                res.flush()                     # survive a crash on the next row
+                context.close()</code></pre>
+  </details>
+
+  <details class="prob"><summary>4. Add a latency alert to the monitor <span class="diff med">medium</span></summary>
+    <p class="q">A journey that passes but takes 20 seconds is also an incident. Alert when the total time exceeds a budget on two consecutive runs, reusing the failure counter.</p>
+<pre><code>LATENCY_BUDGET_MS = 8_000
+
+def classify(result: dict) -&gt; dict:
+    total = sum(result["timings_ms"].values())
+    if result["ok"] and total &gt; LATENCY_BUDGET_MS:
+        return result | {"ok": False, "failed_step": "latency",
+                         "error": f"journey took {total} ms (budget {LATENCY_BUDGET_MS} ms)",
+                         "trace": "n/a"}
+    return result
+
+# in check_once:
+#     result = classify(run_journey(base_url)) | {...}
+# the existing consecutive-failure logic then alerts and recovers for slowness too.
+# Better still: record per-step timings as metrics and alert on p95 in your monitoring system.</code></pre>
+  </details>
+
+  <details class="prob"><summary>5. Choose the tool <span class="diff easy">easy</span></summary>
+    <p class="q">For each job, browser or HTTP client? (a) Nightly copy of ShopBot's product list into a database. (b) A weekly PDF of the cart page for an auditor. (c) Checking that a single-page app's dashboard shows today's figures after login with SSO.</p>
+    <p>(a) HTTP client: <code>GET /api/products</code> returns exactly the data, in milliseconds. (b) Browser: only a rendering engine can produce the PDF (<code>page.pdf()</code> in Chromium). (c) Browser, or hybrid: SSO and a JavaScript dashboard need a real browser; save the storage state and reuse it, and if the dashboard reads a JSON endpoint you are allowed to call, the data check itself could use the browser's cookies with httpx.</p>
+  </details>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

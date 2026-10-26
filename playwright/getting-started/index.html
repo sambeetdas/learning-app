@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install, first script and codegen - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .cg { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.3fr); gap: .8rem; align-items: start; }
+    @media (max-width: 860px) { .cg { grid-template-columns: 1fr; } }
+    .cg .mockbrowser { max-width: none; }
+    .cg .viewport h4 { margin: .1rem 0 .4rem; font-size: 1rem; }
+    .cg .el { font-size: .8rem; }
+    .cg .el.inp { min-width: 9rem; background: var(--bg); color: var(--muted); }
+    .cg .el.inp.typed { color: var(--fg); }
+    .cg .cards { display: flex; flex-wrap: wrap; gap: .1rem; margin-top: .3rem; }
+    .cg .cards .el { display: block; flex: 1 1 45%; }
+    .pick { display: inline-block; font: .7rem ui-monospace, Consolas, monospace; background: var(--accent); color: var(--on-color); padding: .1rem .4rem; border-radius: 5px; margin: .2rem 0; }
+    .cgtool { display: flex; gap: .3rem; flex-wrap: wrap; font-size: .72rem; padding: .25rem .5rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+    .cgtool span { border: 1px solid var(--line); border-radius: 5px; padding: .05rem .4rem; color: var(--muted); }
+    .cgtool span.on { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+    .cgtool span.sel { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    pre.gen { margin: 0; min-height: 15rem; font-size: .72rem; }
+    pre.gen .nl { background: color-mix(in srgb, var(--good) 18%, transparent); }
+    pre.gen .cm { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Install, first script and codegen</h1><nav></nav></header>
+
+  <p>
+    This page takes you from an empty folder to a passing Playwright test: installing the package and browsers, choosing between the sync and async APIs,
+    writing a first script and a first pytest test, recording a test with <strong>codegen</strong>, and pausing a test in the <strong>Playwright Inspector</strong>.
+    It ends with a recommended project set-up and fixes for the installation problems people hit most often (corporate proxies, missing browsers, long paths on Windows).
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="install">Install</h2>
+  <p>You need <strong>Python 3.10 or newer</strong> (Playwright 1.64 requires it). Always work in a virtual environment so the project's packages and versions are separate from everything else on the machine.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Windows (PowerShell)">
+<pre class="term"><code>mkdir shopbot-e2e; cd shopbot-e2e
+py -m venv .venv
+.venv\Scripts\Activate.ps1          <span class="c"># prompt now starts with (.venv)</span>
+python -m pip install --upgrade pip
+pip install pytest-playwright       <span class="c"># installs playwright + pytest too</span>
+playwright install chromium         <span class="c"># downloads the browser build for this version</span>
+playwright --version                <span class="c"># Version 1.64.1</span></code></pre>
+    </div>
+    <div class="tabpane" data-tab="macOS / Linux">
+<pre class="term"><code>mkdir shopbot-e2e &amp;&amp; cd shopbot-e2e
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install pytest-playwright
+playwright install chromium
+playwright --version</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Linux CI / Docker">
+<pre class="term"><code>pip install pytest-playwright
+playwright install --with-deps chromium   <span class="c"># also installs the OS libraries (uses sudo / apt)</span>
+<span class="c"># or, in two steps:</span>
+playwright install chromium
+playwright install-deps chromium</code></pre>
+    </div>
+  </div>
+  <p>Just want the library, without pytest? <code>pip install playwright</code>. Want the async pytest fixtures? <code>pip install pytest-playwright-asyncio</code>.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td><code>playwright install</code></td><td>Downloads Chromium, Firefox and WebKit builds pinned to your Playwright version</td></tr>
+      <tr><td><code>playwright install chromium firefox</code></td><td>Only the engines you name (saves disk space and CI time)</td></tr>
+      <tr><td><code>playwright install --with-deps chromium</code></td><td>Linux: browsers plus the system libraries they need</td></tr>
+      <tr><td><code>playwright install chrome</code> / <code>msedge</code></td><td>Installs the branded Google Chrome / Microsoft Edge into the normal system location (may need admin rights)</td></tr>
+      <tr><td><code>playwright install --only-shell</code> / <code>--no-shell</code></td><td>Only the lightweight headless shell (for CI) / skip it (if you only run headed)</td></tr>
+      <tr><td><code>playwright install --dry-run</code></td><td>Prints what would be downloaded and where, without downloading</td></tr>
+      <tr><td><code>playwright uninstall</code></td><td>Removes browsers that no Playwright installation uses any more</td></tr>
+    </table>
+  </div>
+  <div class="demo" id="install-demo">
+    <h3>What the two install steps actually do</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <p><strong>Where do the browsers go?</strong> A shared cache per user: <code>%LOCALAPPDATA%\ms-playwright</code> on Windows, <code>~/.cache/ms-playwright</code> on Linux, <code>~/Library/Caches/ms-playwright</code> on macOS.
+    Set <code>PLAYWRIGHT_BROWSERS_PATH</code> to use another folder (for example inside a Docker image). Headless Chromium runs on the small <em>Chrome Headless Shell</em> build; headed runs use the full Chromium build.</p>
+  <h3>Branded browsers (channels)</h3>
+  <p>Playwright's own Chromium is the default. To test in the Chrome or Edge that your users actually run, or when your company blocks the browser download, use a <strong>channel</strong>:</p>
+<pre><code>browser = p.chromium.launch(channel="chrome")     # installed Google Chrome
+browser = p.chromium.launch(channel="msedge")     # installed Microsoft Edge</code></pre>
+<pre class="term"><code>pytest --browser-channel chrome</code></pre>
+
+  <h2 id="sync-async">Sync or async API?</h2>
+  <p>Playwright for Python has two APIs with the same methods. The <strong>sync</strong> API is simpler and is what pytest-playwright uses; choose <strong>async</strong> when your program already runs on <code>asyncio</code> (a FastAPI app, an async agent, Jupyter) or you want to drive many pages concurrently in one process.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Sync">
+<div class="codefile"><div class="fname">first_sync.py</div><pre><code>from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.goto("http://127.0.0.1:8000/products")
+    print(page.title())                      # Products - ShopBot
+    page.get_by_role("link", name="Ceramic Mug").click()
+    print(page.url)                          # http://127.0.0.1:8000/products/1
+    browser.close()</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="Async">
+<div class="codefile"><div class="fname">first_async.py</div><pre><code>import asyncio
+from playwright.async_api import async_playwright
+
+
+async def main():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page()
+        await page.goto("http://127.0.0.1:8000/products")
+        print(await page.title())
+        await page.get_by_role("link", name="Ceramic Mug").click()
+        print(page.url)                      # a property: no await
+        await browser.close()
+
+asyncio.run(main())</code></pre></div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Sync (<code>playwright.sync_api</code>)</th><th>Async (<code>playwright.async_api</code>)</th></tr>
+      <tr><td>Entry point</td><td><code>with sync_playwright() as p:</code></td><td><code>async with async_playwright() as p:</code></td></tr>
+      <tr><td>Calls</td><td><code>page.click(...)</code></td><td><code>await page.click(...)</code> (methods that talk to the browser are coroutines)</td></tr>
+      <tr><td>Locator creation</td><td><code>page.get_by_role(...)</code></td><td>Same, no <code>await</code>: building a locator does not touch the browser</td></tr>
+      <tr><td>pytest</td><td><code>pytest-playwright</code></td><td><code>pytest-playwright-asyncio</code></td></tr>
+      <tr><td>Inside a running event loop</td><td>Fails: "It looks like you are using Playwright Sync API inside the asyncio loop"</td><td>Works</td></tr>
+    </table>
+  </div>
+
+  <h2 id="first-script">Your first script, with screenshots</h2>
+  <p>Start ShopBot (or use your own site), then run this script with <code>python first_script.py</code>. It writes two PNG files next to the script.</p>
+<div class="codefile"><div class="fname">first_script.py</div><pre><code>from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False, slow_mo=300)   # watch it, slowed down
+    page = browser.new_page(viewport={"width": 1280, "height": 800})
+    page.goto("http://127.0.0.1:8000/products")
+    page.screenshot(path="products.png", full_page=True)       # the whole scrollable page
+
+    page.get_by_placeholder("Search products").fill("lamp")
+    page.get_by_role("button", name="Search").click()
+    page.get_by_role("link", name="Desk Lamp").click()
+    page.get_by_role("heading", level=1).screenshot(path="heading.png")   # one element only
+
+    print(page.title(), page.url)        # Desk Lamp - ShopBot http://127.0.0.1:8000/products/3
+    browser.close()</code></pre></div>
+  <ul>
+    <li><code>launch()</code> is <strong>headless</strong> by default (no window). <code>headless=False</code> shows the window; <code>slow_mo</code> adds a delay (ms) before each operation so you can follow along.</li>
+    <li><code>page.screenshot(full_page=True)</code> captures the whole page; <code>locator.screenshot()</code> just one element. Pass <code>mask=[locator]</code> to hide changing content and <code>animations="disabled"</code> for stable images.</li>
+    <li>There are no sleeps: <code>click()</code> waits for the button to be ready, and <code>goto()</code> waits for the page's <code>load</code> event.</li>
+  </ul>
+
+  <h2 id="first-test">Your first pytest test</h2>
+  <p>Scripts are good for exploring; tests are what you keep. With <code>pytest-playwright</code> installed, any test that asks for the <code>page</code> fixture receives a fresh page in a fresh context.</p>
+<div class="codefile"><div class="fname">tests/test_search.py</div><pre><code>import re
+from playwright.sync_api import Page, expect
+
+
+def test_search_finds_the_mug(page: Page):
+    page.goto("/products")                                   # relative: uses --base-url
+    page.get_by_placeholder("Search products").fill("mug")
+    page.get_by_role("button", name="Search").click()
+
+    expect(page).to_have_url(re.compile(r"q=mug"))
+    expect(page.get_by_test_id("product-card")).to_have_count(1)
+    expect(page.get_by_test_id("result-count")).to_have_text("1 results")
+
+
+def test_title(page: Page):
+    page.goto("/products")
+    expect(page).to_have_title("Products - ShopBot")</code></pre></div>
+<pre class="term"><code>pytest --base-url http://127.0.0.1:8000
+<span class="c">..                                                         [100%]</span>
+<span class="c">2 passed in 2.31s</span></code></pre>
+  <p>Notice the pattern that every test follows: <strong>arrange</strong> (go to the page), <strong>act</strong> (fill, click), <strong>assert</strong> with <code>expect</code>. The <code>expect</code> assertions retry until the page matches, so they also act as the waits.</p>
+
+  <h2 id="running">Running: headless, headed, slow motion, other browsers</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Command</th><th>Effect</th></tr>
+      <tr><td><code>pytest</code></td><td>Headless Chromium (the default)</td></tr>
+      <tr><td><code>pytest --headed</code></td><td>Show the browser window</td></tr>
+      <tr><td><code>pytest --headed --slowmo 500</code></td><td>Window plus a 500 ms pause before each operation</td></tr>
+      <tr><td><code>pytest --browser firefox</code></td><td>Another engine (<code>chromium</code>, <code>firefox</code>, <code>webkit</code>); repeat the flag to run on several</td></tr>
+      <tr><td><code>pytest --browser-channel chrome</code></td><td>Use the installed Chrome</td></tr>
+      <tr><td><code>pytest --device "iPhone 15"</code></td><td>Emulate a device (viewport, user agent, touch)</td></tr>
+      <tr><td><code>pytest -k mug -x</code></td><td>Only tests whose name contains "mug"; stop at the first failure (standard pytest)</td></tr>
+      <tr><td><code>pytest --tracing retain-on-failure</code></td><td>Keep a trace zip in <code>test-results/</code> for every failing test</td></tr>
+      <tr><td><code>pytest --screenshot only-on-failure --video retain-on-failure</code></td><td>Screenshots and videos of failures</td></tr>
+      <tr><td><code>pytest -n auto</code></td><td>Run in parallel on all CPU cores (needs <code>pip install pytest-xdist</code>)</td></tr>
+    </table>
+  </div>
+  <p>In a script, the equivalents are arguments to <code>launch()</code>: <code>headless=False</code>, <code>slow_mo=500</code>, <code>channel="chrome"</code>.</p>
+
+  <h2 id="codegen">Record a test with codegen</h2>
+  <p><strong>Codegen</strong> opens a browser and a recorder window. As you click and type, it writes the Python code, choosing the most resilient locator it can find (role, label, text or test id). It is the fastest way to learn the API and to draft a test.</p>
+<pre class="term"><code>playwright codegen --target python-pytest http://127.0.0.1:8000/products
+<span class="c"># useful options</span>
+playwright codegen --target python-pytest -o tests/test_recorded.py URL   <span class="c"># write to a file</span>
+playwright codegen --device "iPhone 15" URL                               <span class="c"># record on an emulated phone</span>
+playwright codegen --save-storage auth.json URL                           <span class="c"># log in once, save cookies</span>
+playwright codegen --load-storage auth.json URL                           <span class="c"># start already logged in</span>
+playwright codegen --test-id-attribute data-qa URL                        <span class="c"># if your app uses another test id attribute</span></code></pre>
+  <p>Targets: <code>python</code> (sync script, the default), <code>python-async</code> and <code>python-pytest</code>. Watch a recording session:</p>
+  <div class="demo" id="codegen-demo">
+    <h3>Codegen turns your clicks into code</h3>
+    <div class="stage"></div>
+  </div>
+  <p>Recorded code is a <strong>draft</strong>. Before committing it: give the test a meaningful name, replace the absolute URL with a relative one (so <code>--base-url</code> works), remove redundant clicks before <code>fill</code>, and make sure every important outcome has an <code>expect</code>. The cleaned-up test:</p>
+<div class="codefile"><div class="fname">tests/test_recorded.py (after review)</div><pre><code>from playwright.sync_api import Page, expect
+
+
+def test_search_and_open_product(page: Page) -> None:
+    page.goto("/products")
+    page.get_by_role("textbox", name="Search").fill("mug")
+    page.get_by_role("button", name="Search").click()
+    expect(page.get_by_test_id("result-count")).to_contain_text("1 results")
+    page.get_by_role("link", name="Ceramic Mug").click()
+    expect(page.get_by_role("heading", name="Ceramic Mug")).to_be_visible()</code></pre></div>
+  <div class="callout tip"><strong>Pick locator.</strong> The recorder's "Pick locator" button lets you hover any element and copy the locator Playwright would use for it, without recording an action. Great for writing tests by hand.</div>
+
+  <h2 id="inspector">The Playwright Inspector, <code>page.pause()</code> and <code>PWDEBUG</code></h2>
+  <p>The <strong>Inspector</strong> is a debugging window: it shows the current call, highlights the element on the page, lets you step over one action at a time, and has the same "Pick locator" and recorder as codegen. Two ways to open it:</p>
+  <div class="cols">
+    <div>
+      <h3>1. <code>page.pause()</code> in your code</h3>
+<pre><code>def test_checkout(page: Page):
+    page.goto("/checkout")
+    page.pause()          # opens the Inspector and waits here
+    page.get_by_label("Full name").fill("Alice")</code></pre>
+      <p>Run headed: <code>pytest --headed -k checkout</code>. Press <em>Resume</em> (or step) in the Inspector. Remove <code>pause()</code> before committing.</p>
+    </div>
+    <div>
+      <h3>2. <code>PWDEBUG=1</code> for the whole run</h3>
+      <div class="codetabs">
+        <div class="tabpane" data-tab="PowerShell"><pre class="term"><code>$env:PWDEBUG = "1"
+pytest -s -k checkout
+Remove-Item Env:PWDEBUG</code></pre></div>
+        <div class="tabpane" data-tab="bash"><pre class="term"><code>PWDEBUG=1 pytest -s -k checkout</code></pre></div>
+        <div class="tabpane" data-tab="cmd"><pre class="term"><code>set PWDEBUG=1
+pytest -s -k checkout</code></pre></div>
+      </div>
+      <p>With <code>PWDEBUG=1</code> the browser runs headed, timeouts are disabled and the Inspector pauses before the first action. <code>-s</code> lets you see <code>print</code> output.</p>
+    </div>
+  </div>
+  <p class="muted">For failures that already happened (especially in CI), the <strong>trace viewer</strong> is better than the Inspector; it is covered on the <a href="../debugging-ci/index.html">debugging and CI page</a>.</p>
+
+  <h2 id="project">Project structure and configuration</h2>
+<pre class="tree"><code>shopbot-e2e/
+├── pyproject.toml
+├── tests/
+│   ├── conftest.py
+│   └── test_search.py
+└── test-results/        # created by pytest-playwright (add to .gitignore)</code></pre>
+  <p>Put the options you would otherwise type every time into <code>addopts</code>. Command-line flags still work and add to (or override) these.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="pyproject.toml">
+<div class="codefile"><div class="fname">pyproject.toml</div><pre><code>[project]
+name = "shopbot-e2e"
+version = "0.1.0"
+requires-python = "&gt;=3.10"
+dependencies = ["pytest-playwright&gt;=0.10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--base-url http://127.0.0.1:8000 --browser chromium --tracing retain-on-failure --screenshot only-on-failure"</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="pytest.ini">
+<div class="codefile"><div class="fname">pytest.ini</div><pre><code>[pytest]
+testpaths = tests
+addopts = --base-url http://127.0.0.1:8000 --browser chromium --tracing retain-on-failure --screenshot only-on-failure</code></pre></div>
+    </div>
+  </div>
+<div class="codefile"><div class="fname">tests/conftest.py</div><pre><code>import pytest
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    # applied to every context the plugin creates
+    return {**browser_context_args, "viewport": {"width": 1280, "height": 800}, "locale": "en-GB"}</code></pre></div>
+  <p>Pin your versions (for example in a lock file or <code>requirements.txt</code>) so a new Playwright release does not change browser versions under you, and add <code>test-results/</code> and <code>.venv/</code> to <code>.gitignore</code>.</p>
+
+  <h2 id="vscode">VS Code tips</h2>
+  <ul>
+    <li>Install the <strong>Python</strong> extension, run <em>Python: Select Interpreter</em> and choose <code>.venv</code>. Then the <strong>Testing</strong> view discovers your pytest tests: run or debug one with a click.</li>
+    <li>Set a breakpoint and choose <em>Debug Test</em>: the browser stays where it is while you inspect variables. Add <code>--headed</code> to <code>addopts</code> temporarily, or run with <code>PWDEBUG=1</code>, to see it.</li>
+    <li>To set <code>PWDEBUG</code> for debug runs only, add <code>"env": {"PWDEBUG": "1"}</code> to a debug configuration in <code>.vscode/launch.json</code> (<code>"purpose": ["debug-test"]</code>).</li>
+    <li>The Microsoft "Playwright Test for VS Code" extension targets the <strong>Node.js</strong> test runner; it does not run Python tests. Use the Python Testing view, and <code>playwright codegen</code> from the terminal for recording.</li>
+    <li>Type hints help: annotate fixtures (<code>page: Page</code>) and VS Code autocompletes every Playwright method and its keyword arguments.</li>
+  </ul>
+
+  <h2 id="troubleshooting">Troubleshooting installation</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td><code>BrowserType.launch: Executable doesn't exist at ...ms-playwright\chromium_headless_shell-1248\...</code> with a box saying "Looks like Playwright was just installed or updated. Please run the following command to download new browsers: playwright install"</td><td>The browsers for this Playwright version are not downloaded (new install, upgrade, different user, or a CI image without them)</td><td>Run <code>playwright install chromium</code> in the same environment and as the same user that runs the tests. In CI, run it after <code>pip install</code> (and cache the <code>ms-playwright</code> folder keyed by the Playwright version)</td></tr>
+      <tr><td>Download hangs or fails with certificate or connection errors</td><td>Corporate proxy or TLS inspection</td><td>Set <code>HTTPS_PROXY=http://proxy.corp:8080</code>; if the proxy re-signs TLS, point <code>NODE_EXTRA_CA_CERTS</code> at your company's root certificate (the download runs in the Node driver); use an internal mirror with <code>PLAYWRIGHT_DOWNLOAD_HOST</code>; or skip the download and use <code>channel="chrome"</code> / <code>"msedge"</code></td></tr>
+      <tr><td><code>pip install</code> fails behind the proxy</td><td>pip does not know the proxy</td><td><code>pip install --proxy http://proxy.corp:8080 pytest-playwright</code>, or configure <code>pip.ini</code> / an internal package index</td></tr>
+      <tr><td>"Host system is missing dependencies to run browsers"</td><td>Linux without the libraries browsers need</td><td><code>playwright install-deps</code> (or <code>install --with-deps</code>), or use the official Playwright Docker image</td></tr>
+      <tr><td>Windows: <code>OSError</code> / "No such file or directory" during <code>pip install</code> or browser unzip, in a deeply nested folder</td><td>The 260-character path limit</td><td>Use a short project path (for example <code>C:\dev\shopbot-e2e</code>), or enable long paths: set <code>LongPathsEnabled</code> to 1 under <code>HKLM\SYSTEM\CurrentControlSet\Control\FileSystem</code> (admin) and restart the terminal</td></tr>
+      <tr><td><code>playwright</code> is not recognised as a command</td><td>The virtual environment is not active, or scripts folder not on PATH</td><td>Activate <code>.venv</code>, or run <code>python -m playwright install chromium</code></td></tr>
+      <tr><td>PowerShell refuses to run <code>Activate.ps1</code></td><td>Execution policy</td><td><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>, or use <code>.venv\Scripts\activate.bat</code> from cmd</td></tr>
+      <tr><td>"It looks like you are using Playwright Sync API inside the asyncio loop"</td><td>Sync API called from async code (Jupyter, FastAPI, an async test)</td><td>Use <code>playwright.async_api</code> with <code>await</code></td></tr>
+      <tr><td>Works locally, browser missing in CI after upgrading Playwright</td><td>A cached <code>ms-playwright</code> folder from the old version</td><td>Include the Playwright version in the cache key; run <code>playwright install</code> every time (it is a no-op when up to date)</td></tr>
+    </table>
+  </div>
+
+  <h2 id="mistakes">Common mistakes</h2>
+  <ul>
+    <li><strong>Installing into the global Python.</strong> Different projects need different Playwright versions; use one virtual environment per project.</li>
+    <li><strong>Forgetting <code>playwright install</code></strong> after <code>pip install --upgrade playwright</code>. Each release pins new browser builds.</li>
+    <li><strong>Hard-coding <code>http://127.0.0.1:8000</code> in every test.</strong> Use relative URLs and <code>--base-url</code>, so the same tests run against staging.</li>
+    <li><strong>Committing recorded code unchanged.</strong> Codegen does not know what matters; add the assertions yourself.</li>
+    <li><strong>Leaving <code>page.pause()</code> or <code>slow_mo</code> in committed code.</strong> CI will hang or crawl.</li>
+    <li><strong>Mixing sync and async</strong> in one program, or naming your file <code>playwright.py</code> (it shadows the real package: <code>ModuleNotFoundError: No module named 'playwright.sync_api'; 'playwright' is not a package</code>).</li>
+  </ul>
+
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Task</th><th>Command or code</th></tr>
+      <tr><td>Install</td><td><code>pip install pytest-playwright</code> then <code>playwright install chromium</code></td></tr>
+      <tr><td>Script skeleton</td><td><code>with sync_playwright() as p: browser = p.chromium.launch(); page = browser.new_page()</code></td></tr>
+      <tr><td>See the browser</td><td><code>launch(headless=False, slow_mo=300)</code> / <code>pytest --headed --slowmo 300</code></td></tr>
+      <tr><td>Installed Chrome</td><td><code>launch(channel="chrome")</code> / <code>pytest --browser-channel chrome</code></td></tr>
+      <tr><td>Screenshot</td><td><code>page.screenshot(path="p.png", full_page=True)</code>, <code>locator.screenshot(path=...)</code></td></tr>
+      <tr><td>Test function</td><td><code>def test_x(page: Page): ... expect(...)</code></td></tr>
+      <tr><td>Base URL</td><td><code>pytest --base-url http://127.0.0.1:8000</code>, then <code>page.goto("/products")</code></td></tr>
+      <tr><td>Record</td><td><code>playwright codegen --target python-pytest URL</code></td></tr>
+      <tr><td>Debug</td><td><code>page.pause()</code> or <code>PWDEBUG=1 pytest -s</code></td></tr>
+      <tr><td>Context options for all tests</td><td>Override the <code>browser_context_args</code> fixture in <code>conftest.py</code></td></tr>
+    </table>
+  </div>
+
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>Write a script that searches ShopBot for "pan", prints the number of results shown on the page, and saves a screenshot of just the first product card.</summary>
+<pre><code>from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.goto("http://127.0.0.1:8000/products")
+    page.get_by_placeholder("Search products").fill("pan")
+    page.get_by_role("button", name="Search").click()
+    page.wait_for_url("**/products?q=pan*")
+    print(page.get_by_test_id("result-count").inner_text())      # 1 results
+    page.get_by_test_id("product-card").first.screenshot(path="first-card.png")
+    browser.close()</code></pre>
+    <p class="muted"><code>wait_for_url</code> makes sure the search result page has loaded before reading the count; in a test you would use <code>expect(...).to_have_text("1 results")</code> instead.</p>
+  </details>
+  <details class="prob"><summary>Turn that script into a pytest test that runs against any environment and checks that the only card is the Cast Iron Pan.</summary>
+<pre><code>from playwright.sync_api import Page, expect
+
+
+def test_search_pan(page: Page):
+    page.goto("/products")
+    page.get_by_placeholder("Search products").fill("pan")
+    page.get_by_role("button", name="Search").click()
+    cards = page.get_by_test_id("product-card")
+    expect(cards).to_have_count(1)
+    expect(cards).to_contain_text("Cast Iron Pan")</code></pre>
+    <p>Run it with <code>pytest --base-url http://127.0.0.1:8000</code> (or put <code>--base-url</code> in <code>addopts</code>).</p>
+  </details>
+  <details class="prob"><summary>Rewrite <code>first_sync.py</code> with the async API and open the products page and the chat page concurrently in two pages.</summary>
+<pre><code>import asyncio
+from playwright.async_api import async_playwright
+
+
+async def title_of(browser, url):
+    page = await browser.new_page()
+    await page.goto(url)
+    return await page.title()
+
+
+async def main():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        titles = await asyncio.gather(
+            title_of(browser, "http://127.0.0.1:8000/products"),
+            title_of(browser, "http://127.0.0.1:8000/chat"),
+        )
+        print(titles)        # ['Products - ShopBot', 'Support chat - ShopBot']
+        await browser.close()
+
+asyncio.run(main())</code></pre>
+  </details>
+  <details class="prob"><summary>Every test in your suite should run with a German locale and a dark colour scheme. Where do you configure that, and how?</summary>
+<pre><code># tests/conftest.py
+import pytest
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    return {**browser_context_args, "locale": "de-DE", "color_scheme": "dark"}</code></pre>
+    <p>Every context (and therefore every <code>page</code>) the plugin creates uses these options. Check one with <code>page.evaluate("navigator.language")</code>, which returns <code>"de-DE"</code>.</p>
+  </details>
+  <details class="prob"><summary>A colleague's CI job fails with "Executable doesn't exist" right after a dependency bot upgraded Playwright. The job caches <code>~/.cache/ms-playwright</code> with a fixed key. What happened and how do you fix it?</summary>
+    <p>The new Playwright version expects new browser builds (different folder names, for example <code>chromium-1248</code>), but the restored cache only has the old ones and <code>playwright install</code> was skipped because "the cache hit". Include the Playwright version in the cache key and always run <code>playwright install --with-deps chromium</code> (it only downloads what is missing).</p>
+  </details>
+
+  <h2 id="refs">References</h2>
+  <ul>
+    <li><a href="https://playwright.dev/python/docs/intro">Installation</a> and <a href="https://playwright.dev/python/docs/library">the library (sync and async)</a></li>
+    <li><a href="https://playwright.dev/python/docs/browsers">Browsers, channels and install options</a></li>
+    <li><a href="https://playwright.dev/python/docs/codegen">Test generator (codegen)</a></li>
+    <li><a href="https://playwright.dev/python/docs/debug">Debugging: Inspector and PWDEBUG</a></li>
+    <li><a href="https://playwright.dev/python/docs/test-runners">pytest plugin reference</a></li>
+  </ul>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

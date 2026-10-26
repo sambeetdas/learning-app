@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fundamentals - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Fundamentals: requirements, latency, availability, CAP</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">What a design has to satisfy</h2>
+  <p>
+    A design is only "good" relative to its requirements. <strong>Functional requirements</strong> say what the system does (users can post a photo, see a feed, search).
+    <strong>Non-functional requirements</strong> (quality attributes) say how well: they drive almost every architectural decision, so pin them down with numbers first.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Quality attribute</th><th>The question</th><th>Typical target</th><th>Main techniques</th></tr>
+      <tr><td><strong>Scalability</strong></td><td>Can it handle 10&times; the load?</td><td>Linear cost growth</td><td>Stateless services, horizontal scaling, partitioning, caching</td></tr>
+      <tr><td><strong>Latency / performance</strong></td><td>How fast for the user?</td><td>p99 &lt; 200-500 ms for APIs</td><td>Caching, CDN, proximity, async work, efficient data access</td></tr>
+      <tr><td><strong>Availability</strong></td><td>What fraction of time does it work?</td><td>99.9% (8.8 h/year down) to 99.99% (53 min/year)</td><td>Redundancy, failover, health checks, multi-zone/region</td></tr>
+      <tr><td><strong>Durability</strong></td><td>Will data survive failures?</td><td>99.999999999% for object storage</td><td>Replication, backups, checksums</td></tr>
+      <tr><td><strong>Consistency</strong></td><td>Do all readers see the latest write?</td><td>Strong for money, eventual for likes</td><td>Transactions, quorums, leader election</td></tr>
+      <tr><td><strong>Security and privacy</strong></td><td>Who can do what? Is data protected?</td><td>Least privilege, encryption everywhere</td><td>Identity, authorisation, encryption, auditing</td></tr>
+      <tr><td><strong>Cost</strong></td><td>What does each request / user cost?</td><td>Within budget per user</td><td>Right-sizing, autoscaling, storage tiers, reserved capacity</td></tr>
+      <tr><td><strong>Operability</strong></td><td>Can we deploy, observe and fix it?</td><td>Deploy daily, detect issues in minutes</td><td>CI/CD, observability, runbooks, automation</td></tr>
+    </table>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="latency">Latency numbers to know</h2>
+  <p>Orders of magnitude matter more than exact values. Memory is ~1,000&times; faster than SSD, which is ~10&times; faster than a network round trip in the same data centre, which is ~100&times; faster than crossing an ocean.</p>
+  <div class="demo">
+    <h3>How long things take (log scale)</h3>
+    <div id="lat-chart"></div>
+  </div>
+  <ul>
+    <li><strong>Implication 1:</strong> keep hot data in memory (caches), and avoid chatty designs: 50 sequential database calls at 1 ms each already cost 50 ms.</li>
+    <li><strong>Implication 2:</strong> the speed of light sets a floor: a round trip between Europe and the US west coast is ~150 ms. Serve users from nearby regions and edges.</li>
+    <li><strong>Implication 3:</strong> disk seeks and cross-region calls do not belong in tight loops; batch and parallelise.</li>
+  </ul>
+
+  <h3 id="percentiles">Throughput, latency and percentiles</h3>
+  <p>
+    <strong>Throughput</strong> is work per second; <strong>latency</strong> is time per request. Report latency as percentiles: p50 (median), p95, p99. Averages hide the slow tail that users actually notice.
+    In systems that fan out (one page calls many services), the tail dominates: if each backend is slow 1% of the time, a request touching 100 backends is slow most of the time.
+  </p>
+  <div class="demo">
+    <h3>Tail latency amplification</h3>
+    <div class="bar">
+      <label>Backends called per request <input type="range" id="fan" min="1" max="200" value="50"> <b id="fan-v">50</b></label>
+      <label>Chance each backend is slow <select id="slowp"><option value="0.001">0.1%</option><option value="0.01" selected>1%</option><option value="0.05">5%</option></select></label>
+    </div>
+    <div class="readout" id="tail-out"></div>
+    <p class="cap muted">Fixes: hedged requests (send a duplicate after the p95 time and use the first answer), timeouts, fewer and parallel calls, caching, and removing slow dependencies from the critical path.</p>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="availability">Availability and the nines</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Availability</th><th>Downtime per year</th><th>per month</th><th>per week</th><th>Typical for</th></tr>
+      <tr><td>99% ("two nines")</td><td>3.65 days</td><td>7.3 hours</td><td>1.7 hours</td><td>Internal tools, batch systems</td></tr>
+      <tr><td>99.9%</td><td>8.8 hours</td><td>43.8 minutes</td><td>10.1 minutes</td><td>Many business apps</td></tr>
+      <tr><td>99.95%</td><td>4.4 hours</td><td>21.9 minutes</td><td>5 minutes</td><td>Single-region managed services</td></tr>
+      <tr><td>99.99%</td><td>52.6 minutes</td><td>4.4 minutes</td><td>1 minute</td><td>Customer-facing critical systems (multi-zone)</td></tr>
+      <tr><td>99.999%</td><td>5.3 minutes</td><td>26 seconds</td><td>6 seconds</td><td>Telecom, payments core (multi-region, heavy automation)</td></tr>
+    </table>
+  </div>
+  <p>
+    <strong>Components in series multiply:</strong> a request that needs a load balancer (99.99%), a service (99.9%) and a database (99.95%) is available 99.99% &times; 99.9% &times; 99.95% &asymp; 99.84%.
+    <strong>Redundant components in parallel</strong> fail only if all fail: two independent 99.9% replicas give 1 - 0.001&sup2; = 99.9999%. Real failures are correlated (same zone, same bug), so redundancy must span failure domains.
+  </p>
+  <div class="demo">
+    <h3>Availability calculator</h3>
+    <div class="calc-grid" id="av-grid"></div>
+    <div class="readout" id="av-out"></div>
+  </div>
+  <ul>
+    <li><strong>MTBF</strong> (mean time between failures) and <strong>MTTR</strong> (mean time to repair): availability = MTBF / (MTBF + MTTR). Cutting recovery time (automated failover, fast rollback) often buys more nines than making failures rarer.</li>
+    <li><strong>SLA</strong> = a contractual promise; <strong>SLO</strong> = your internal target; <strong>SLI</strong> = the measurement (e.g. share of requests under 300 ms that succeed). See <a href="../security-ops/index.html#sre">SRE practices</a>.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="cap">CAP and PACELC</h2>
+  <p>
+    When a network partition (P) splits the nodes of a distributed database, it must choose between <strong>consistency (C)</strong>, every read sees the latest write, and <strong>availability (A)</strong>, every request gets a non-error answer.
+    It cannot have both while the partition lasts. <strong>PACELC</strong> adds: <em>else</em> (no partition), you still trade <strong>latency (L)</strong> against <strong>consistency (C)</strong>, because waiting for replicas to agree takes time.
+  </p>
+  <div class="demo" id="cap-demo">
+    <h3>A partition between two replicas</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Choice</th><th>Behaviour during a partition</th><th>Examples</th><th>Use for</th></tr>
+      <tr><td><strong>CP</strong> (consistency first)</td><td>The minority side refuses writes (or reads) until it can reach a quorum</td><td>Spanner, etcd, ZooKeeper, single-primary SQL, Cosmos DB strong, DynamoDB strongly consistent reads</td><td>Money, inventory, locks, configuration, leader election</td></tr>
+      <tr><td><strong>AP</strong> (availability first)</td><td>Both sides keep accepting requests; replicas reconcile later</td><td>Cassandra, DynamoDB eventually consistent reads, DNS, CDN caches, Cosmos DB eventual/session</td><td>Feeds, likes, shopping carts, telemetry, caches</td></tr>
+    </table>
+  </div>
+
+  <h2 id="consistency">Consistency models</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Model</th><th>Guarantee</th><th>Cost / example</th></tr>
+      <tr><td><strong>Linearizable (strong)</strong></td><td>Behaves like a single copy: once a write completes, every later read sees it</td><td>Highest latency; consensus (Raft/Paxos) or a single leader</td></tr>
+      <tr><td><strong>Sequential</strong></td><td>Everyone sees operations in the same order (not necessarily real time)</td><td>Rarely offered directly</td></tr>
+      <tr><td><strong>Causal</strong></td><td>If A caused B, everyone sees A before B (a reply never appears before its question)</td><td>Good middle ground for collaboration and social apps</td></tr>
+      <tr><td><strong>Read-your-writes / session</strong></td><td>You always see your own updates</td><td>Cosmos DB "session"; sticky routing to the primary after a write</td></tr>
+      <tr><td><strong>Monotonic reads</strong></td><td>You never see time go backwards</td><td>Pin a user to one replica</td></tr>
+      <tr><td><strong>Bounded staleness</strong></td><td>At most k versions or t seconds behind</td><td>Cosmos DB bounded staleness</td></tr>
+      <tr><td><strong>Eventual</strong></td><td>If writes stop, replicas converge</td><td>Lowest latency, highest availability; needs conflict handling</td></tr>
+    </table>
+  </div>
+  <p class="muted">Conflict resolution for multi-writer systems: last-writer-wins (simple, may lose updates), version vectors (detect conflicts, let the app merge), or CRDTs (data types that merge automatically, see <a href="../collab-editor/index.html">collaborative editor</a>).</p>
+
+  <h2 id="other">Other fundamentals you will use everywhere</h2>
+  <ul>
+    <li><strong>Idempotency:</strong> doing an operation twice has the same effect as once. Essential because networks retry. Use idempotency keys for writes (see <a href="../payment/index.html">payments</a>).</li>
+    <li><strong>Back-pressure:</strong> when a component is overloaded it must slow its producers down (queues with limits, 429 responses) instead of collapsing.</li>
+    <li><strong>The fallacies of distributed computing:</strong> the network is not reliable, latency is not zero, bandwidth is not infinite, the network is not secure, topology changes, there is more than one administrator, transport has a cost, the network is not homogeneous.</li>
+    <li><strong>Time:</strong> clocks on different machines drift; never rely on wall-clock order across machines for correctness. Use logical clocks, sequence numbers from a single writer, or bounded-uncertainty clocks.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

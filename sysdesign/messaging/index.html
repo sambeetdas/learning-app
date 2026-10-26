@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Messaging and Event-Driven Design - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Messaging and event-driven design</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    Not everything has to happen while the user waits. Putting a <strong>message</strong> between a producer and a consumer decouples them in time (the consumer can be slow or down),
+    in load (bursts are absorbed by the queue), and in knowledge (the producer does not need to know who consumes). Messaging is how large systems stay responsive and resilient, and how services
+    stay independent. It also brings new problems: duplicates, ordering, failures that happen later, and consistency across services.
+  </p>
+  <div class="cols">
+    <div class="card arch"><h3>Synchronous (request/response)</h3><p>The caller waits for the answer. Simple and immediate, but latency and failures add up along the chain, and a slow dependency slows everyone.</p></div>
+    <div class="card arch"><h3>Asynchronous (messages/events)</h3><p>The caller hands off work and continues. Absorbs spikes, isolates failures, enables fan-out; at the cost of eventual consistency and harder debugging.</p></div>
+  </div>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="models">Queues, pub/sub and logs</h2>
+  <div class="demo" id="mq-demo">
+    <h3>Three messaging models</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Message queue</th><th>Pub/sub (topics)</th><th>Event log / stream</th></tr>
+      <tr><td>Delivery</td><td>Each message to <em>one</em> consumer</td><td>Each message to <em>every</em> subscriber</td><td>Consumers read the log at their own position (offset)</td></tr>
+      <tr><td>After consumption</td><td>Deleted</td><td>Deleted per subscription</td><td>Kept (days, or forever); can be replayed</td></tr>
+      <tr><td>Ordering</td><td>Best-effort, or FIFO with sessions/groups</td><td>Per subscription</td><td>Strict per partition</td></tr>
+      <tr><td>Use for</td><td>Background jobs, work distribution, load levelling</td><td>Notifying many services of an event</td><td>Event-driven architecture, analytics, change data capture, replay</td></tr>
+      <tr><td>Azure</td><td id="c-queue"></td><td id="c-pubsub"></td><td id="c-stream"></td></tr>
+      <tr><td>AWS</td><td id="w-queue"></td><td id="w-pubsub"></td><td id="w-stream"></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="delivery">Delivery guarantees and idempotency</h2>
+  <ul>
+    <li><strong>At-most-once:</strong> fire and forget; messages may be lost (metrics sampling).</li>
+    <li><strong>At-least-once:</strong> the broker redelivers until acknowledged; messages may arrive <em>twice</em> (the consumer crashed after processing but before acking). The practical default.</li>
+    <li><strong>Exactly-once</strong> end to end is achieved by at-least-once delivery plus an <strong>idempotent consumer</strong> (or transactional processing inside one system, as in Kafka transactions).</li>
+  </ul>
+  <div class="demo" id="idem-demo">
+    <h3>Duplicates and the idempotent consumer</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Poison messages</strong> that always fail are moved to a <strong>dead-letter queue</strong> after N attempts, so they do not block the queue; alert on DLQ depth.</li>
+    <li><strong>Retries</strong> use exponential backoff with jitter; some brokers support scheduled redelivery.</li>
+    <li><strong>Ordering:</strong> to keep one customer's events in order, route them to the same partition (partition key = customer id) and process each partition sequentially.</li>
+    <li><strong>Large payloads:</strong> store them in object storage and send a reference (claim-check pattern).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="backpressure">Load levelling and competing consumers</h2>
+  <p>A queue absorbs bursts so that consumers can work at their own pace. Add consumers (competing consumers) when the backlog grows; the queue length is the best autoscaling signal.</p>
+  <div class="demo" id="cc-demo">
+    <h3>Backlog simulator</h3>
+    <div class="bar">
+      <label>Producer rate (msgs/s) <input type="range" id="cc-rate" min="10" max="200" value="120"> <b id="cc-rate-v">120</b></label>
+      <label>Consumers <input type="range" id="cc-n" min="1" max="12" value="3"> <b id="cc-n-v">3</b></label>
+      <span class="muted">each consumer handles 25 msgs/s</span>
+      <label><input type="checkbox" id="cc-auto"> autoscale on backlog</label>
+      <button type="button" id="cc-run" class="primary">Start</button>
+    </div>
+    <canvas class="plot" id="cc-chart" width="760" height="220"></canvas>
+    <div class="readout" id="cc-out"></div>
+  </div>
+  <p class="muted">If producers are permanently faster than consumers, no queue can save you: the backlog (and the age of the oldest message) grows without bound. Monitor queue age, not just length, and shed or throttle load when it keeps rising.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="outbox">The transactional outbox</h2>
+  <p>A service often must update its database <em>and</em> publish an event. Doing both directly is unsafe: the process can crash between them, leaving the database changed but no event sent (or the reverse). The outbox pattern writes the event into an <em>outbox table</em> in the same database transaction; a relay publishes it afterwards.</p>
+  <div class="demo" id="ob-demo">
+    <h3>Outbox pattern</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="saga">Sagas: transactions across services</h2>
+  <p>
+    A business transaction such as "place order" spans services (orders, payments, inventory, shipping), each with its own database. Instead of a distributed lock-step transaction,
+    a <strong>saga</strong> runs a sequence of local transactions; if a step fails, it runs <strong>compensating actions</strong> to undo the earlier steps.
+  </p>
+  <div class="demo" id="saga-demo">
+    <h3>Orchestrated saga with compensation</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="cols">
+    <div class="card arch"><h3>Orchestration</h3><p>A central orchestrator (workflow engine) tells each service what to do and handles failures. Easy to follow and change; the orchestrator is a central piece. Durable Functions, Logic Apps, Step Functions, Temporal.</p></div>
+    <div class="card arch"><h3>Choreography</h3><p>Each service reacts to events and emits its own. No central coordinator and loosely coupled; harder to see the whole flow and to avoid cycles as it grows.</p></div>
+  </div>
+
+  <h2 id="eda">Event-driven architecture</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Event style</th><th>Contents</th><th>Trade-off</th></tr>
+      <tr><td>Event notification</td><td>"Order 42 was placed" (just ids)</td><td>Small, but consumers call back for details (coupling, load)</td></tr>
+      <tr><td>Event-carried state transfer</td><td>The full new state of the order</td><td>Consumers keep their own copies; larger events, eventual consistency</td></tr>
+      <tr><td>Event sourcing</td><td>The events <em>are</em> the source of truth; state is derived by replaying them</td><td>Full audit trail and time travel; complexity, schema evolution, snapshots (see <a href="../architecture/index.html#cqrs">CQRS and event sourcing</a>)</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Change data capture (CDC):</strong> stream the database's own change log (Debezium, Cosmos DB change feed, DynamoDB Streams) into events, so the database stays the single source of truth.</li>
+    <li><strong>Schemas:</strong> version events and keep them backward compatible (add fields, never repurpose them); a schema registry helps.</li>
+    <li><strong>Observability:</strong> propagate a correlation/trace id in every message so a business flow can be followed across services.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

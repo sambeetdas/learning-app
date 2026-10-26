@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architecture Styles and API Design - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Architecture styles and API design</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    An <strong>architecture style</strong> is the overall shape of a system: how it is split into deployable parts and how those parts communicate. No style is best in general;
+    each trades simplicity, team independence, scalability and operational cost differently. This page compares the main styles, shows key patterns in motion, and covers how to design the APIs between components.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="styles">The main styles</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Style</th><th>Shape</th><th>Strengths</th><th>Weaknesses</th><th>Choose when</th></tr>
+      <tr><td><strong>Monolith</strong></td><td>One deployable unit, one database</td><td>Simple to build, test, deploy and debug; fast in-process calls; easy transactions</td><td>Large codebases slow teams down; scale and deploy as a whole</td><td>New products, small teams (the right default)</td></tr>
+      <tr><td><strong>Modular monolith</strong></td><td>One deployable, strict internal module boundaries</td><td>Monolith simplicity with clean domains; easy to split later</td><td>Needs discipline to keep boundaries</td><td>Most growing products</td></tr>
+      <tr><td><strong>Microservices</strong></td><td>Many small services, each owning its data, communicating over the network</td><td>Independent deploys and scaling per service; team autonomy; fault isolation</td><td>Distributed-systems complexity: network failures, data consistency, observability, ops overhead</td><td>Many teams, very different scaling needs per domain</td></tr>
+      <tr><td><strong>Web-queue-worker</strong></td><td>Web front end + queue + background workers</td><td>Simple, absorbs heavy/slow work</td><td>Can grow into a monolith of workers</td><td>Apps with heavy background processing</td></tr>
+      <tr><td><strong>Serverless</strong></td><td>Functions and managed services triggered by events</td><td>No servers to manage, scale to zero, pay per use</td><td>Cold starts, execution limits, vendor lock-in, harder local testing</td><td>Spiky or event-driven workloads, glue code, startups</td></tr>
+      <tr><td><strong>Event-driven</strong></td><td>Producers emit events; consumers react asynchronously</td><td>Loose coupling, real-time reactions, easy to add consumers</td><td>Eventual consistency, harder tracing, event versioning</td><td>Integrations, streaming, reactive systems</td></tr>
+      <tr><td><strong>Cell-based</strong></td><td>Many identical, isolated copies of the stack (cells), each serving a slice of customers</td><td>Small blast radius, predictable scaling, safe deployments</td><td>Routing layer, cross-cell operations, more infrastructure</td><td>Very large multi-tenant services</td></tr>
+    </table>
+  </div>
+  <div class="demo" id="mono-demo">
+    <h3>Monolith vs microservices: one request</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Find service boundaries with domain-driven design:</strong> bounded contexts (orders, payments, catalog) with their own language and data; avoid splitting by technical layer.</li>
+    <li><strong>Database per service:</strong> services never read each other's tables; they use APIs or events. Shared databases create hidden coupling.</li>
+    <li><strong>Do not start with microservices</strong> unless you already know the domain and have the platform (CI/CD, observability, service mesh) to support them.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="strangler">Migrating: the strangler fig pattern</h2>
+  <p>Replace a legacy system piece by piece: put a routing facade in front, move one capability at a time to new services, route its traffic there, and retire the old code when nothing uses it.</p>
+  <div class="demo" id="sf-demo">
+    <h3>Strangler fig migration</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cqrs">CQRS and event sourcing</h2>
+  <p>
+    <strong>CQRS</strong> (command query responsibility segregation) uses one model for writes (commands, validated against business rules) and separate, denormalised models for reads (queries), updated from events.
+    <strong>Event sourcing</strong> stores the sequence of events as the source of truth; the current state is derived by replaying them. They are often used together, but each is useful alone.
+  </p>
+  <div class="demo" id="cq-demo">
+    <h3>Commands, events and read models</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <p class="muted">Benefits: read models optimised per screen, full audit history, time travel, easy new projections. Costs: eventual consistency between write and read sides, event versioning, snapshots for long streams, more moving parts. Use it for complex domains (finance, logistics, collaboration), not for simple CRUD.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="cells">Cells and deployment stamps</h2>
+  <p>A <strong>cell</strong> (Azure calls it a deployment stamp) is a complete, independent copy of the application stack with its own data, serving a subset of tenants. A thin router sends each tenant to its cell. Failures and bad deployments are limited to one cell, and capacity grows by adding cells instead of making one giant deployment bigger.</p>
+  <div class="demo" id="cell-demo">
+    <h3>Cell-based architecture</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="api">API design</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Style</th><th>Shape</th><th>Strengths</th><th>Use for</th></tr>
+      <tr><td><strong>REST</strong> (HTTP + JSON)</td><td>Resources and verbs: <code>GET /orders/42</code></td><td>Universal, cacheable, simple tooling</td><td>Public APIs, CRUD, web and mobile back ends</td></tr>
+      <tr><td><strong>gRPC</strong> (HTTP/2 + Protobuf)</td><td>Typed remote procedure calls, streaming</td><td>Fast, compact, strongly typed, bidirectional streaming</td><td>Service-to-service calls, low latency, polyglot back ends</td></tr>
+      <tr><td><strong>GraphQL</strong></td><td>One endpoint; the client asks for exactly the fields it needs</td><td>No over/under-fetching, aggregates many back ends</td><td>Rich front ends with varied screens (often as a BFF)</td></tr>
+      <tr><td><strong>WebSockets / SSE</strong></td><td>Long-lived connections, server push</td><td>Real-time updates</td><td>Chat, live dashboards, collaboration (see <a href="../../streaming-api/index.html">Streaming APIs</a>)</td></tr>
+      <tr><td><strong>Webhooks</strong></td><td>The provider calls your URL when something happens</td><td>No polling</td><td>Payments, Git events, integrations (sign and verify them; retry deliveries)</td></tr>
+      <tr><td><strong>Async request-reply</strong></td><td><code>202 Accepted</code> + a status URL to poll</td><td>Long-running work without holding connections</td><td>Reports, video processing, AI jobs</td></tr>
+    </table>
+  </div>
+  <h3>Good API habits</h3>
+  <ul>
+    <li><strong>Resources and nouns:</strong> <code>POST /orders</code>, <code>GET /orders/{id}</code>, <code>GET /customers/{id}/orders</code>; use HTTP status codes correctly (201, 400, 404, 409, 429, 503).</li>
+    <li><strong>Pagination:</strong> prefer <strong>cursor-based</strong> (<code>?after=opaque_cursor&amp;limit=50</code>) over offsets: stable under inserts and fast on large tables.</li>
+    <li><strong>Idempotency:</strong> accept an <code>Idempotency-Key</code> header on POSTs that create things or move money; replay the stored response for duplicates.</li>
+    <li><strong>Versioning:</strong> add fields freely, never change their meaning; use a version in the path or header for breaking changes and support the old one for a deprecation period.</li>
+    <li><strong>Consistent errors:</strong> a machine-readable code, a human message, a correlation id (RFC 9457 "problem details").</li>
+    <li><strong>Rate limits and quotas</strong> per client, with <code>429</code> and <code>Retry-After</code>.</li>
+    <li><strong>Backends for frontends (BFF):</strong> a thin API per client type (web, mobile, partner) that aggregates back-end calls into exactly what that client needs.</li>
+  </ul>
+  <div class="demo" id="bff-demo">
+    <h3>API composition: chatty client vs BFF</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+
+  <h2 id="other">More structural patterns</h2>
+  <ul>
+    <li><strong>Hexagonal (ports and adapters) / clean architecture:</strong> business logic in the centre, independent of frameworks and databases; adapters at the edges. Makes testing and swapping infrastructure easy.</li>
+    <li><strong>Sidecar and ambassador:</strong> run cross-cutting concerns (proxying, mTLS, logging) in a helper process next to each service (the basis of service meshes).</li>
+    <li><strong>Anti-corruption layer:</strong> translate between a legacy or external model and yours so its concepts do not leak in.</li>
+    <li><strong>Multi-tenancy:</strong> pooled (shared everything), siloed (dedicated per tenant) or hybrid; see the <a href="../saas-platform/index.html">SaaS platform design</a>.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scaling and Load Balancing - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Scaling, load balancing and the edge</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <h2 style="border-top:0;margin-top:1rem">Two ways to grow</h2>
+  <div class="cols">
+    <div class="card arch"><h3>Vertical scaling (scale up)</h3><p>Use a bigger machine: more CPU, RAM, faster disks. No code changes and no distributed-systems problems. Limits: a hardware ceiling, cost that rises faster than capacity, and a single point of failure. The right first move for databases.</p></div>
+    <div class="card arch"><h3>Horizontal scaling (scale out)</h3><p>Add more machines behind a load balancer. Practically unlimited for stateless services and gives redundancy for free. Requires stateless design, load balancing, and for data: replication or partitioning.</p></div>
+  </div>
+  <p><strong>Stateless</strong> is the key enabler: keep sessions in a shared store or signed tokens, files in object storage, and configuration in a config service, so any instance can serve any request and instances can be added, removed and replaced freely.</p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="lb">Load balancers</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Layer 4 (transport)</th><th>Layer 7 (application)</th></tr>
+      <tr><td>Sees</td><td>IP addresses and ports (TCP/UDP)</td><td>HTTP: paths, headers, cookies, gRPC methods</td></tr>
+      <tr><td>Can do</td><td>Very fast, millions of connections, any protocol</td><td>TLS termination, path/host routing, retries, header rewrites, WAF, canary splits</td></tr>
+      <tr><td>Examples</td><td>Azure Load Balancer, AWS NLB</td><td>Application Gateway, Front Door, AWS ALB, NGINX, Envoy</td></tr>
+    </table>
+  </div>
+  <h3 id="algorithms">Balancing algorithms, simulated</h3>
+  <p>Three fast servers and one slow server receive random bursts of requests. Watch how each algorithm copes: bars are queue lengths, and requests beyond a queue of 25 are dropped.</p>
+  <div class="demo" id="lbsim">
+    <h3>Load balancer simulator</h3>
+    <div class="bar">
+      <label>Algorithm <select id="lb-alg">
+        <option value="rr">Round robin</option><option value="wrr">Weighted round robin</option><option value="lc" selected>Least connections</option>
+        <option value="p2c">Power of two random choices</option><option value="rand">Random</option><option value="hash">Hash of client ID (sticky)</option>
+      </select></label>
+      <label>Load <input type="range" id="lb-load" min="2" max="22" value="12"></label>
+      <button type="button" id="lb-run" class="primary">Start</button><button type="button" id="lb-reset">Reset</button>
+    </div>
+    <div class="stage" id="lb-stage"></div>
+    <div class="readout" id="lb-stats"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Algorithm</th><th>How it works</th><th>Good for</th></tr>
+      <tr><td>Round robin</td><td>Next server in turn</td><td>Identical servers, uniform requests</td></tr>
+      <tr><td>Weighted round robin</td><td>Turns proportional to capacity weights</td><td>Mixed instance sizes, canary traffic (5% to new version)</td></tr>
+      <tr><td>Least connections / least outstanding requests</td><td>Server with the fewest active requests</td><td>Variable request cost, mixed speeds (the usual best default)</td></tr>
+      <tr><td>Power of two choices</td><td>Pick two at random, send to the less loaded</td><td>Huge fleets with many balancers: near least-connections quality without global state</td></tr>
+      <tr><td>Hash (IP, user, key) / consistent hashing</td><td>Same key always goes to the same server</td><td>Caches and stateful shards (see <a href="../../dsa/modern/index.html#consistent">consistent hashing</a>); risk of hot keys</td></tr>
+      <tr><td>Latency / geo-based</td><td>Nearest or fastest region</td><td>Global traffic (DNS-based or anycast)</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Health checks</strong> remove failed instances: shallow (process is up) vs deep (can reach its dependencies). Deep checks can cause fleet-wide flapping when a shared dependency is down, so many teams use shallow liveness plus careful readiness checks.</li>
+    <li><strong>Connection draining</strong> lets in-flight requests finish before an instance is removed for a deployment.</li>
+    <li><strong>Sticky sessions</strong> (affinity cookies) are a crutch for stateful servers; they unbalance load and lose sessions when a server dies.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="layers">The request path: edge, gateway, service discovery</h2>
+  <div class="demo" id="path-demo">
+    <h3>From the internet to a service instance</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Layer</th><th>Job</th><th>Azure</th><th>AWS</th></tr>
+      <tr><td>DNS / global routing</td><td>Send users to the nearest healthy region</td><td id="c-globallb"></td><td id="w-globallb"></td></tr>
+      <tr><td>CDN + WAF</td><td>Cache static content, terminate TLS near users, block attacks</td><td id="c-cdn"></td><td id="w-cdn"></td></tr>
+      <tr><td>API gateway</td><td>Authentication, rate limiting, routing, request/response transformation, API keys, analytics</td><td id="c-apigw"></td><td id="w-apigw"></td></tr>
+      <tr><td>Regional load balancer</td><td>Spread traffic over instances and zones</td><td id="c-lb"></td><td id="w-lb"></td></tr>
+      <tr><td>Service discovery / mesh</td><td>Find healthy instances of other services; mTLS, retries, traffic splitting between services</td><td>AKS (Istio-based service mesh add-on), Container Apps built-in discovery</td><td>Amazon ECS Service Connect, AWS Cloud Map, EKS with Istio/Linkerd</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="autoscaling">Autoscaling</h2>
+  <ul>
+    <li><strong>Reactive (target tracking):</strong> keep a metric near a target (CPU 60%, 100 requests per instance, queue length per worker). Add capacity fast, remove it slowly (cool-down) to avoid oscillation.</li>
+    <li><strong>Scheduled:</strong> scale up before known peaks (9 am, Black Friday, a TV ad).</li>
+    <li><strong>Predictive:</strong> forecast from history; useful when instances take minutes to start.</li>
+    <li><strong>Scale on the right signal:</strong> CPU for compute-bound services, concurrency or latency for I/O-bound ones, backlog for workers, tokens or GPU utilisation for AI inference.</li>
+    <li><strong>Mind the slow parts:</strong> instance start-up time, cache warm-up, database connection limits (use pooling), and downstream services that do not scale as fast as you do.</li>
+    <li><strong>Scale to zero</strong> (serverless, Container Apps, Lambda) is cheapest for spiky or idle workloads, at the cost of cold starts.</li>
+  </ul>
+
+  <h2 id="edge">The edge: CDN and global distribution</h2>
+  <p>A CDN caches content in hundreds of locations near users, cutting latency and offloading origin servers; edge functions can run logic (redirects, auth checks, A/B splits) right there. Global load balancers use <strong>anycast</strong> (one IP announced from many places) or <strong>geo-DNS</strong> to route to the nearest healthy region. Full details are in the <a href="../../cdn/index.html">CDN topic</a> and <a href="../../dns/index.html">DNS topic</a>.</p>
+
+  <h2 id="partition">When the data tier must scale too</h2>
+  <p>Stateless tiers scale by adding instances; stateful tiers need <a href="../data/index.html#replication">replication</a> for reads and <a href="../data/index.html#sharding">partitioning (sharding)</a> for writes and size. Caching (<a href="../caching/index.html">caching</a>) and asynchronous processing (<a href="../messaging/index.html">messaging</a>) reduce how much they must scale.</p>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

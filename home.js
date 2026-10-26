@@ -38,6 +38,18 @@ $(function () {
       title: 'Data Structures and Algorithms',
       summary: '19 pages from Big-O to advanced and modern algorithms: arrays, lists, stacks, hashing, trees, heaps, graphs, sorting, searching, recursion, DP, greedy, strings, math, probabilistic structures and problem patterns. Step-through animations, pseudocode, Python and solved practice questions.',
       tags: ['algorithms', 'data structures', 'interviews']
+    },
+    {
+      folder: 'sysdesign',
+      title: 'System Design',
+      summary: '12 fundamentals pages and 49 end-to-end designs, basic to advanced, including 15 AI systems (RAG, agents, multi-agent, LLM gateways and serving) with evaluation metrics. Animated request flows, capacity and compute estimation, database selection, trade-offs, and Azure and AWS reference architectures.',
+      tags: ['architecture', 'cloud', 'interviews']
+    },
+    {
+      folder: 'playwright',
+      title: 'Playwright with Python',
+      summary: 'Browser automation and testing from beginner to advanced: locators, auto-waiting, pytest, network mocking, tracing, CI and every major use case. Then AI: agents driving browsers through the Playwright MCP server, testing AI and agentic apps, and four end-to-end projects that build AI testing tools. Animated, with Python code.',
+      tags: ['testing', 'automation', 'AI agents']
     }
   ];
 

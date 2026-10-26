@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debugging, tracing, reporting and CI - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    /* mock trace viewer */
+    .tv { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); font-size: .82rem; }
+    .tv-film { position: relative; height: 34px; background: var(--panel); border-bottom: 1px solid var(--line); margin: 0; }
+    .tv-film .seg { position: absolute; top: 7px; height: 20px; border-radius: 4px; border: 1px solid var(--muted); background: color-mix(in srgb, var(--muted) 18%, var(--bg)); overflow: hidden; font-size: .68rem; line-height: 18px; padding: 0 4px; white-space: nowrap; color: var(--muted); }
+    .tv-film .seg.cur { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--bg)); color: var(--fg); }
+    .tv-film .seg.fail { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 18%, var(--bg)); }
+    .tv-film .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad); }
+    .tv-main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); border-bottom: 1px solid var(--line); }
+    @media (max-width: 700px) { .tv-main { grid-template-columns: 1fr; } }
+    .tv-acts { border-right: 1px solid var(--line); padding: .3rem 0; }
+    .tv-acts div { padding: .2rem .6rem; display: flex; justify-content: space-between; gap: .5rem; border-left: 3px solid transparent; }
+    .tv-acts div small { color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+    .tv-acts div.cur { background: color-mix(in srgb, var(--accent) 14%, transparent); border-left-color: var(--accent); }
+    .tv-acts div.fail span::after { content: " \2717"; color: var(--bad); font-weight: 700; }
+    .tv-acts div.dim { opacity: .4; }
+    .tv-snap { padding: .4rem .6rem .6rem; }
+    .tv-tabs { display: flex; gap: .25rem; margin-bottom: .35rem; flex-wrap: wrap; }
+    .tv-tabs span { padding: .1rem .5rem; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: .75rem; }
+    .tv-tabs span.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    .tv .mockbrowser { max-width: none; font-size: .8rem; }
+    .tv .mockbrowser .viewport { min-height: 7.5rem; position: relative; }
+    .tv .mockbrowser .el.bad { outline-color: var(--bad); }
+    .tv .dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 30%, transparent); }
+    .tv-bottom { padding: .4rem .6rem .6rem; min-height: 6.5rem; }
+    .tv-bottom pre { margin: 0; font-size: .75rem; padding: .4rem .6rem; }
+    .tv-bottom .hl { color: var(--bad); font-weight: 700; }
+    /* race timeline */
+    .lanes { position: relative; font-size: .78rem; }
+    .lane { position: relative; height: 34px; border-bottom: 1px dashed var(--line); }
+    .lane > b { position: absolute; left: 0; top: 8px; width: 92px; color: var(--muted); font-weight: 600; }
+    .lane .blk { position: absolute; top: 6px; height: 22px; line-height: 20px; border-radius: 5px; padding: 0 5px; white-space: nowrap; overflow: hidden; border: 1px solid var(--muted); background: var(--bg); font-size: .72rem; }
+    .lane .blk.req { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--bg)); }
+    .lane .blk.ok { border-color: var(--good); background: color-mix(in srgb, var(--good) 16%, var(--bg)); }
+    .lane .blk.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, var(--bg)); }
+    .lane .blk.poll { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--bg)); }
+    .lanes .now { position: absolute; top: 0; bottom: 18px; width: 2px; background: var(--purple); }
+    .lanes .axis { position: relative; height: 18px; color: var(--muted); font-size: .68rem; }
+    .lanes .axis span { position: absolute; top: 2px; transform: translateX(-50%); }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Debugging, tracing, reporting and CI</h1><nav></nav></header>
+
+  <p>
+    A test suite is only as good as the speed at which you can understand a failure. Playwright gives you a <strong>debugger</strong> (the Inspector) for stepping
+    through a test while you write it, <strong>verbose logs</strong> for "why did it wait?", and the <strong>trace viewer</strong>: a recording of every action with DOM
+    snapshots before and after, network traffic, console output and the source line. A trace from a failed CI run lets you debug as if the failure had happened on your laptop.
+  </p>
+  <p>
+    This page covers those tools, the <code>playwright trace</code> command-line inspector (handy for terminals and coding agents), screenshots and videos, HTML and Allure reports,
+    a practical guide to flaky tests, and running the suite in CI: GitHub Actions, Azure Pipelines, the official Docker image, sharding across machines and remote browsers.
+    The examples test <strong>ShopBot</strong> at <code>http://127.0.0.1:8000</code> (see the <a href="../index.html#shopbot">example app</a>).
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="toolbox">The debugging toolbox</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Situation</th><th>Reach for</th><th>How</th></tr>
+      <tr><td>Writing a new test, want to see each step</td><td>Headed run, slow motion</td><td><code>pytest --headed --slowmo 500</code></td></tr>
+      <tr><td>Stop at a point and explore the live page</td><td>Playwright Inspector</td><td><code>page.pause()</code> or <code>PWDEBUG=1 pytest ...</code></td></tr>
+      <tr><td>Inspect Python variables</td><td>Python debugger</td><td><code>breakpoint()</code>, <code>pytest --pdb</code>, or your IDE's debugger</td></tr>
+      <tr><td>"Why is it waiting?" / "what did it click?"</td><td>Verbose API log</td><td><code>DEBUG=pw:api pytest ...</code></td></tr>
+      <tr><td>Browser will not start</td><td>Launch log</td><td><code>DEBUG=pw:browser pytest ...</code></td></tr>
+      <tr><td>A test failed (especially in CI)</td><td>Trace viewer</td><td><code>pytest --tracing retain-on-failure</code>, then <code>playwright show-trace</code></td></tr>
+      <tr><td>Inspect a trace from a terminal or let an agent read it</td><td><code>playwright trace</code> CLI</td><td><code>playwright trace open trace.zip</code>, <code>actions</code>, <code>requests</code>, ...</td></tr>
+      <tr><td>Let a coding agent drive a paused test</td><td>pytest-playwright CLI debugging</td><td><code>pytest -s --playwright-debug=cli</code> + <code>playwright cli attach</code></td></tr>
+      <tr><td>Share results with the team</td><td>Reports</td><td>pytest-html, JUnit XML, Allure</td></tr>
+    </table>
+  </div>
+
+  <h2 id="inspector">Playwright Inspector and page.pause()</h2>
+  <p>
+    The <strong>Inspector</strong> is a small window that opens next to a headed browser. It shows your test's Playwright calls, lets you <em>step over</em> them one by one or resume,
+    highlights the element each locator resolves to, and has a <strong>Pick locator</strong> button that suggests a locator for anything you click on the page
+    (the same engine as <code>playwright codegen</code>). You can also type a locator and see what it matches live.
+  </p>
+  <div class="codefile"><div class="fname">tests/test_checkout.py</div>
+<pre><code>from playwright.sync_api import Page, expect
+
+
+def test_checkout_needs_terms(page: Page):
+    page.goto("/checkout")
+    page.get_by_label("Full name").fill("Alice")
+    page.pause()                     # opens the Inspector here; the browser stays open
+    page.get_by_role("button", name="Place order").click()
+    expect(page.get_by_role("alert")).to_contain_text("You must accept the terms")</code></pre></div>
+  <p><code>page.pause()</code> only makes sense in a headed run. Two ways to get the Inspector without editing code:</p>
+<pre class="term"><code><span class="c"># headed + Inspector, timeouts disabled, paused before the first action (bash)</span>
+PWDEBUG=1 pytest tests/test_checkout.py -k terms
+
+<span class="c"># PowerShell</span>
+$env:PWDEBUG = "1"; pytest tests/test_checkout.py -k terms
+
+<span class="c"># headed, slowed down, no Inspector</span>
+pytest --headed --slowmo 500 tests/test_checkout.py
+
+<span class="c"># PWDEBUG=console: headed, and a `playwright` helper object in the browser DevTools console</span>
+<span class="c"># (try playwright.$('text=Place order') or playwright.inspect('role=button'))</span>
+PWDEBUG=console pytest tests/test_checkout.py</code></pre>
+  <div class="callout tip"><b>Python debugger too.</b> Playwright calls are ordinary Python: put <code>breakpoint()</code> in a test, or run <code>pytest --pdb</code> to drop into
+  <code>pdb</code> on the first failure while the browser is still open. In VS Code or PyCharm, debug the test like any pytest test; add <code>--headed</code> to the run arguments.
+  Remember that the default 30 s action timeout keeps ticking while you sit at a breakpoint; <code>PWDEBUG=1</code> disables it.</div>
+
+  <h3>Letting an agent (or you) drive a paused test from the terminal</h3>
+  <p>pytest-playwright 0.10 adds <code>--playwright-debug=cli</code>: the test pauses before its first action and prints a session name that
+  <code>playwright cli</code> (the terminal tool for coding agents) can attach to. You can then take accessibility snapshots, step over calls and resume, all from a shell.
+  It needs <code>-s</code> (so the message is visible) and a single worker.</p>
+<pre class="term"><code>$ pytest -s --playwright-debug=cli tests/test_cart.py -k add
+### The test is currently paused at the start
+
+### Debugging Instructions
+- Run `python -m playwright cli attach tw-11ebd2` to attach to this test
+
+<span class="c"># in a second terminal (or from your coding agent)</span>
+$ python -m playwright cli attach tw-11ebd2
+### Paused
+- Navigate /products/1 at ./test_cart.py:4
+$ python -m playwright cli -s=tw-11ebd2 step-over
+### Paused
+- Fill "2" get_by_label("Quantity") at ./test_cart.py:5
+$ python -m playwright cli -s=tw-11ebd2 snapshot      <span class="c"># YAML accessibility snapshot with refs e1, e2...</span>
+$ python -m playwright cli -s=tw-11ebd2 resume        <span class="c"># the test runs to the end</span></code></pre>
+
+  <h2 id="logs">Verbose logs with DEBUG=pw:api</h2>
+  <p>The <code>DEBUG</code> environment variable switches on the driver's internal logs. <code>pw:api</code> is the useful one for tests: every action with each auto-waiting step.
+  This is real output from a search on ShopBot:</p>
+<pre class="term"><code>$ DEBUG=pw:api pytest tests/test_search.py
+pw:api navigating to "http://127.0.0.1:8000/products", waiting until "load"
+pw:api   "commit" event fired
+pw:api   "domcontentloaded" event fired
+pw:api   "load" event fired
+pw:api waiting for get_by_placeholder("Search products")
+pw:api   locator resolved to &lt;input name="q" value="" placeholder="Search products"/&gt;
+pw:api   fill("mug")
+pw:api attempting fill action
+pw:api   waiting for element to be visible, enabled and editable
+pw:api waiting for get_by_role("button", name="Search")
+pw:api   locator resolved to &lt;button type="submit"&gt;Search&lt;/button&gt;
+pw:api attempting click action
+pw:api   waiting for element to be visible, enabled and stable
+pw:api   element is visible, enabled and stable
+pw:api   scrolling into view if needed
+pw:api   performing click action
+pw:api   click action done
+pw:api   waiting for scheduled navigations to finish
+pw:api   navigated to "http://127.0.0.1:8000/products?q=mug&amp;category="</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Value</th><th>Shows</th></tr>
+      <tr><td><code>DEBUG=pw:api</code></td><td>Each API call and its waiting steps (the same text appears in the "Call log" of a failed assertion and in the trace)</td></tr>
+      <tr><td><code>DEBUG=pw:browser</code></td><td>Browser launch arguments and browser stderr: use it for "Failed to launch browser" errors, missing libraries on Linux</td></tr>
+      <tr><td><code>DEBUG=pw:protocol</code></td><td>Every protocol message (very noisy; for bug reports to the Playwright team)</td></tr>
+      <tr><td><code>DEBUG=pw:api,pw:browser</code></td><td>Several channels, comma-separated</td></tr>
+    </table>
+  </div>
+  <p class="muted">On PowerShell: <code>$env:DEBUG = "pw:api"</code>, then run pytest. Remove the variable afterwards (<code>Remove-Item Env:DEBUG</code>).</p>
+
+  <h2 id="trace">The trace viewer</h2>
+  <p>A <strong>trace</strong> is a zip file recorded during a test: the list of actions with timings and parameters, a <strong>DOM snapshot</strong> before, during and after each action
+  (real HTML and CSS you can inspect, not just a picture), a screencast filmstrip, every network request and response, console messages, errors and the Python source line.</p>
+
+  <h3>Recording traces with pytest</h3>
+<pre class="term"><code><span class="c"># keep a trace only for tests that failed (the usual CI setting)</span>
+pytest --tracing retain-on-failure
+
+<span class="c"># record every test (slower, bigger; good when investigating)</span>
+pytest --tracing on
+
+<span class="c"># the usual "give me everything on failure" combination</span>
+pytest --tracing retain-on-failure --screenshot only-on-failure --video retain-on-failure --output test-results</code></pre>
+  <p>Artifacts go into one folder per test under <code>--output</code> (default <code>test-results</code>). This is the real layout for a failed test:</p>
+<pre><code>test-results/
+└── tests-test-cart-py-test-add-nine-pans-chromium/   # &lt;test file path&gt;-&lt;test name&gt;-&lt;browser&gt;
+    ├── trace.zip                                  # trace-1.zip, trace-2.zip if the test opened several contexts
+    ├── test-failed-1.png                          # from --screenshot only-on-failure (one per page)
+    └── video.webm                                 # from --video retain-on-failure (video-1.webm... per page)</code></pre>
+  <p class="muted">Video needs Playwright's ffmpeg build. <code>playwright install chromium</code> normally fetches it; if you see "Video rendering requires ffmpeg binary", run <code>playwright install ffmpeg</code>.</p>
+
+  <h3>Recording traces in a script (or your own fixture)</h3>
+  <div class="codefile"><div class="fname">trace_search.py</div>
+<pre><code>from playwright.sync_api import sync_playwright, expect
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    context = browser.new_context(base_url="http://127.0.0.1:8000")
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    page = context.new_page()
+    try:
+        with context.tracing.group("Search for a mug"):     # groups nest actions in the viewer
+            page.goto("/products")
+            page.get_by_placeholder("Search products").fill("mug")
+            page.get_by_role("button", name="Search").click()
+        expect(page.get_by_test_id("product-card")).to_have_count(1)
+    finally:
+        context.tracing.stop(path="trace-search.zip")         # always save, even on failure
+        browser.close()</code></pre></div>
+  <p><code>screenshots</code> records the filmstrip, <code>snapshots</code> the DOM snapshots, <code>sources</code> embeds your Python files so the viewer can show the line.
+  For long-lived contexts use <code>tracing.start_chunk()</code> / <code>stop_chunk(path=...)</code> to save one trace per step instead of one huge file.</p>
+
+  <h3>Opening a trace</h3>
+<pre class="term"><code>playwright show-trace test-results/tests-test-cart-py-test-add-nine-pans-chromium/trace.zip
+<span class="c"># or drag the zip onto https://trace.playwright.dev (it is processed in your browser, not uploaded)</span></code></pre>
+
+  <h3>Reading a trace: a real failure, step by step</h3>
+  <p>This test expected ShopBot's "Only 8 in stock" message and timed out. The animation replays its real trace (timings from the recording). Watch the <b>Network</b> tab.</p>
+  <div class="codefile"><div class="fname">tests/test_cart.py</div>
+<pre><code>def test_add_nine_pans(page: Page):
+    page.goto("/products/2")                                   # Cast Iron Pan, 8 in stock
+    page.get_by_label("Quantity").fill("9")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_have_text("Only 8 in stock")</code></pre></div>
+  <div class="demo" id="trace-demo">
+    <h3>Mock trace viewer: actions, before/after snapshots, network and console</h3>
+    <div class="stage"></div>
+  </div>
+  <p>The diagnosis: the trace shows <strong>no <code>POST /api/cart</code></strong> at all. The quantity input has <code>max="8"</code>, so the browser's own form validation
+  blocked the submit and the page's JavaScript never ran. The test's assumption ("the server will answer with an error") was wrong, not the app. Two better tests:</p>
+<pre><code>def test_quantity_above_stock_is_blocked_in_the_browser(page: Page):
+    page.goto("/products/2")
+    qty = page.get_by_label("Quantity")
+    qty.fill("9")
+    page.get_by_role("button", name="Add to cart").click()
+    assert qty.evaluate("el =&gt; el.validity.rangeOverflow")     # "Value must be less than or equal to 8."
+    expect(page.get_by_role("status")).to_be_empty()
+
+
+def test_server_rejects_quantity_above_stock(page: Page):
+    response = page.request.post("/api/cart", data={"product_id": 2, "qty": 9})
+    assert response.status == 422
+    assert response.json() == {"detail": "Only 8 in stock"}</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Trace viewer area</th><th>What to look for</th></tr>
+      <tr><td>Actions list and timeline</td><td>Which step failed, how long each took; a 5 s bar is a timeout, a long gap between actions is your Python code (or a <code>sleep</code>)</td></tr>
+      <tr><td>Before / Action / After snapshots</td><td>The page as it was: was the element there, covered, disabled, showing old data? The red dot marks the click point. Open DevTools on the snapshot.</td></tr>
+      <tr><td>Call log</td><td>The auto-waiting steps (same as <code>DEBUG=pw:api</code>): "locator resolved to ...", "unexpected value ..."</td></tr>
+      <tr><td>Network</td><td>Missing requests, 4xx/5xx responses, slow APIs, which requests a <code>page.route</code> handled</td></tr>
+      <tr><td>Console and Errors</td><td>JavaScript exceptions and <code>console.error</code> output from the page</td></tr>
+      <tr><td>Source</td><td>The Python line for the selected action</td></tr>
+    </table>
+  </div>
+
+  <h2 id="trace-cli">Inspecting traces from the terminal: playwright trace</h2>
+  <p>The trace viewer is a GUI. When you are in an SSH session, a CI log, or you want a <strong>coding agent</strong> to diagnose a failure, use <code>playwright trace</code>:
+  it extracts the zip once (into <code>.playwright-cli/</code> in the current folder; add it to <code>.gitignore</code>) and then answers questions about it as plain text.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Command</th><th>Does</th></tr>
+      <tr><td><code>playwright trace open trace.zip</code></td><td>Extract the trace and print a summary (browser, duration, counts of actions, requests, errors, console messages)</td></tr>
+      <tr><td><code>playwright trace actions [--grep TEXT] [--errors-only]</code></td><td>Numbered list of actions with start time and duration; failures marked ✗</td></tr>
+      <tr><td><code>playwright trace action 4</code></td><td>One action in detail: parameters, call log, error, source stack, which snapshots exist</td></tr>
+      <tr><td><code>playwright trace requests [--grep URL] [--method POST] [--status 500] [--failed]</code></td><td>Network requests; <code>playwright trace request 3</code> shows one in full</td></tr>
+      <tr><td><code>playwright trace console [--errors-only] [--warnings] [--browser] [--stdio]</code></td><td>Console messages from the page and the test's stdout/stderr</td></tr>
+      <tr><td><code>playwright trace errors</code></td><td>Errors with their source location</td></tr>
+      <tr><td><code>playwright trace snapshot 4 --phase before|action|after</code></td><td>Load that DOM snapshot in a headless browser and run a <code>playwright cli</code> command on it (default: print the accessibility snapshot); <code>--serve</code> serves it on localhost. Needs the bundled Chromium.</td></tr>
+      <tr><td><code>playwright trace screenshot 4 -o step4.png</code></td><td>Save the filmstrip frame for an action (an agent can look at it with vision)</td></tr>
+      <tr><td><code>playwright trace attachments</code> / <code>attachment 1 -o file</code></td><td>List and extract attachments</td></tr>
+      <tr><td><code>playwright trace close</code></td><td>Delete the extracted data</td></tr>
+      <tr><td><code>playwright trace install-skill</code></td><td>Write a SKILL.md describing these commands to <code>.claude/skills/playwright-trace/</code> so a coding agent knows how to use them</td></tr>
+    </table>
+  </div>
+  <p>Real output for the failed test above:</p>
+<pre class="term"><code>$ playwright trace open test-results/tests-test-cart-py-test-add-nine-pans-chromium/trace.zip
+  Browser:      chromium
+  Duration:     9.2s
+  Viewport:     1280x720
+  Actions:      5
+  Network:      1 requests
+  Errors:       1
+  Console:      1 messages
+
+$ playwright trace actions
+     # Time       Action                                                  Duration
+  ──── ─────────  ─────────────────────────────────────────────────────── ────────
+    1. 0:00.009  Create page                                                 2.5s
+    2. 0:02.550  Navigate                                                   588ms
+                 /products/2
+    3. 0:03.178  Fill "9"                                                   258ms
+                 getByLabel('Quantity')
+    4. 0:03.448  Click                                                      245ms
+                 getByRole('button', { name: 'Add to cart' })
+    5. 0:03.708  Expect "to_have_text"                                       5.0s  ✗
+                 getByRole('status')
+
+$ playwright trace requests
+     # Start     Method   Status   Name                Duration     Size
+    1. 0:02.600  GET      200      2                      463ms     2.1K     <span class="c"># only the page: no POST /api/cart</span>
+
+$ playwright trace console --errors-only
+  0:03.275  [browser]  error    Failed to load resource: the server responded with a status of 404 (Not Found)  favicon.ico:0
+
+$ playwright trace action 5
+  Expect "to_have_text" getByRole('status')
+
+  Time
+    start:     0:03.708
+    duration:  5.0s
+
+  Parameters
+    selector: "internal:role=status"
+    expression: "to.have.text"
+    expectedText: [{"string":"Only 8 in stock","matchSubstring":false,"normalizeWhiteSpace":true}]
+    timeout: 5000
+
+  Error
+    Expect failed
+
+  Log
+    ...       locator resolved to &lt;p id="msg" role="status"&gt;&lt;/p&gt;
+    ...       unexpected value ""</code></pre>
+  <p class="muted">The trace CLI prints locators in the JavaScript style (<code>getByRole(...)</code>) because the trace format is shared by all languages; the call log uses Python names.</p>
+  <div class="callout tip"><b>Agent workflow.</b> In CI, upload <code>test-results/</code> as an artifact. A triage agent downloads it, runs <code>playwright trace open</code>,
+  <code>actions --errors-only</code>, <code>requests --failed</code>, <code>console --errors-only</code> and <code>screenshot N</code>, and writes a summary on the pull request.
+  The text output is small enough to fit easily in an LLM context, unlike a raw trace. See <a href="../ai-agents/index.html">Playwright for AI agents</a>.</div>
+
+  <h2 id="artifacts">Screenshots, videos and browser errors on failure</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Flag</th><th>Values</th><th>Result</th></tr>
+      <tr><td><code>--screenshot</code></td><td><code>on</code>, <code>off</code>, <code>only-on-failure</code></td><td><code>test-failed-1.png</code> (or <code>test-finished-1.png</code>) taken at the end of the test</td></tr>
+      <tr><td><code>--full-page-screenshot</code></td><td>flag</td><td>Capture the whole scrollable page, not just the viewport</td></tr>
+      <tr><td><code>--video</code></td><td><code>on</code>, <code>off</code>, <code>retain-on-failure</code></td><td><code>video.webm</code> per page</td></tr>
+      <tr><td><code>--tracing</code></td><td><code>on</code>, <code>off</code>, <code>retain-on-failure</code></td><td><code>trace.zip</code> per context</td></tr>
+      <tr><td><code>--output</code></td><td>folder</td><td>Where all of the above go (default <code>test-results</code>; it is cleaned at the start of a run)</td></tr>
+    </table>
+  </div>
+  <p>Outside pytest, record yourself: <code>page.screenshot(path="step.png", full_page=True)</code>, <code>locator.screenshot(path="card.png")</code>, and video with
+  <code>browser.new_context(record_video_dir="videos/")</code> (the file is written when the context closes; <code>page.video.path()</code> gives its name).</p>
+  <h3>Fail the test on JavaScript errors</h3>
+  <p>A page can look fine while throwing exceptions. This fixture collects <code>console.error</code> messages and uncaught exceptions and fails the test at teardown
+  (verified: the favicon 404 that ShopBot produces on every page is filtered out).</p>
+  <div class="codefile"><div class="fname">tests/conftest.py</div>
+<pre><code>import pytest
+from playwright.sync_api import ConsoleMessage, Page
+
+IGNORED = ("favicon.ico",)          # known, harmless noise
+
+
+@pytest.fixture
+def console_errors(page: Page):
+    errors: list[str] = []
+
+    def on_console(msg: ConsoleMessage) -&gt; None:
+        where = msg.location.get("url", "")
+        if msg.type == "error" and not any(s in where for s in IGNORED):
+            errors.append(f"console.error: {msg.text} ({where})")
+
+    page.on("console", on_console)
+    page.on("pageerror", lambda exc: errors.append(f"uncaught: {exc}"))
+    yield errors
+    assert not errors, "Browser errors during the test:\n" + "\n".join(errors)</code></pre></div>
+  <p class="muted">Use it explicitly (<code>def test_x(page, console_errors)</code>) or make it <code>autouse=True</code> once your app is clean.</p>
+
+  <h2 id="reports">HTML reports and Allure</h2>
+  <h3>pytest-html</h3>
+<pre class="term"><code>pip install pytest-html
+pytest --html=report.html --self-contained-html --screenshot only-on-failure --tracing retain-on-failure</code></pre>
+  <p>pytest-playwright 0.10 detects pytest-html and attaches its own artifacts to each failed test automatically: the <strong>screenshot</strong> and <strong>video</strong>
+  (embedded with <code>--self-contained-html</code>, linked otherwise) and a <strong>Trace</strong> link to the zip. To add more context, append extras in a hook:</p>
+  <div class="codefile"><div class="fname">tests/conftest.py (optional extras)</div>
+<pre><code>import pytest
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed and "page" in item.funcargs:
+        html = item.config.pluginmanager.getplugin("html")
+        if html:                                            # only when pytest-html is installed
+            extras = getattr(report, "extras", [])
+            extras.append(html.extras.url(item.funcargs["page"].url, name="Page URL at failure"))
+            report.extras = extras</code></pre></div>
+  <h3>JUnit XML for CI dashboards</h3>
+  <p><code>pytest --junitxml=results/junit.xml</code> is understood by GitHub (via a reporting action), Azure Pipelines (<code>PublishTestResults@2</code>), GitLab and Jenkins, which then show test counts, failures and history per run.</p>
+  <h3>Allure</h3>
+  <p>Allure produces a richer report (steps, history, trends, categories) from result files. Install <code>allure-pytest</code>; the report itself is built by the Allure command-line tool (a separate install that needs Java).</p>
+<pre class="term"><code>pip install allure-pytest
+pytest --alluredir=allure-results
+allure serve allure-results            <span class="c"># or: allure generate allure-results -o allure-report</span></code></pre>
+  <div class="codefile"><div class="fname">tests/conftest.py (Allure attachments)</div>
+<pre><code>import allure
+import pytest
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed and "page" in item.funcargs:
+        page = item.funcargs["page"]
+        allure.attach(page.screenshot(), name="screenshot", attachment_type=allure.attachment_type.PNG)
+        allure.attach(page.content(), name="dom", attachment_type=allure.attachment_type.HTML)
+
+
+# in tests: readable steps in the report
+def test_search(page):
+    with allure.step("Search for a mug"):
+        page.goto("/products")
+        page.get_by_placeholder("Search products").fill("mug")
+        page.get_by_role("button", name="Search").click()</code></pre></div>
+  <p class="muted">Attach the trace zip too (<code>allure.attach.file(path, name="trace", extension="zip")</code>) from a fixture that runs after pytest-playwright has written it, or simply publish <code>test-results/</code> next to the report.</p>
+
+  <h2 id="flaky">Diagnosing flaky tests</h2>
+  <p>A <strong>flaky</strong> test passes and fails on the same code. Almost always the test is racing the application. The classic case on ShopBot: read the cart badge right after clicking
+  "Add to cart". On a fast laptop the fetch has finished by the time Python reads the text; on a busy CI runner it has not. Switch the machine in the animation.</p>
+  <div class="demo" id="race-demo">
+    <h3>Racing the page: a one-shot read versus a retrying assertion</h3>
+    <div class="bar"><label>Machine <select id="race-machine"><option value="fast">Fast laptop (API answers in about 8 ms)</option><option value="ci">Busy CI runner (API answers in about 300 ms)</option></select></label></div>
+    <div class="stage"></div>
+  </div>
+<pre><code># flaky: inner_text() reads once, immediately
+page.get_by_role("button", name="Add to cart").click()
+assert page.get_by_test_id("cart-count").inner_text() == "1"
+
+# stable: expect() retries until the text matches or the timeout expires
+page.get_by_role("button", name="Add to cart").click()
+expect(page.get_by_test_id("cart-count")).to_have_text("1")
+
+# streaming chat: wait for the "done" state, then check the content
+bot = page.get_by_test_id("bot-message").last
+expect(bot).to_have_attribute("aria-busy", "false")
+expect(bot).to_contain_text("3-5 business days")</code></pre>
+  <p class="muted">Verified on ShopBot: the badge read passed 5 runs out of 5 locally (exactly why it slips through review) while the same one-shot read on the streaming chat answer failed every time with an empty string.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+      <tr><td>Passes locally, fails in CI</td><td>One-shot reads (<code>inner_text()</code>, <code>is_visible()</code>, <code>count()</code>) racing async updates</td><td>Web-first assertions: <code>expect(locator).to_have_text(...)</code>, <code>to_be_visible()</code>, <code>to_have_count()</code></td></tr>
+      <tr><td>Fails at a fixed point after a <code>time.sleep</code> / <code>wait_for_timeout</code></td><td>Hard-coded waits that are too short on slow machines (and too long on fast ones)</td><td>Wait for a condition: an assertion, <code>page.expect_response(...)</code>, <code>wait_for_url</code></td></tr>
+      <tr><td>Strict mode violation sometimes</td><td>Locator matches several elements once more data loads</td><td>Narrow the locator (role + name, <code>filter(has_text=)</code>, scope to a container)</td></tr>
+      <tr><td>Fails only when run with other tests or with <code>-n</code></td><td>Shared state: same user, same cart, same database rows, order dependence</td><td>Fresh data per test (API set-up, unique names), per-worker accounts, no module-level state</td></tr>
+      <tr><td>Fails near midnight, month end or in another time zone</td><td>Real clock and locale</td><td><code>page.clock</code>, fixed <code>timezone_id</code> and <code>locale</code> in <code>browser_context_args</code></td></tr>
+      <tr><td>Random 5xx or timeouts from third parties</td><td>Real external services (payments, analytics, maps)</td><td>Mock them with <code>page.route</code>; test the integration separately</td></tr>
+      <tr><td>Click "does nothing" occasionally</td><td>Page not hydrated yet, animations, overlays, element re-rendered</td><td>Assert a ready state first (an element that appears after load), disable animations, check the trace snapshot</td></tr>
+      <tr><td>Screenshots differ by a few pixels</td><td>Fonts, GPU, OS differences, animations, carets</td><td>Run visual tests in the Docker image, <code>animations="disabled"</code>, masks, tolerance</td></tr>
+      <tr><td>Only the first test of a run fails</td><td>Server not ready when tests start</td><td>Wait for a health endpoint in CI before running pytest</td></tr>
+    </table>
+  </div>
+  <h3>Tools for flaky tests</h3>
+<pre class="term"><code><span class="c"># reproduce: run one test many times, in parallel, with traces</span>
+pip install pytest-repeat
+pytest tests/test_cart.py -k badge --count 30 -n 4 --tracing retain-on-failure
+
+<span class="c"># re-run only what failed last time</span>
+pytest --last-failed
+
+<span class="c"># quarantine while you fix it: retry up to 2 times (pytest-rerunfailures)</span>
+pytest --reruns 2 --reruns-delay 1</code></pre>
+  <div class="callout"><b>Retries hide problems.</b> Reruns keep the pipeline green but a test that needs a retry is still broken. Report reruns (the summary line shows "rerun"),
+  keep a trace of the first failure, track a flaky list and fix the top offenders. Mark known-flaky tests with <code>@pytest.mark.flaky(reruns=2)</code> rather than retrying everything.</div>
+
+  <h2 id="github-actions">CI with GitHub Actions</h2>
+  <p>The pipeline below checks out the code, installs Python dependencies (with pip caching), installs Chromium and its Linux system libraries, starts the app,
+  runs the suite in parallel with xdist on three machines, and always uploads the results so failures can be debugged from their traces.</p>
+  <div class="demo" id="ci-demo">
+    <h3>A pull request through the pipeline</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div id="ci-legend"></div>
+  <div class="codefile"><div class="fname">.github/workflows/e2e.yml</div>
+<pre><code>name: e2e
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false                  # let every shard finish so you see all failures
+      matrix:
+        group: [1, 2, 3]                # three machines (see "Sharding")
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip                    # caches pip downloads, keyed on requirements*.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt      # pins playwright==1.64.1, pytest-playwright, pytest-xdist, pytest-split...
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+      - name: Install browsers and system dependencies
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install --with-deps chromium
+      - name: Install system dependencies only
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: python -m playwright install-deps chromium
+
+      - name: Start ShopBot
+        run: |
+          python app.py &amp;
+          curl --retry 30 --retry-connrefused --retry-delay 1 -sf http://127.0.0.1:8000/health
+
+      - name: Run tests
+        run: &gt;
+          pytest -n auto
+          --splits 3 --group ${{ matrix.group }}
+          --base-url http://127.0.0.1:8000
+          --tracing retain-on-failure --screenshot only-on-failure --video retain-on-failure
+          --junitxml=results/junit-${{ matrix.group }}.xml
+          --html=results/report-${{ matrix.group }}.html --self-contained-html
+
+      - name: Upload results and traces
+        uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}         # also when tests failed
+        with:
+          name: e2e-results-${{ matrix.group }}
+          path: |
+            results/
+            test-results/
+          retention-days: 14</code></pre></div>
+  <ul>
+    <li><b>Caching:</b> pip caching is cheap and worth it. Caching the browsers is optional: the official CI guide notes that restoring the cache takes about as long as downloading,
+      and the Linux system packages cannot be cached, which is why the cache-hit branch still runs <code>install-deps</code>. Key the cache on the file that pins the Playwright version.</li>
+    <li><b>Install only what you test:</b> <code>playwright install --with-deps chromium</code> is much faster than all three browsers.</li>
+    <li><b>Wait for the app:</b> the <code>curl --retry</code> loop avoids "first test fails" flakiness.</li>
+    <li><b>Artifacts:</b> download the zip from the run page and open a trace with <code>playwright show-trace</code>, or let an agent read it with <code>playwright trace</code>.</li>
+    <li><b>Versions:</b> the action versions shown are those in the Playwright CI guide at the time of writing; newer majors exist, so update them as you would any dependency.</li>
+  </ul>
+
+  <h2 id="azure">CI with Azure Pipelines</h2>
+  <div class="codefile"><div class="fname">azure-pipelines.yml</div>
+<pre><code>trigger:
+  - main
+pr:
+  - main
+
+jobs:
+  - job: e2e
+    pool:
+      vmImage: ubuntu-latest
+    strategy:
+      parallel: 3                       # three agents; each gets System.JobPositionInPhase = 1..3
+    timeoutInMinutes: 30
+    steps:
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: "3.13"
+        displayName: Use Python
+
+      - script: pip install -r requirements.txt
+        displayName: Install dependencies
+
+      - script: python -m playwright install --with-deps chromium
+        displayName: Install Playwright browsers
+
+      - script: |
+          python app.py &amp;
+          curl --retry 30 --retry-connrefused --retry-delay 1 -sf http://127.0.0.1:8000/health
+        displayName: Start ShopBot
+
+      - script: &gt;
+          pytest -n auto
+          --splits $(System.TotalJobsInPhase) --group $(System.JobPositionInPhase)
+          --base-url http://127.0.0.1:8000
+          --tracing retain-on-failure --screenshot only-on-failure
+          --junitxml=results/junit.xml
+        displayName: Run tests
+
+      - task: PublishTestResults@2
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: results/junit.xml
+          testRunTitle: e2e shard $(System.JobPositionInPhase)
+
+      - task: PublishPipelineArtifact@1
+        condition: failed()             # test-results/ only exists when something failed
+        inputs:
+          targetPath: test-results
+          artifact: traces-$(System.JobPositionInPhase)</code></pre></div>
+  <p>The <b>Tests</b> tab of the run then shows every test with its history, and the traces are on the <b>Artifacts</b> page. To run in the Playwright container instead of installing browsers,
+  add <code>container: mcr.microsoft.com/playwright/python:v1.64.1-noble</code> to the job and drop the install step.</p>
+
+  <h2 id="docker">The official Docker image</h2>
+  <p>Microsoft publishes images with Python, the browsers and all their system libraries already installed. Tags follow <code>v&lt;playwright version&gt;-&lt;Ubuntu codename&gt;</code>:
+  <code>-noble</code> (Ubuntu 24.04), <code>-jammy</code> (22.04) and <code>-resolute</code> (26.04).</p>
+  <div class="callout"><b>Match the image to your installed Playwright version.</b> The image contains the browser builds for exactly one Playwright release; the <code>playwright</code>
+  package itself is not preinstalled. Pin <code>playwright==1.64.1</code> in <code>requirements.txt</code> and use <code>mcr.microsoft.com/playwright/python:v1.64.1-noble</code>.
+  If the versions differ, tests fail with "Executable doesn't exist". Upgrade both together.</div>
+<pre class="term"><code><span class="c"># run the suite in the image against your working copy</span>
+docker run --rm -it --ipc=host --init -v "$PWD":/work -w /work \
+  mcr.microsoft.com/playwright/python:v1.64.1-noble \
+  sh -c "pip install -r requirements.txt &amp;&amp; pytest -n auto --tracing retain-on-failure"</code></pre>
+  <div class="codefile"><div class="fname">Dockerfile</div>
+<pre><code>FROM mcr.microsoft.com/playwright/python:v1.64.1-noble
+WORKDIR /work
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt      # playwright==1.64.1 to match the tag
+COPY . .
+CMD ["pytest", "-n", "auto", "--tracing", "retain-on-failure"]</code></pre></div>
+  <ul>
+    <li><code>--ipc=host</code>: Chromium uses shared memory and can crash without it. <code>--init</code>: avoids zombie processes (PID 1 handling).</li>
+    <li>The image runs as root by default, which disables Chromium's sandbox. That is acceptable for your own end-to-end tests; for crawling untrusted sites run as the
+      built-in <code>pwuser</code> with the seccomp profile from the Docker guide.</li>
+    <li>From inside a container, <code>127.0.0.1</code> is the container. Reach an app on the host with <code>--add-host=hostmachine:host-gateway</code> and <code>--base-url http://hostmachine:8000</code>, or run the app in the same compose network.</li>
+    <li>Running visual comparisons inside the same image locally and in CI removes most font and rendering differences.</li>
+  </ul>
+
+  <h2 id="sharding">Sharding across CI machines</h2>
+  <p><strong>xdist</strong> (<code>-n auto</code>) parallelises inside one machine. When the suite is still too slow, split it across machines (<strong>shards</strong>) and run xdist on each.
+  pytest has no built-in sharding; common options:</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Approach</th><th>How</th><th>Notes</th></tr>
+      <tr><td><b>pytest-split</b> (by duration)</td><td><code>pytest --store-durations</code> once (commits <code>.test_durations</code>), then <code>pytest --splits 3 --group 1</code> on machine 1, and so on</td><td>Balanced shards; new tests without a recorded duration get the average. Refresh the durations file occasionally.</td></tr>
+      <tr><td><b>Markers</b></td><td><code>pytest -m smoke</code>, <code>-m "checkout or cart"</code>, <code>-m "not slow"</code> in separate jobs</td><td>Simple and explicit; shards get unbalanced as the suite grows</td></tr>
+      <tr><td><b>Folders</b></td><td><code>pytest tests/shop</code>, <code>pytest tests/account</code></td><td>Same trade-off as markers</td></tr>
+      <tr><td><b>Browsers</b></td><td>One job per <code>--browser chromium|firefox|webkit</code></td><td>A natural matrix axis, combinable with the others</td></tr>
+    </table>
+  </div>
+<pre class="term"><code>$ pytest --store-durations                     <span class="c"># writes .test_durations</span>
+$ pytest --splits 3 --group 2 -n auto
+[pytest-split] Running group 2/3 (estimated duration: 8.07s)</code></pre>
+  <p>Give each shard's artifacts a unique name (<code>e2e-results-${{ matrix.group }}</code> above) and, if you want one report, merge the JUnit files in a final job
+  (most CI test tabs already aggregate them for you).</p>
+
+  <h2 id="remote">Remote browsers and cloud grids</h2>
+  <p>Tests can drive a browser running somewhere else. There are two protocols:</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th><code>browser_type.connect(ws_endpoint)</code></th><th><code>chromium.connect_over_cdp(endpoint_url)</code></th></tr>
+      <tr><td>Talks to</td><td>A <strong>Playwright server</strong> (<code>playwright run-server</code>, the Docker image, cloud providers)</td><td>Any Chromium-based browser exposing the Chrome DevTools Protocol</td></tr>
+      <tr><td>Browsers</td><td>Chromium, Firefox, WebKit</td><td>Chromium, Chrome, Edge only</td></tr>
+      <tr><td>Fidelity</td><td>Full Playwright features</td><td>Lower: some features behave differently; best for attaching to an existing browser</td></tr>
+      <tr><td>Versions</td><td>Client and server must be the <strong>same Playwright version</strong></td><td>Any reasonably recent Chrome</td></tr>
+      <tr><td>Typical use</td><td>A browser farm, a Linux container from a Windows laptop, cloud grids</td><td>Attaching to a user's signed-in browser, Electron apps, browsers started by other tools</td></tr>
+    </table>
+  </div>
+  <h3>A Playwright server and the pytest fixture override</h3>
+<pre class="term"><code><span class="c"># on the browser machine (or in the Docker image; same Playwright version as the tests)</span>
+playwright run-server --port 3000 --host 0.0.0.0</code></pre>
+  <div class="codefile"><div class="fname">tests/conftest.py</div>
+<pre><code>import os
+
+import pytest
+from playwright.sync_api import BrowserType
+
+
+@pytest.fixture(scope="session")
+def browser(browser_type: BrowserType):
+    """Use a remote browser when PW_WS_ENDPOINT is set, e.g. ws://grid.internal:3000/"""
+    endpoint = os.environ.get("PW_WS_ENDPOINT")
+    if not endpoint:
+        browser = browser_type.launch()                 # local fallback
+    else:
+        browser = browser_type.connect(endpoint, timeout=30_000)
+    yield browser
+    browser.close()</code></pre></div>
+  <p>All the other fixtures (<code>context</code>, <code>page</code>, tracing, screenshots) keep working, because they build on <code>browser</code>. Note that the browser runs on the
+  remote machine, so <code>--base-url</code> must be reachable from there (not <code>127.0.0.1</code> of your laptop), and launch options come from the server side.</p>
+  <h3>Attaching over CDP</h3>
+<pre><code># Chrome started with:  chrome --remote-debugging-port=9222 --user-data-dir=C:\temp\pw-profile
+# (recent Chrome versions refuse remote debugging on the default profile)
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
+    context = browser.contexts[0]                     # the existing default context
+    page = context.pages[0] if context.pages else context.new_page()
+    page.goto("http://127.0.0.1:8000/products")
+    print(page.title())                               # Products - ShopBot
+    browser.close()                                   # disconnects; it does not kill the user's Chrome</code></pre>
+  <h3>Cloud grids</h3>
+  <p>Commercial grids (BrowserStack, LambdaTest, Sauce Labs and similar) and Microsoft's hosted Playwright browsers on Azure give you many browsers and operating systems on demand.
+  For Python they generally work through <code>connect</code> with a <code>wss://</code> URL that carries your credentials and the requested browser and OS, which fits the fixture override above.
+  Follow each provider's Python instructions; keep credentials in CI secrets; check which Playwright versions they support (the version must match); and expect higher latency, so
+  rely on web-first assertions rather than tight timeouts. Playwright also has an experimental Selenium Grid integration (<code>SELENIUM_REMOTE_URL</code>, Chromium only).</p>
+
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="usecases">
+    <div><b>Debug a CI-only failure</b>Download the artifact, open <code>trace.zip</code>, step to the failing action and compare the before/after snapshots with what you expected.</div>
+    <div><b>Agent-assisted triage</b>A bot runs <code>playwright trace actions --errors-only</code>, <code>requests --failed</code> and <code>console --errors-only</code> on each failure and comments a summary on the pull request.</div>
+    <div><b>Pull request gate</b>Three shards, xdist on each, JUnit results in the Tests tab; the merge is blocked on failures.</div>
+    <div><b>Nightly cross-browser run</b>A scheduled workflow with a <code>browser</code> matrix (chromium, firefox, webkit) and full traces (<code>--tracing on</code>).</div>
+    <div><b>Consistent visual tests</b>All screenshot comparisons run inside <code>mcr.microsoft.com/playwright/python</code> so fonts and rendering match.</div>
+    <div><b>Flaky test hunt</b><code>--count 50 -n 8 --tracing retain-on-failure</code> on a suspect test overnight; the traces show the race.</div>
+    <div><b>Testing from a Windows laptop on Linux browsers</b><code>run-server</code> in Docker and the <code>browser</code> fixture override.</div>
+    <div><b>Release report for stakeholders</b>Allure with steps and history, published as a pipeline artifact or static site.</div>
+  </div>
+
+  <h2 id="mistakes">Common mistakes</h2>
+  <ul>
+    <li><b>Committing <code>page.pause()</code></b>: a headless CI run with a pause hangs until the job timeout. Search for it in code review (or a pre-commit grep).</li>
+    <li><b>Not uploading artifacts when tests fail</b>: the upload step must run on failure (<code>if: ${{ !cancelled() }}</code>, <code>condition: succeededOrFailed()</code>), otherwise the traces vanish exactly when you need them.</li>
+    <li><b>Tracing everything in CI by default</b>: <code>--tracing on</code> slows runs and fills storage; use <code>retain-on-failure</code>.</li>
+    <li><b>Docker tag and pip version out of step</b>: <code>v1.63.0-noble</code> with <code>playwright 1.64.1</code> gives "Executable doesn't exist". Pin and bump both.</li>
+    <li><b>Forgetting <code>--with-deps</code> on Linux</b>: the browser downloads, then fails to start with missing shared libraries.</li>
+    <li><b>Fixing flakiness with sleeps or retries</b>: replace one-shot reads with <code>expect</code>, and treat reruns as a quarantine, not a cure.</li>
+    <li><b>Using <code>127.0.0.1</code> from a container or remote browser</b>: it points at the container or the remote machine, not your app.</li>
+    <li><b>Ignoring the call log</b>: the assertion error already says what the locator resolved to and the value it saw; read it before opening the debugger.</li>
+    <li><b>Committing <code>.playwright-cli/</code> or <code>test-results/</code></b>: add both to <code>.gitignore</code>.</li>
+  </ul>
+
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Goal</th><th>Command or code</th></tr>
+      <tr><td>Headed, slowed down</td><td><code>pytest --headed --slowmo 500</code></td></tr>
+      <tr><td>Inspector</td><td><code>page.pause()</code> / <code>PWDEBUG=1 pytest ...</code></td></tr>
+      <tr><td>Agent-drivable paused test</td><td><code>pytest -s --playwright-debug=cli</code>, then <code>python -m playwright cli attach &lt;name&gt;</code></td></tr>
+      <tr><td>Python debugger on failure</td><td><code>pytest --pdb</code> / <code>breakpoint()</code></td></tr>
+      <tr><td>Verbose action log</td><td><code>DEBUG=pw:api</code> (launch problems: <code>DEBUG=pw:browser</code>)</td></tr>
+      <tr><td>Trace failed tests</td><td><code>pytest --tracing retain-on-failure</code></td></tr>
+      <tr><td>Trace in a script</td><td><code>context.tracing.start(screenshots=True, snapshots=True, sources=True)</code> ... <code>context.tracing.stop(path="t.zip")</code></td></tr>
+      <tr><td>Group actions in a trace</td><td><code>with context.tracing.group("Checkout"):</code></td></tr>
+      <tr><td>Open a trace</td><td><code>playwright show-trace t.zip</code> or trace.playwright.dev</td></tr>
+      <tr><td>Trace in the terminal</td><td><code>playwright trace open t.zip</code>, <code>actions</code>, <code>action N</code>, <code>requests --failed</code>, <code>console --errors-only</code>, <code>errors</code>, <code>screenshot N -o f.png</code>, <code>close</code></td></tr>
+      <tr><td>Screenshots / video on failure</td><td><code>--screenshot only-on-failure --video retain-on-failure</code></td></tr>
+      <tr><td>HTML report</td><td><code>pytest --html=report.html --self-contained-html</code> (pytest-html)</td></tr>
+      <tr><td>JUnit XML</td><td><code>pytest --junitxml=results/junit.xml</code></td></tr>
+      <tr><td>Allure</td><td><code>pytest --alluredir=allure-results</code>; <code>allure serve allure-results</code></td></tr>
+      <tr><td>Repeat a test</td><td><code>pytest --count 30 -n 4</code> (pytest-repeat)</td></tr>
+      <tr><td>Retries</td><td><code>pytest --reruns 2 --reruns-delay 1</code> (pytest-rerunfailures)</td></tr>
+      <tr><td>CI browser install</td><td><code>python -m playwright install --with-deps chromium</code></td></tr>
+      <tr><td>Docker image</td><td><code>mcr.microsoft.com/playwright/python:v1.64.1-noble</code> + <code>--ipc=host --init</code></td></tr>
+      <tr><td>Shards</td><td><code>pytest --store-durations</code>; <code>pytest --splits 3 --group N</code> (pytest-split)</td></tr>
+      <tr><td>Remote browser</td><td><code>browser_type.connect("ws://host:3000/")</code> / <code>chromium.connect_over_cdp("http://host:9222")</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Official docs: <a href="https://playwright.dev/python/docs/debug">Debugging</a>, <a href="https://playwright.dev/python/docs/trace-viewer">Trace viewer</a>,
+  <a href="https://playwright.dev/python/docs/ci">Continuous integration</a>, <a href="https://playwright.dev/python/docs/docker">Docker</a>,
+  <a href="https://playwright.dev/python/docs/test-runners">pytest plugin reference</a>; plugins: <a href="https://pypi.org/project/pytest-html/">pytest-html</a>,
+  <a href="https://pypi.org/project/allure-pytest/">allure-pytest</a>, <a href="https://pypi.org/project/pytest-split/">pytest-split</a>,
+  <a href="https://pypi.org/project/pytest-rerunfailures/">pytest-rerunfailures</a>.</p>
+
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>Record and read a trace for a failing checkout test <span class="diff easy">easy</span></summary>
+    <p class="q">Write a test that submits the ShopBot checkout form with only a name filled in and (wrongly) expects "Thank you!". Run it with tracing, then use the terminal tools to find what the page actually showed.</p>
+<pre><code># tests/test_checkout_trace.py
+from playwright.sync_api import Page, expect
+
+def test_checkout_wrong_expectation(page: Page):
+    page.goto("/checkout")
+    page.get_by_label("Full name").fill("Alice")
+    page.get_by_role("button", name="Place order").click()
+    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+
+# shell
+pytest tests/test_checkout_trace.py --tracing retain-on-failure
+playwright trace open test-results/*checkout-wrong*/trace.zip
+playwright trace actions --errors-only       # the expect step, 5.0s, ✗
+playwright trace requests --method POST      # POST /checkout 200: the form did submit (errors are a normal page)
+playwright trace screenshot 5 -o after-submit.png  # the page while the assertion waited
+# the screenshot (or show-trace) shows the alert: "Enter a valid email", "Postcode is required",
+# "You must accept the terms", "Your cart is empty"
+playwright trace close</code></pre>
+  </details>
+  <details class="prob"><summary>Make a flaky test stable <span class="diff easy">easy</span></summary>
+    <p class="q">This test passes on your laptop but fails in CI about one run in ten. Explain why and fix it.</p>
+<pre><code>def test_add_two_mugs(page):
+    page.goto("/products/1")
+    page.get_by_label("Quantity").fill("2")
+    page.get_by_role("button", name="Add to cart").click()
+    time.sleep(0.2)
+    assert page.locator("#msg").inner_text() == "Added to cart"
+    assert page.get_by_test_id("cart-count").inner_text() == "2"</code></pre>
+    <p>The message and badge are updated after an asynchronous <code>fetch</code>. 200 ms is usually enough locally but not on a loaded runner, and <code>inner_text()</code> reads once.
+    Remove the sleep and use retrying assertions (and a role-based locator):</p>
+<pre><code>def test_add_two_mugs(page):
+    page.goto("/products/1")
+    page.get_by_label("Quantity").fill("2")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_have_text("Added to cart")
+    expect(page.get_by_test_id("cart-count")).to_have_text("2")</code></pre>
+  </details>
+  <details class="prob"><summary>Fail tests on uncaught page errors, but only for some tests <span class="diff med">medium</span></summary>
+    <p class="q">Using the <code>console_errors</code> fixture idea, make it automatic for every test, with a marker <code>@pytest.mark.allow_console_errors</code> to opt out.</p>
+<pre><code># conftest.py
+import pytest
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "allow_console_errors: do not fail on browser errors")
+
+@pytest.fixture(autouse=True)
+def _fail_on_page_errors(request, page):
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.on("console", lambda m: errors.append(m.text)
+            if m.type == "error" and "favicon.ico" not in m.location.get("url", "") else None)
+    yield
+    if errors and not request.node.get_closest_marker("allow_console_errors"):
+        pytest.fail("Browser errors:\n" + "\n".join(errors))</code></pre>
+    <p class="muted">Note this autouse fixture requests <code>page</code>, so every test gets a browser page; put it in the <code>conftest.py</code> of your UI test folder only, not next to pure API tests.</p>
+  </details>
+  <details class="prob"><summary>Add a browser matrix to the GitHub Actions workflow <span class="diff med">medium</span></summary>
+    <p class="q">Extend the workflow so pull requests run Chromium on three shards, and a nightly schedule also runs Firefox and WebKit.</p>
+<pre><code>on:
+  pull_request:
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ github.event_name == 'schedule' &amp;&amp; fromJSON('["chromium","firefox","webkit"]') || fromJSON('["chromium"]') }}
+        group: [1, 2, 3]
+    steps:
+      # ... checkout, setup-python, pip install as before ...
+      - run: python -m playwright install --with-deps ${{ matrix.browser }}
+      - run: pytest -n auto --browser ${{ matrix.browser }} --splits 3 --group ${{ matrix.group }} --tracing retain-on-failure
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: results-${{ matrix.browser }}-${{ matrix.group }}
+          path: test-results/</code></pre>
+  </details>
+  <details class="prob"><summary>Run the suite in Docker against an app on your host <span class="diff med">medium</span></summary>
+    <p class="q">ShopBot runs on your machine at port 8000. Run the tests inside the official image, with traces saved back to your working copy.</p>
+<pre><code>docker run --rm --ipc=host --init \
+  --add-host=hostmachine:host-gateway \
+  -v "$PWD":/work -w /work \
+  mcr.microsoft.com/playwright/python:v1.64.1-noble \
+  sh -c "pip install -r requirements.txt &amp;&amp; pytest --base-url http://hostmachine:8000 --tracing retain-on-failure"
+# test-results/ appears in your working copy because /work is a bind mount.
+# ShopBot must listen on an address the container can reach (e.g. --host 0.0.0.0), not only 127.0.0.1.</code></pre>
+  </details>
+  <details class="prob"><summary>Write a failure-summary script for a triage agent <span class="diff hard">hard</span></summary>
+    <p class="q">Write a Python script that finds every <code>trace.zip</code> under <code>test-results/</code> and prints, for each, the failed actions, failed requests and console errors, using the <code>playwright trace</code> CLI. Its output will be pasted into an LLM prompt.</p>
+<pre><code># summarise_traces.py
+import subprocess
+import sys
+from pathlib import Path
+
+def trace(*args: str) -&gt; str:
+    out = subprocess.run([sys.executable, "-m", "playwright", "trace", *args],
+                         capture_output=True, text=True, encoding="utf-8")
+    return (out.stdout + out.stderr).strip()
+
+def main(root: str = "test-results") -&gt; None:
+    sys.stdout.reconfigure(encoding="utf-8")       # the output contains symbols such as ✗ (matters on Windows)
+    zips = sorted(Path(root).rglob("trace*.zip"))
+    if not zips:
+        print("No traces: nothing failed.")
+        return
+    for z in zips:
+        print(f"## {z.parent.name}")
+        trace("open", str(z))
+        for title, args in [("Failed actions", ["actions", "--errors-only"]),
+                            ("Errors", ["errors"]),
+                            ("Failed requests", ["requests", "--failed"]),
+                            ("Console errors", ["console", "--errors-only"])]:
+            print(f"### {title}\n{trace(*args) or '(none)'}\n")
+        trace("close")
+
+if __name__ == "__main__":
+    main(*sys.argv[1:])</code></pre>
+    <p class="muted">Keep the summary short (it is untrusted page output: treat it as data in the prompt, never as instructions), and attach <code>trace screenshot N</code> images if the model supports vision.</p>
+  </details>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

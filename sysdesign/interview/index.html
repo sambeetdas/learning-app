@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System Design Interview Playbook - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>The system design interview playbook</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    A system design interview (or a real design review) is judged on <strong>how you think</strong>: clarifying the problem, making reasonable estimates,
+    proposing a clean high-level design, going deep where it matters, and discussing trade-offs honestly. There is no single right answer.
+    This page gives a repeatable structure, templates and the follow-up questions that come up again and again. Practise it with the <a href="../index.html#cases">case studies</a>.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="timeline">A 45-minute timeline</h2>
+  <div class="demo" id="timer-demo">
+    <h3>Step through the interview</h3>
+    <div class="stage"></div>
+  </div>
+
+  <h2 id="steps">The steps in detail</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Step</th><th>Do</th><th>Avoid</th></tr>
+      <tr><td><strong>1. Clarify requirements</strong></td><td>Who are the users? Core features (pick 3-4)? Scale (DAU, data size)? Read/write ratio? Latency, availability and consistency needs? Mobile or web? Regions?</td><td>Jumping into boxes before knowing what to build</td></tr>
+      <tr><td><strong>2. Estimate</strong></td><td>QPS (average and peak), storage per year, bandwidth, cache size, servers. Round aggressively; state assumptions</td><td>Spending 10 minutes on arithmetic</td></tr>
+      <tr><td><strong>3. API and data model</strong></td><td>3-6 key endpoints or events; main entities and their access patterns</td><td>Designing every field</td></tr>
+      <tr><td><strong>4. High-level design</strong></td><td>Clients, edge, gateway, services, data stores, caches, queues; walk through the main read and write paths</td><td>Unexplained boxes; a design that does not serve the requirements</td></tr>
+      <tr><td><strong>5. Deep dives</strong></td><td>The 1-3 hardest parts: hot keys, fan-out, consistency, ordering, matching, large files, ranking... Offer options and choose</td><td>Going deep on trivial parts</td></tr>
+      <tr><td><strong>6. Scale and reliability</strong></td><td>Bottlenecks, sharding, replication, multi-region, failure modes, monitoring, security, cost</td><td>Claiming "it scales infinitely"</td></tr>
+      <tr><td><strong>7. Wrap up</strong></td><td>Summarise, list trade-offs and what you would do next with more time</td><td>Ending mid-sentence</td></tr>
+    </table>
+  </div>
+
+  <h2 id="clarify">Clarifying questions checklist</h2>
+  <div class="cols">
+    <div class="card arch"><h3>Product</h3><ul>
+      <li>Who uses it and how? What are the top 3 use cases?</li>
+      <li>What is explicitly out of scope?</li>
+      <li>Any special features: search, notifications, analytics, offline?</li>
+      <li>Web, mobile, API, devices?</li>
+    </ul></div>
+    <div class="card arch"><h3>Scale and quality</h3><ul>
+      <li>Users (total, daily active), growth expectations</li>
+      <li>Requests per user per day, read/write ratio, peak factor</li>
+      <li>Data size per item, retention</li>
+      <li>Latency target, availability target, consistency needs</li>
+      <li>Global or single region? Compliance (GDPR, PCI, HIPAA)?</li>
+    </ul></div>
+    <div class="card arch"><h3>AI systems (extra)</h3><ul>
+      <li>What does "good" look like? How will we evaluate it?</li>
+      <li>Data sources, freshness, permissions</li>
+      <li>Latency (TTFT) and cost per request budgets</li>
+      <li>Hosted model API or self-hosted? Data residency?</li>
+      <li>Which actions can the AI take, and which need approval?</li>
+    </ul></div>
+  </div>
+
+  <h2 id="template">A whiteboard template</h2>
+<pre><code>REQUIREMENTS
+  Functional:     1) ...  2) ...  3) ...
+  Non-functional: latency p99 &lt; ___ ms, availability ___ nines, consistency: strong | eventual
+  Out of scope:   ...
+ESTIMATES
+  DAU ___ x ___ actions/day = ___ /day / 86,400 = ___ QPS avg, x ___ peak = ___ QPS
+  storage: ___ items/day x ___ KB x 365 x ___ years = ___ TB   (x3 replication)
+  read:write = ___ : 1        cache: 20% of hot data = ___ GB
+API
+  POST /v1/___     GET /v1/___?cursor=     (auth, idempotency keys, pagination)
+DATA
+  entity -&gt; store (why), partition key, indexes
+HIGH LEVEL
+  client -&gt; CDN -&gt; LB/gateway -&gt; services -&gt; cache -&gt; DB
+                                   \-&gt; queue -&gt; workers -&gt; search / analytics
+DEEP DIVES
+  1) ___  options A / B, choose ___ because ___
+  2) ___
+SCALE + FAILURES
+  bottleneck ___ -&gt; shard by ___ ; replica lag; hot keys; retries + idempotency; multi-AZ / region
+TRADE-OFFS + NEXT STEPS</code></pre>
+
+  <h2 id="numbers">Numbers worth knowing</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Quantity</th><th>Rough value</th></tr>
+      <tr><td>Seconds per day</td><td>86,400 (about 10<sup>5</sup>); 1 million requests/day &asymp; 12 per second</td></tr>
+      <tr><td>Memory reference / SSD random read / same-region round trip / cross-continent round trip</td><td>100 ns / 100 &micro;s / 0.5-1 ms / 100-150 ms</td></tr>
+      <tr><td>One app server (simple API)</td><td>1,000-5,000 requests per second</td></tr>
+      <tr><td>One relational primary (well indexed)</td><td>5,000-20,000 simple queries per second; a few TB comfortably</td></tr>
+      <tr><td>One Redis node</td><td>100,000+ operations per second</td></tr>
+      <tr><td>One Kafka partition</td><td>about 10 MB/s writes</td></tr>
+      <tr><td>Availability 99.9% / 99.99%</td><td>8.8 hours / 53 minutes of downtime per year</td></tr>
+      <tr><td>LLM generation speed</td><td>30-150 tokens per second per stream; TTFT 0.2-2 s</td></tr>
+    </table>
+  </div>
+  <p class="muted">More numbers and calculators are on the <a href="../estimation/index.html">estimation page</a>.</p>
+
+  <h2 id="followups">Common follow-up questions</h2>
+  <div class="demo">
+    <h3>Practice: reveal an answer</h3>
+    <div class="bar"><label>Topic <select id="fq-topic"></select></label><button type="button" id="fq-next">Next question</button><button type="button" id="fq-show">Show answer</button></div>
+    <div class="readout" id="fq-q"></div>
+    <div class="readout" id="fq-a" style="display:none"></div>
+  </div>
+
+  <h2 id="tradeoffs">Classic trade-offs to name</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Trade-off</th><th>Typical framing</th></tr>
+      <tr><td>Consistency vs availability / latency</td><td>Money and inventory: strong; feeds, likes, view counts: eventual</td></tr>
+      <tr><td>Push (fan-out on write) vs pull (fan-out on read)</td><td>Push for normal users, pull for celebrities: the hybrid</td></tr>
+      <tr><td>SQL vs NoSQL</td><td>Relationships and transactions vs known access patterns at huge scale</td></tr>
+      <tr><td>Synchronous vs asynchronous</td><td>Users wait only for what they must see; the rest goes through a queue</td></tr>
+      <tr><td>Precompute vs compute on demand</td><td>Storage and staleness vs latency and CPU</td></tr>
+      <tr><td>Build vs buy (managed service)</td><td>Control and cost at scale vs time to market and operations</td></tr>
+      <tr><td>Accuracy vs cost (AI)</td><td>Bigger model or more retrieval vs latency and cost per request; route easy queries to small models</td></tr>
+    </table>
+  </div>
+
+  <h2 id="mistakes">Common mistakes</h2>
+  <ul>
+    <li>Not asking about scale, then designing for either 100 users or a billion without saying why.</li>
+    <li>Single points of failure: one database, one region, one queue without replication.</li>
+    <li>Forgetting the read path is usually 10-100x busier than the write path.</li>
+    <li>Using a distributed transaction where an idempotent, eventually consistent flow would do.</li>
+    <li>Ignoring hot keys (celebrities, viral items, flash sales).</li>
+    <li>No mention of monitoring, security, data deletion (GDPR) or cost.</li>
+    <li>For AI designs: no evaluation plan, no guardrails, no cost or latency budget.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Systems Fundamentals - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>AI systems fundamentals</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    AI applications built on large language models (LLMs) are still distributed systems, with a few new constraints: requests are <strong>slow and variable</strong> (seconds, streamed token by token),
+    <strong>expensive per call</strong> (priced in tokens), served by <strong>scarce GPUs</strong>, <strong>non-deterministic</strong>, and exposed to <strong>new attack types</strong> such as prompt injection.
+    This page explains the building blocks shared by every AI case study: <a href="../rag-assistant/index.html">RAG</a>, <a href="../agentic-ai/index.html">agents</a>, <a href="../multi-agent/index.html">multi-agent systems</a>,
+    <a href="../llm-gateway/index.html">AI gateways</a>, <a href="../llm-serving/index.html">LLM serving</a> and more.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="anatomy">Anatomy of an LLM application</h2>
+  <div class="demo" id="ai-demo">
+    <h3>From a simple chat to an agent</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Component</th><th>Role</th><th>Azure</th><th>AWS</th></tr>
+      <tr><td>Foundation models</td><td>Generate text, code, images; embed text</td><td id="az-llm"></td><td id="aw-llm"></td></tr>
+      <tr><td>AI gateway</td><td>Auth, quotas (tokens/minute), routing between models and regions, retries, caching, cost tracking</td><td id="az-aigw"></td><td id="aw-aigw"></td></tr>
+      <tr><td>Retrieval (vector + keyword search)</td><td>Find relevant knowledge for grounding</td><td id="az-vector"></td><td id="aw-vector"></td></tr>
+      <tr><td>Agent runtime</td><td>Run tool-calling loops with memory, identity and limits</td><td id="az-agents"></td><td id="aw-agents"></td></tr>
+      <tr><td>Safety filters</td><td>Block harmful content, prompt attacks, sensitive data</td><td id="az-guardrails"></td><td id="aw-guardrails"></td></tr>
+      <tr><td>Evaluation and tracing</td><td>Measure quality, track prompts, tokens, latency and cost</td><td id="az-aieval"></td><td id="aw-aieval"></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="inference">How LLM inference works (and why it is slow)</h2>
+  <ul>
+    <li><strong>Tokens:</strong> models read and write tokens (~4 characters of English). Price, latency and limits are all counted in tokens. The <strong>context window</strong> (e.g. 128 k to 1 M tokens) caps prompt + output.</li>
+    <li><strong>Prefill:</strong> the whole prompt is processed in parallel; cost grows with prompt length and dominates <em>time to first token</em> (TTFT).</li>
+    <li><strong>Decode:</strong> output tokens are generated one at a time, each needing a pass over the model weights; limited by GPU memory bandwidth. This sets the <em>time per output token</em> (TPOT), e.g. 20-60 tokens/s per request.</li>
+    <li><strong>KV cache:</strong> attention keys and values for every token so far are kept in GPU memory, growing with context length and batch size: often the real limit on how many requests a GPU can serve.</li>
+  </ul>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Metric</th><th>Meaning</th><th>Typical target</th></tr>
+      <tr><td>TTFT (time to first token)</td><td>How long until the answer starts appearing</td><td>&lt; 0.5-1 s for chat; voice needs &lt; 300 ms</td></tr>
+      <tr><td>TPOT / inter-token latency</td><td>Time between streamed tokens</td><td>&lt; 30-50 ms (faster than reading speed)</td></tr>
+      <tr><td>End-to-end latency</td><td>TTFT + output tokens &times; TPOT (+ retrieval, tools)</td><td>Seconds; agents can take minutes</td></tr>
+      <tr><td>Throughput</td><td>Total tokens/s across all users per GPU or deployment</td><td>Maximise for cost, within latency SLOs</td></tr>
+      <tr><td>Goodput</td><td>Requests per second that meet their latency SLO</td><td>The number that actually matters</td></tr>
+    </table>
+  </div>
+
+  <h3 id="batching">Continuous batching</h3>
+  <p>GPUs are efficient only when they process many sequences together. <strong>Static batching</strong> waits for the slowest sequence before starting a new batch, wasting slots. <strong>Continuous (in-flight) batching</strong> admits a new request into any slot the moment one finishes. Used by vLLM, TensorRT-LLM, SGLang and hosted model APIs.</p>
+  <div class="demo" id="batch-demo">
+    <h3>Four GPU batch slots over time</h3>
+    <div class="flowtabs" id="batch-tabs"></div>
+    <div class="stage"></div>
+  </div>
+
+  <h3>Inference optimisations</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Technique</th><th>What it does</th><th>Effect</th></tr>
+      <tr><td>Quantisation (FP8, INT8, INT4)</td><td>Fewer bits per weight (and KV)</td><td>2-4&times; less memory, faster decode, small quality loss</td></tr>
+      <tr><td>PagedAttention / KV paging</td><td>Allocate KV cache in pages like virtual memory</td><td>Far less waste, more concurrent requests</td></tr>
+      <tr><td>Prefix (prompt) caching</td><td>Reuse the KV cache of a shared prompt prefix (system prompt, documents)</td><td>Lower TTFT and cost for repeated context; hosted APIs discount cached tokens</td></tr>
+      <tr><td>Speculative decoding</td><td>A small draft model proposes several tokens; the big model verifies them at once</td><td>1.5-3&times; faster decode</td></tr>
+      <tr><td>Tensor / pipeline parallelism</td><td>Split one model across several GPUs</td><td>Run models bigger than one GPU; lower latency</td></tr>
+      <tr><td>Mixture of experts (MoE)</td><td>Only a few expert sub-networks run per token</td><td>Large capacity with less compute per token</td></tr>
+      <tr><td>Disaggregated prefill/decode</td><td>Run prefill and decode on separate GPU pools</td><td>Better utilisation for long prompts</td></tr>
+      <tr><td>Model routing / cascades</td><td>Send easy requests to a small, cheap model; hard ones to a large model</td><td>Large cost savings with similar quality</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="choices">Key design choices</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Choice</th><th>Options</th><th>Guidance</th></tr>
+      <tr><td>Where the model runs</td><td>Hosted API (pay per token) &middot; provisioned throughput (reserved capacity) &middot; self-hosted open models on your GPUs</td><td>Start hosted. Reserve capacity for steady, latency-sensitive load. Self-host for data control, special models, or very high steady volume</td></tr>
+      <tr><td>Adding knowledge</td><td>Prompting &middot; RAG &middot; fine-tuning &middot; long context</td><td>RAG for facts that change or must be cited; fine-tuning for style, format and narrow skills; long context for one-off large inputs</td></tr>
+      <tr><td>Model size</td><td>Small (1-10 B) &middot; medium &middot; frontier</td><td>Use the smallest model that passes your evaluation; route by difficulty</td></tr>
+      <tr><td>Orchestration</td><td>Single call &middot; fixed workflow (chain) &middot; agent (model decides) &middot; multi-agent</td><td>Prefer deterministic workflows; use agents when the steps truly cannot be known in advance</td></tr>
+      <tr><td>Response mode</td><td>Streaming &middot; synchronous &middot; batch/asynchronous</td><td>Stream for users; batch APIs (often ~50% cheaper) for offline jobs</td></tr>
+    </table>
+  </div>
+
+  <h2 id="rag">Retrieval-augmented generation in brief</h2>
+  <ol>
+    <li><strong>Ingest:</strong> extract text from documents, split into chunks (a few hundred tokens, with overlap or by structure), add metadata and access rights.</li>
+    <li><strong>Embed and index:</strong> an embedding model turns each chunk into a vector; store vectors and text in a vector + keyword index.</li>
+    <li><strong>Retrieve:</strong> embed the (rewritten) question; run hybrid search (vectors + BM25) filtered by the user's permissions; take the top 20-50.</li>
+    <li><strong>Rerank:</strong> a cross-encoder reorders them; keep the best 3-8.</li>
+    <li><strong>Generate:</strong> the LLM answers using only those chunks and cites them.</li>
+    <li><strong>Evaluate:</strong> retrieval quality (did we fetch the right chunks?) and answer quality (grounded, relevant, complete).</li>
+  </ol>
+  <p>Full design: <a href="../rag-assistant/index.html">RAG knowledge assistant</a>. Search details: <a href="../semantic-search/index.html">semantic search</a>.</p>
+
+  <h2 id="agents">Agents in brief</h2>
+  <ul>
+    <li><strong>The loop:</strong> the model reads the goal and context, decides on an action (a tool call), the runtime executes it, the result is added to the context, and the loop repeats until the model answers or a limit is hit.</li>
+    <li><strong>Tools</strong> are described by JSON schemas; the model returns structured calls. <strong>MCP</strong> (Model Context Protocol) standardises how agents discover and call tools and data sources; <strong>A2A</strong> (Agent2Agent) standardises agent-to-agent communication.</li>
+    <li><strong>Memory:</strong> short-term (conversation and scratchpad in the context), long-term (facts and preferences stored and retrieved), and episodic (past task traces).</li>
+    <li><strong>Controls:</strong> step, time and cost budgets; least-privilege tool permissions; sandboxed code execution; human approval for risky actions; full tracing.</li>
+  </ul>
+  <p>Full designs: <a href="../agentic-ai/index.html">AI agent with tools</a>, <a href="../multi-agent/index.html">multi-agent system</a>, <a href="../coding-assistant/index.html">coding assistant</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="safety">Safety and security for AI systems</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Risk</th><th>Example</th><th>Mitigations</th></tr>
+      <tr><td><strong>Direct prompt injection / jailbreak</strong></td><td>"Ignore your instructions and..."</td><td>Input classifiers (prompt shields), robust system prompts, output filters, never rely on the prompt alone for security</td></tr>
+      <tr><td><strong>Indirect prompt injection</strong></td><td>A retrieved web page or email contains hidden instructions for the agent</td><td>Treat all retrieved content as untrusted data; separate instructions from data; restrict tools; require approval for side effects</td></tr>
+      <tr><td><strong>Data leakage</strong></td><td>RAG returns documents the user is not allowed to see</td><td>Permission-trimmed retrieval (filter by the user's groups), per-tenant indexes, PII redaction</td></tr>
+      <tr><td><strong>Excessive agency</strong></td><td>An agent with broad credentials deletes data</td><td>Least privilege per tool, scoped short-lived tokens, dry runs, human-in-the-loop, rate limits</td></tr>
+      <tr><td><strong>Hallucination</strong></td><td>Confident but wrong answers</td><td>Grounding with citations, "I don't know" instructions, groundedness evaluation, verification steps</td></tr>
+      <tr><td><strong>Harmful content</strong></td><td>Hate, violence, self-harm, illegal advice</td><td>Content safety filters on input and output, policy-tuned models, monitoring and reporting</td></tr>
+      <tr><td><strong>Denial of wallet</strong></td><td>Abusive users run up token costs</td><td>Per-user token quotas, max output tokens, gateway rate limits</td></tr>
+    </table>
+  </div>
+
+  <h2 id="eval">Evaluation and observability</h2>
+  <ul>
+    <li><strong>Offline evaluation:</strong> a curated test set of questions with expected answers or rubrics; run on every prompt, model or retrieval change (like unit tests). Metrics: groundedness/faithfulness, relevance, correctness, retrieval recall, task success for agents, safety.</li>
+    <li><strong>LLM-as-judge:</strong> a strong model grades outputs against a rubric; calibrate it against human ratings.</li>
+    <li><strong>Online:</strong> user feedback (thumbs, edits, escalations), A/B tests, and sampled human review.</li>
+    <li><strong>Tracing:</strong> log every step (retrieval results, prompts, tool calls, tokens, latency, cost) with OpenTelemetry's generative AI conventions, keeping PII rules in mind.</li>
+    <li><strong>Versioning:</strong> prompts, models, indexes and tools are all versioned artefacts; roll them out like code (canary, rollback). See <a href="../llmops/index.html">LLMOps</a>.</li>
+  </ul>
+
+  <h2 id="cost">Cost: the token maths</h2>
+  <p>
+    Cost per request = input tokens &times; input price + output tokens &times; output price (+ retrieval and tool costs). A RAG answer with 6,000 input tokens and 400 output tokens, at $2.50 / $10 per million tokens,
+    costs about $0.019; at 1 million questions a month that is ~$19,000. Halving retrieved context or routing 60% of questions to a model 10&times; cheaper changes the bill dramatically.
+    Size GPUs and token budgets with the <a href="../estimation/index.html#gpu">LLM serving calculator</a>.
+  </p>
+  <ul>
+    <li>Cache: exact-match and semantic caches for repeated questions; prompt caching for shared prefixes.</li>
+    <li>Trim: retrieve fewer, better chunks; summarise long histories; cap output length.</li>
+    <li>Route: small models first, escalate on low confidence; batch offline workloads.</li>
+    <li>Reserve: provisioned throughput or committed-use discounts for steady volumes.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

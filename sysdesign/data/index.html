@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data: Databases, Replication, Sharding - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Data: databases, replication and sharding</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    The data tier is where most designs succeed or fail: it holds state, so it cannot simply be cloned like a stateless service. This page covers the database families, how indexes and storage engines work,
+    how data is copied (<strong>replication</strong>) for availability and read scale, how it is split (<strong>partitioning / sharding</strong>) for write scale and size, and how transactions work across all of that.
+    To pick a database for a specific need, use the <a href="../estimation/index.html#choose-db">database chooser</a>.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="sql-nosql">SQL vs NoSQL in one table</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Relational (SQL)</th><th>NoSQL (key-value, document, wide-column, graph)</th></tr>
+      <tr><td>Schema</td><td>Defined up front; migrations to change</td><td>Flexible per item (schema-on-read)</td></tr>
+      <tr><td>Queries</td><td>Any query, joins, aggregations (SQL)</td><td>Designed around known access patterns (by key, by partition + sort key)</td></tr>
+      <tr><td>Transactions</td><td>Multi-row ACID</td><td>Usually per item or per partition; some offer limited multi-item transactions</td></tr>
+      <tr><td>Scaling</td><td>Vertical + read replicas; sharding is extra work</td><td>Horizontal by design (automatic partitioning)</td></tr>
+      <tr><td>Best for</td><td>Business data with relationships and integrity rules</td><td>Huge scale, simple access patterns, flexible or high-velocity data</td></tr>
+    </table>
+  </div>
+  <p class="muted">Modern systems blur the line: PostgreSQL stores JSON and vectors; DynamoDB and Cosmos DB support transactions; distributed SQL (Spanner, CockroachDB, Aurora DSQL) scales SQL horizontally.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="indexes">Indexes and storage engines</h2>
+  <div class="cols">
+    <div class="card arch"><h3>B-tree (most SQL databases)</h3><p>A balanced tree of pages; reads are a few page lookups; updates modify pages in place. Great for reads and range queries; random writes cost random I/O. See <a href="../../dsa/trees/index.html#btree">B-trees</a>.</p></div>
+    <div class="card arch"><h3>LSM tree (Cassandra, RocksDB, many NoSQL)</h3><p>Writes go to an in-memory table and are flushed as sorted immutable files, merged in the background (compaction). Excellent write throughput; reads may check several files (Bloom filters help). See <a href="../../dsa/advanced/index.html#lsm">LSM trees</a>.</p></div>
+  </div>
+  <ul>
+    <li>An index turns a full scan (O(n)) into a lookup (O(log n)), but every index slows writes and uses space. Index the columns you filter and sort by; use composite indexes in the order of your queries.</li>
+    <li><strong>Covering indexes</strong> include all the columns a query needs, so the table is never touched.</li>
+    <li><strong>Secondary indexes in NoSQL</strong> (global secondary indexes) are separate, eventually consistent copies of the data partitioned by another key.</li>
+    <li><strong>Row vs column storage:</strong> row stores suit transactions (read a whole row); column stores (warehouses) suit analytics (read one column over billions of rows, compressed).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="replication">Replication</h2>
+  <p>Keeping copies of the same data on several machines gives <strong>availability</strong> (survive a node or zone failure), <strong>read scale</strong> (serve reads from replicas), and <strong>lower latency</strong> (a copy near users). The hard part is keeping copies in agreement.</p>
+  <div class="demo" id="rep-demo">
+    <h3>Replication strategies</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Strategy</th><th>How</th><th>Pros</th><th>Cons</th><th>Examples</th></tr>
+      <tr><td>Single leader, async</td><td>Leader accepts writes, streams changes to followers</td><td>Fast writes, simple</td><td>Followers lag; a failover can lose the last few writes</td><td>MySQL/PostgreSQL read replicas, cross-region replicas</td></tr>
+      <tr><td>Single leader, sync / semi-sync</td><td>Leader waits for at least one follower before acknowledging</td><td>No data loss on failover</td><td>Higher write latency; a slow follower slows writes</td><td>Zone-redundant managed databases, Aurora's quorum storage</td></tr>
+      <tr><td>Multi-leader</td><td>Several leaders (one per region) accept writes and exchange changes</td><td>Local writes in every region</td><td>Write conflicts must be resolved</td><td>Cosmos DB multi-region writes, DynamoDB global tables, collaborative apps</td></tr>
+      <tr><td>Leaderless (quorum)</td><td>Write to W of N replicas, read from R; if W + R &gt; N, reads overlap writes</td><td>Highly available, no failover needed</td><td>Tunable consistency, read repair, more complex</td><td>Cassandra, Dynamo-style stores</td></tr>
+      <tr><td>Consensus (Raft/Paxos)</td><td>A majority must agree on every write; leader elected automatically</td><td>Strong consistency with automatic failover</td><td>Majority round trip per write</td><td>etcd, Spanner, CockroachDB, Kafka KRaft</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="sharding">Partitioning (sharding)</h2>
+  <p>When one machine cannot hold the data or absorb the writes, split the data into <strong>partitions</strong> (shards), each owned by a different node. The <strong>partition key</strong> decides where each row lives, and it is one of the most important design decisions you will make.</p>
+  <div class="demo" id="shard-demo">
+    <h3>Sharding strategies and resharding</h3>
+    <div class="bar">
+      <label>Strategy <select id="sh-strat"><option value="range">Range (by first letter of user name)</option><option value="hash">Hash mod N</option><option value="ring">Consistent hashing (ring, 50 virtual nodes)</option></select></label>
+      <label>Workload <select id="sh-work"><option value="uniform">Uniform users</option><option value="skew">One celebrity user with 30% of traffic</option></select></label>
+      <button type="button" id="sh-add" class="primary">Add a shard</button><button type="button" id="sh-reset">Reset to 4 shards</button>
+    </div>
+    <div class="stage" id="sh-stage"></div>
+    <div class="readout" id="sh-out"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Strategy</th><th>Pros</th><th>Cons</th></tr>
+      <tr><td>Range (A-F, G-M, dates)</td><td>Efficient range scans; easy to understand</td><td>Hot spots (everyone writes "today"; popular letters); uneven sizes</td></tr>
+      <tr><td>Hash of key</td><td>Even spread</td><td>Range queries hit every shard; hash mod N moves almost all keys when N changes</td></tr>
+      <tr><td>Consistent hashing</td><td>Even spread, adding a node moves only ~1/N of keys</td><td>Range queries still scatter; needs virtual nodes for balance</td></tr>
+      <tr><td>Directory / lookup service</td><td>Full control, move tenants individually</td><td>An extra lookup and a component to keep highly available</td></tr>
+      <tr><td>Geographic / tenant</td><td>Data residency, isolation, locality</td><td>Uneven tenant sizes; cross-tenant queries are hard</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Hot partitions:</strong> a celebrity user or a viral item can overload one shard whatever the strategy. Mitigate with key salting (append a random suffix and merge on read), caching, splitting hot keys, or dedicated handling.</li>
+    <li><strong>Cross-shard queries and transactions</strong> are expensive: design keys so that most operations touch one shard (e.g. partition orders by customer, not by order date).</li>
+    <li><strong>Global secondary indexes</strong> answer queries by another key, at the cost of extra writes and eventual consistency.</li>
+    <li><strong>Resharding</strong> online is hard: split ranges, copy data with dual writes, then cut over. Managed NoSQL stores do this automatically; plan headroom so you reshard rarely.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="transactions">Transactions and isolation</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Isolation level</th><th>Prevents</th><th>Still allows</th></tr>
+      <tr><td>Read uncommitted</td><td>-</td><td>Dirty reads (seeing uncommitted data)</td></tr>
+      <tr><td>Read committed (common default)</td><td>Dirty reads</td><td>Non-repeatable reads, lost updates</td></tr>
+      <tr><td>Repeatable read / snapshot</td><td>Non-repeatable reads</td><td>Write skew (two transactions each check a condition, both write)</td></tr>
+      <tr><td>Serializable</td><td>All anomalies: as if transactions ran one at a time</td><td>Lower throughput, more aborts/retries</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Optimistic concurrency:</strong> read a version number, write with <code>WHERE version = v</code>; retry on conflict. Ideal when conflicts are rare (ETags in APIs, Cosmos DB / DynamoDB conditional writes).</li>
+    <li><strong>Pessimistic locking:</strong> <code>SELECT ... FOR UPDATE</code>; simple for hot rows such as seat inventory, but holds locks.</li>
+    <li><strong>Across services or databases</strong> there is no shared transaction. Two-phase commit exists but blocks on coordinator failure; most systems use <strong>sagas</strong> with compensating actions and the <strong>transactional outbox</strong> (see <a href="../messaging/index.html#saga">messaging</a>).</li>
+  </ul>
+
+  <h2 id="storage">Storage types and data lifecycle</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Type</th><th>Access</th><th>Use</th></tr>
+      <tr><td>Block storage (disks)</td><td>Attached to one VM, low latency</td><td>Database files, VM disks</td></tr>
+      <tr><td>File storage (NFS/SMB)</td><td>Shared file system</td><td>Lift-and-shift apps, shared content</td></tr>
+      <tr><td>Object storage</td><td>HTTP by key; unlimited; 11 nines durability</td><td>Media, backups, logs, data lakes, model weights</td></tr>
+    </table>
+  </div>
+  <p><strong>Tiering:</strong> keep hot data in the database or cache, warm data in cheaper storage, and archive cold data (object storage cool/archive tiers) with lifecycle rules. <strong>Backups:</strong> automated, tested restores, point-in-time recovery, and a copy in another region; define RPO and RTO (see <a href="../reliability/index.html#dr">disaster recovery</a>).</p>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

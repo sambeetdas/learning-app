@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced Browser Features - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .emu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .4rem .8rem; margin: .3rem 0 .6rem; }
+    .emu-grid label { display: flex; flex-direction: column; font-size: .8rem; color: var(--muted); }
+    .emu-grid select { margin-top: .15rem; }
+    .emu-out { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem; align-items: start; }
+    @media (max-width: 760px) { .emu-out { grid-template-columns: 1fr; } }
+    .emu-out pre { margin: 0; }
+    .mockbrowser.dark .viewport { background: #15171c; color: #e6e7ea; }
+    .mockbrowser.dark .viewport .el { border-color: #3a3f48; }
+    .mockbrowser .viewport .offline { color: var(--bad); font-weight: 600; }
+    .devframe { margin: 0 auto; transition: width .3s; }
+    .kv { width: 100%; font-size: .8rem; border-collapse: collapse; margin-top: .4rem; }
+    .kv td { padding: .15rem .35rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .kv td:first-child { color: var(--muted); white-space: nowrap; font-family: ui-monospace, Consolas, monospace; }
+    .timeline { position: relative; height: 3.2rem; margin: .4rem 1.6rem 1.4rem; border-bottom: 2px solid var(--line); }
+    .timeline .tick { position: absolute; bottom: -2px; width: 2px; height: .5rem; background: var(--muted); }
+    .timeline .tick.fired { background: var(--accent); height: .9rem; }
+    .timeline .tmark { position: absolute; bottom: -2px; width: 3px; height: 2.2rem; background: var(--warn); }
+    .timeline .tmark.fired { background: var(--good); }
+    .timeline .tlabel { position: absolute; bottom: 2.3rem; font-size: .7rem; white-space: nowrap; transform: translateX(-100%); padding-right: .3rem; color: var(--muted); }
+    .timeline .cursor { position: absolute; top: 0; bottom: -2px; width: 3px; background: var(--bad); transition: left .35s; }
+    .timeline .axis { position: absolute; top: 3.4rem; font-size: .7rem; color: var(--muted); transform: translateX(-50%); }
+    .clockrow { display: flex; flex-wrap: wrap; gap: .6rem; align-items: stretch; }
+    .clockrow .readout { margin: 0; flex: 1 1 11rem; }
+    .clockrow .bigv { font-size: 1.15rem; font-weight: 700; display: block; font-variant-numeric: tabular-nums; }
+    .pixgrid { display: grid; gap: 0; border: 1px solid var(--line); width: max-content; image-rendering: pixelated; }
+    .pixgrid i { display: block; width: 6px; height: 6px; }
+    .diffpanels { display: flex; flex-wrap: wrap; gap: .8rem; }
+    .diffpanels figure { margin: 0; }
+    .diffpanels figcaption { font-size: .75rem; color: var(--muted); margin-bottom: .2rem; }
+    .verdict { margin-top: .5rem; padding: .45rem .7rem; border-radius: 8px; border: 2px solid var(--line); background: var(--bg); font-size: .9rem; }
+    .verdict.ok { border-color: var(--good); } .verdict.bad { border-color: var(--bad); }
+    .duo { display: grid; grid-template-columns: minmax(0, 1fr) 9rem minmax(0, 1fr); gap: .6rem; align-items: start; }
+    @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
+    .duo .server { border: 2px dashed var(--c-svc); border-radius: 8px; padding: .4rem .5rem; font-size: .75rem; background: var(--bg); min-height: 6rem; }
+    .duo .server b { display: block; color: var(--c-svc); margin-bottom: .2rem; }
+    .duo .jar { font: .7rem ui-monospace, Consolas, monospace; color: var(--muted); padding: .2rem .6rem; border-top: 1px solid var(--line); }
+    .duo .msg { display: block; margin: .2rem 0; padding: .2rem .45rem; border-radius: 6px; background: var(--panel); font-size: .8rem; }
+    .duo .msg.new { outline: 2px solid var(--good); }
+    .duo .msg.mine { background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
+    .duo .mockbrowser .viewport { min-height: 9rem; }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Advanced browser features</h1><nav></nav></header>
+
+  <p>
+    The earlier pages covered the everyday core: locators, actions, assertions, fixtures, network mocking and CI. This page is the toolbox for everything else a real
+    application throws at you: phones and tablets, other languages and time zones, dark mode and offline mode, timers that would take minutes to fire, new tabs, iframes,
+    browser dialogs, file uploads and downloads, running your own JavaScript in the page, <strong>visual regression</strong>, <strong>accessibility</strong> and
+    <strong>performance</strong> checks, and tests in which two users talk to each other.
+  </p>
+  <p>
+    Every Python snippet below was run against ShopBot with Playwright for Python 1.64 and pytest-playwright 0.10 (Chromium). Where ShopBot has no matching feature
+    (timers, a two-user chat), the snippet uses a tiny inline page or says clearly which page your own app would need.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="emulation">Device and environment emulation</h2>
+  <p>
+    A <strong>browser context</strong> carries the whole "environment" of a simulated user: screen size, pixel density, touch support, user agent, language, time zone,
+    location, permissions, colour scheme and network state. You set it when you create the context, so each test can be a different kind of user without restarting the browser.
+  </p>
+  <div class="demo" id="emu-demo">
+    <h3>Emulation playground: pick a user, see the code and what the page sees</h3>
+    <div class="emu-grid">
+      <label>Device <select id="emu-device"></select></label>
+      <label>Locale <select id="emu-locale"><option>en-GB</option><option>en-US</option><option>de-DE</option><option>fr-FR</option><option>ja-JP</option></select></label>
+      <label>Time zone <select id="emu-tz"><option>Europe/London</option><option>America/New_York</option><option>Europe/Berlin</option><option>Asia/Tokyo</option><option>Australia/Sydney</option></select></label>
+      <label>Colour scheme <select id="emu-scheme"><option>light</option><option>dark</option></select></label>
+      <label>Geolocation <select id="emu-geo"><option value="none">not set</option><option value="granted">London, permission granted</option><option value="denied">London, no permission</option></select></label>
+      <label>Network <select id="emu-net"><option value="online">online</option><option value="offline">offline</option></select></label>
+    </div>
+    <div class="emu-out">
+      <pre><code id="emu-code"></code></pre>
+      <div>
+        <div class="devframe" id="emu-frame"></div>
+        <table class="kv" id="emu-kv"></table>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.8rem;margin:.4rem 0 0">The price and date are formatted live by <em>your</em> browser's <code>Intl</code> API with the chosen locale and time zone, exactly what page JavaScript would get inside the emulated context. (ShopBot itself formats prices on the server, so its pages always show pounds.)</p>
+  </div>
+
+<pre><code>from playwright.sync_api import Browser, Playwright, expect
+
+
+def test_products_on_an_iphone(browser: Browser, playwright: Playwright):
+    iphone = playwright.devices["iPhone 15"]        # viewport, user agent, scale factor, touch, is_mobile
+    context = browser.new_context(**iphone, locale="en-GB", base_url="http://127.0.0.1:8000")
+    page = context.new_page()
+    page.goto("/products")
+    assert page.viewport_size == {"width": 393, "height": 659}
+    assert page.evaluate("() =&gt; document.documentElement.scrollWidth &lt;= window.innerWidth")   # no sideways scroll
+    expect(page.get_by_test_id("product-card")).to_have_count(4)
+    context.close()
+
+
+def test_german_user_in_berlin(browser: Browser):
+    context = browser.new_context(locale="de-DE", timezone_id="Europe/Berlin")
+    page = context.new_page()
+    page.goto("http://127.0.0.1:8000/products")
+    assert page.evaluate("() =&gt; navigator.language") == "de-DE"
+    assert page.evaluate("() =&gt; new Intl.NumberFormat().format(1234.5)") == "1.234,5"
+    assert page.evaluate("() =&gt; new Date('2026-12-24T09:00:00Z').getHours()") == 10   # CET = UTC+1
+    context.close()</code></pre>
+
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Geolocation and permissions">
+<pre><code>def test_store_finder_uses_location(browser):
+    context = browser.new_context(
+        geolocation={"latitude": 51.5072, "longitude": -0.1276},   # London
+        permissions=["geolocation"],                              # otherwise the request is denied
+    )
+    page = context.new_page()
+    page.goto("http://127.0.0.1:8000/")
+    get_pos = """() =&gt; new Promise((ok, fail) =&gt;
+        navigator.geolocation.getCurrentPosition(p =&gt; ok([p.coords.latitude, p.coords.longitude]), fail))"""
+    assert page.evaluate(get_pos) == [51.5072, -0.1276]
+
+    context.set_geolocation({"latitude": 48.8566, "longitude": 2.3522})   # the user "travels" to Paris
+    assert page.evaluate(get_pos) == [48.8566, 2.3522]
+    context.close()
+
+
+def test_grant_later(context, page):
+    context.grant_permissions(["geolocation"], origin="http://127.0.0.1:8000")   # only for this origin
+    context.set_geolocation({"latitude": 51.5, "longitude": -0.12})
+    ...
+    context.clear_permissions()</code></pre>
+      <p class="muted">Without <code>permissions=["geolocation"]</code> the page gets error code 1 (PERMISSION_DENIED): a good test for your "location unavailable" message. Other permission names include <code>"notifications"</code>, <code>"clipboard-read"</code>, <code>"clipboard-write"</code>, <code>"camera"</code> and <code>"microphone"</code>; support varies by browser.</p>
+    </div>
+    <div class="tabpane" data-tab="Dark mode and media">
+<pre><code>def test_dark_mode(page):
+    page.emulate_media(color_scheme="dark")             # can change mid-test
+    page.goto("http://127.0.0.1:8000/products")
+    assert page.evaluate("() =&gt; matchMedia('(prefers-color-scheme: dark)').matches")
+
+    page.emulate_media(color_scheme="light", reduced_motion="reduce")
+    assert page.evaluate("() =&gt; matchMedia('(prefers-reduced-motion: reduce)').matches")
+
+# or for the whole context:  browser.new_context(color_scheme="dark")
+# print stylesheet:          page.emulate_media(media="print")
+# Windows high contrast:     page.emulate_media(forced_colors="active")</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Offline">
+<pre><code>import pytest
+
+def test_add_to_cart_while_offline(page, context):
+    page.goto("http://127.0.0.1:8000/products/1")
+    context.set_offline(True)
+    assert page.evaluate("() =&gt; navigator.onLine") is False
+
+    page.get_by_role("button", name="Add to cart").click()
+    # ShopBot's fetch() fails and the status message stays empty: the user gets no feedback.
+    # This test documents the bug; the fix would show "You are offline, try again".
+    expect(page.get_by_role("status")).to_have_text("")
+
+    with pytest.raises(Exception, match="ERR_INTERNET_DISCONNECTED"):
+        page.goto("http://127.0.0.1:8000/cart")         # navigation fails too
+    context.set_offline(False)</code></pre>
+      <p class="muted">For slow rather than absent networks, delay responses with <code>page.route</code> (see <a href="../network-api/index.html">Network mocking</a>) or use Chromium's CDP throttling (see <a href="#performance">Performance</a>).</p>
+    </div>
+    <div class="tabpane" data-tab="Whole suite (conftest / CLI)">
+<pre><code># conftest.py: every test in this folder runs as an iPhone user in London
+import pytest
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args, playwright):
+    return {
+        **browser_context_args,
+        **playwright.devices["iPhone 15"],
+        "locale": "en-GB",
+        "timezone_id": "Europe/London",
+    }</code></pre>
+<pre class="term"><code><span class="c"># or without code changes (pytest-playwright option)</span>
+pytest --device "Pixel 7"
+pytest --device "iPhone 15" --browser webkit   <span class="c"># the real Safari engine</span></code></pre>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Context option</th><th>What it emulates</th><th>Change later with</th></tr>
+      <tr><td><code>**playwright.devices["Pixel 7"]</code></td><td>viewport, <code>device_scale_factor</code>, <code>user_agent</code>, <code>is_mobile</code>, <code>has_touch</code> (and a <code>default_browser_type</code> hint); about 200 descriptors</td><td>new context</td></tr>
+      <tr><td><code>viewport={"width":, "height":}</code></td><td>Window size in CSS pixels; <code>no_viewport=True</code> uses the real window size</td><td><code>page.set_viewport_size()</code></td></tr>
+      <tr><td><code>locale="de-DE"</code></td><td><code>navigator.language</code>, <code>Accept-Language</code> header, <code>Intl</code> number and date formatting</td><td>new context</td></tr>
+      <tr><td><code>timezone_id="Asia/Tokyo"</code></td><td>The time zone used by <code>Date</code> and <code>Intl</code></td><td>new context</td></tr>
+      <tr><td><code>geolocation=</code> + <code>permissions=["geolocation"]</code></td><td><code>navigator.geolocation</code> results</td><td><code>context.set_geolocation()</code>, <code>grant_permissions()</code>, <code>clear_permissions()</code></td></tr>
+      <tr><td><code>color_scheme</code>, <code>reduced_motion</code>, <code>forced_colors</code>, <code>contrast</code></td><td>CSS media features</td><td><code>page.emulate_media()</code></td></tr>
+      <tr><td><code>offline=True</code></td><td>No network at all</td><td><code>context.set_offline()</code></td></tr>
+      <tr><td><code>java_script_enabled=False</code></td><td>A browser with JavaScript disabled (progressive enhancement)</td><td>new context</td></tr>
+      <tr><td><code>user_agent=</code>, <code>extra_http_headers=</code>, <code>http_credentials=</code></td><td>Identity sent to the server; HTTP basic auth</td><td><code>context.set_extra_http_headers()</code></td></tr>
+    </table>
+  </div>
+  <div class="callout">
+    <strong>Emulation is not a real device.</strong> A <code>devices["iPhone 15"]</code> context in Chromium has an iPhone's screen and user agent, but it is still the Blink engine.
+    For Safari behaviour run the same test with <code>--browser webkit</code>; for genuine device quirks (keyboard covering inputs, real GPU, iOS Safari bugs) use a device cloud.
+    <code>is_mobile</code> is not supported in Firefox.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="mobile">Mobile and touch</h2>
+  <p>A device descriptor turns on <code>has_touch</code>, so you can use <code>tap()</code>. Without touch support, <code>tap()</code> fails with <em>"The page does not support tap. Use hasTouch context option to enable touch support."</em></p>
+<pre><code>import re
+
+def test_tap_through_to_product(browser, playwright):
+    context = browser.new_context(**playwright.devices["Pixel 7"], base_url="http://127.0.0.1:8000")
+    page = context.new_page()
+    page.goto("/products")
+    page.get_by_role("link", name="Ceramic Mug").tap()              # a touch tap, not a mouse click
+    expect(page).to_have_url(re.compile(r"/products/1$"))
+
+    box = page.get_by_role("button", name="Add to cart").bounding_box()
+    page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)   # tap at coordinates
+    expect(page.get_by_role("status")).to_have_text("Added to cart")
+    context.close()
+
+
+@pytest.mark.parametrize("device", ["iPhone 15", "Pixel 7", "iPad Pro 11", "Desktop Chrome"])
+@pytest.mark.parametrize("path", ["/products", "/products/1", "/checkout"])
+def test_no_horizontal_scroll(browser, playwright, device, path):
+    context = browser.new_context(**playwright.devices[device], base_url="http://127.0.0.1:8000")
+    page = context.new_page()
+    page.goto(path)
+    overflow = page.evaluate("() =&gt; document.documentElement.scrollWidth - window.innerWidth")
+    assert overflow &lt;= 0, f"{device} {path}: page is {overflow}px wider than the screen"
+    context.close()</code></pre>
+  <p>Playwright has <strong>no built-in swipe</strong>. If the carousel listens to <em>pointer</em> events (most modern code), drag with the mouse; if it listens to <em>touch</em> events, dispatch them in the page:</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Pointer events: mouse drag">
+<pre><code>box = page.locator("#carousel").bounding_box()
+y = box["y"] + box["height"] / 2
+page.mouse.move(box["x"] + 250, y)
+page.mouse.down()
+page.mouse.move(box["x"] + 50, y, steps=10)      # steps= produces intermediate pointermove events
+page.mouse.up()
+expect(page.locator("#slide-number")).to_have_text("2")</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Touch events: dispatch">
+<pre><code># needs a has_touch context (a mobile device descriptor)
+page.locator("#carousel").evaluate("""(el) =&gt; {
+  const r = el.getBoundingClientRect(), y = r.top + r.height / 2;
+  const t = (x) =&gt; new Touch({identifier: 1, target: el, clientX: x, clientY: y});
+  el.dispatchEvent(new TouchEvent('touchstart', {touches: [t(r.left + 250)], bubbles: true}));
+  el.dispatchEvent(new TouchEvent('touchend', {changedTouches: [t(r.left + 50)], bubbles: true}));
+}""")</code></pre>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="clock">Controlling time: the clock API</h2>
+  <p>
+    Session time-outs, "sale ends in 10:00" banners, auto-save every 30 seconds, "posted 2 hours ago" labels and calendars that change at midnight are hard to test against
+    the real clock. <code>page.clock</code> replaces the page's <code>Date</code>, <code>setTimeout</code>, <code>setInterval</code>, <code>requestAnimationFrame</code>,
+    <code>performance.now()</code> and friends with a fake clock that your test controls. ShopBot has no timers, so this example uses a small inline page with a session warning after 14 minutes.
+  </p>
+  <div class="demo" id="clock-demo">
+    <h3>Fake time: a 14-minute session warning tested in milliseconds</h3>
+    <div class="stage"></div>
+  </div>
+<pre><code>import datetime as dt
+from playwright.sync_api import Page, expect
+
+SESSION_PAGE = """
+&lt;p&gt;Time: &lt;span id="now"&gt;&lt;/span&gt;&lt;/p&gt;
+&lt;p id="warn" role="alert"&gt;&lt;/p&gt;
+&lt;script&gt;
+  const show = () =&gt; document.getElementById('now').textContent = new Date().toISOString().slice(11, 19);
+  show();
+  setInterval(show, 1000);
+  setTimeout(() =&gt; document.getElementById('warn').textContent = 'Your session expires in 1 minute', 14 * 60 * 1000);
+&lt;/script&gt;
+"""
+
+
+def test_session_warning_after_14_minutes(page: Page):
+    page.clock.install(time=dt.datetime(2026, 12, 24, 9, 0, tzinfo=dt.timezone.utc))   # BEFORE the page loads
+    page.set_content(SESSION_PAGE)                    # in your app: page.goto("/account")
+    page.clock.pause_at(dt.datetime(2026, 12, 24, 9, 0, 5, tzinfo=dt.timezone.utc))
+    expect(page.locator("#now")).to_have_text("09:00:05")
+
+    page.clock.run_for(3000)                          # every timer due in the next 3 s fires, in order
+    expect(page.locator("#now")).to_have_text("09:00:08")
+    expect(page.get_by_role("alert")).to_have_text("")
+
+    page.clock.fast_forward("14:00")                  # jump 14 minutes ("mm:ss" or milliseconds)
+    expect(page.get_by_role("alert")).to_have_text("Your session expires in 1 minute")
+    expect(page.locator("#now")).to_have_text("09:14:08")</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Method</th><th>What it does</th><th>Use it for</th></tr>
+      <tr><td><code>clock.install(time=...)</code></td><td>Installs fake timers starting at <code>time</code>. Time keeps <em>flowing</em> normally until you pause it. Call it before the page's scripts run.</td><td>Every timer test; it must come first</td></tr>
+      <tr><td><code>clock.pause_at(time)</code></td><td>Jumps to <code>time</code> like <code>fast_forward</code> (due timers fire once) and stops there. It works before or after the page loads. The time must be in the future, otherwise: <em>"Cannot fast-forward to the past"</em>.</td><td>Deterministic tests: nothing moves unless you say so</td></tr>
+      <tr><td><code>clock.run_for(ms | "mm:ss")</code></td><td>Advances step by step, firing <strong>every</strong> timer that falls due, in order (an interval of 1 s fires 10 times in 10 s)</td><td>Animations, polling, counters</td></tr>
+      <tr><td><code>clock.fast_forward(ms | "mm:ss")</code></td><td>Jumps ahead; each due timer fires <strong>at most once</strong>, at the new time (like a laptop waking from sleep). Verified: 10 ticks, then a 60 s fast-forward gives 11, not 70.</td><td>Time-outs, expiry, "come back later"</td></tr>
+      <tr><td><code>clock.resume()</code></td><td>Lets time flow again from where it is</td><td>Finishing a test with normal behaviour</td></tr>
+      <tr><td><code>clock.set_fixed_time(time)</code></td><td><code>Date.now()</code> and <code>new Date()</code> always return <code>time</code>; timers keep running. No <code>install</code> needed.</td><td>"Today's deals", age checks, stable screenshots of dates</td></tr>
+      <tr><td><code>clock.set_system_time(time)</code></td><td>Changes the wall clock <em>without</em> firing timers (after <code>install</code>)</td><td>Simulating the user changing the system clock, DST jumps</td></tr>
+    </table>
+  </div>
+<pre><code>def test_christmas_banner(page):
+    page.clock.set_fixed_time(dt.datetime(2026, 12, 24, 18, 0, tzinfo=dt.timezone.utc))
+    page.goto("http://127.0.0.1:8000/")
+    # every new Date() in the page is now Christmas Eve, 18:00 UTC
+    ...</code></pre>
+  <div class="callout tip">Pass time-zone-aware datetimes (<code>tzinfo=dt.timezone.utc</code>) or ISO strings ending in <code>Z</code>. A naive <code>datetime</code> is interpreted in the <em>test machine's</em> local time zone, so a test written in London fails on a CI runner in UTC half the year. Combine with <code>timezone_id=</code> on the context to control how the page displays it.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="tabs">Multiple pages, tabs and popups</h2>
+  <p>
+    Every tab or window is a <code>Page</code> in the same context (they share cookies). When a click opens a new tab (<code>target="_blank"</code>, <code>window.open</code>),
+    wrap the click in <code>page.expect_popup()</code>: Playwright starts listening <em>before</em> the click, so the event cannot be missed. ShopBot's home page has a
+    "Terms (opens a new tab)" link:
+  </p>
+<pre><code>def test_terms_open_in_a_new_tab(page):
+    page.goto("http://127.0.0.1:8000/")
+    with page.expect_popup() as popup_info:
+        page.get_by_role("link", name="Terms (opens a new tab)").click()
+    terms = popup_info.value                         # the new Page
+    terms.wait_for_load_state()
+    expect(terms).to_have_title("Terms - ShopBot")
+    expect(terms.get_by_role("heading", level=1)).to_have_text("Terms and conditions")
+    assert len(page.context.pages) == 2
+
+    terms.close()
+    expect(page.get_by_role("heading", level=1)).to_have_text("Welcome to ShopBot")   # the first tab is untouched</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Situation</th><th>Use</th></tr>
+      <tr><td>A click on this page opens a popup</td><td><code>with page.expect_popup() as info:</code> &rarr; <code>info.value</code></td></tr>
+      <tr><td>Any new page in the context, whoever opened it</td><td><code>with context.expect_page() as info:</code>, or <code>context.on("page", handler)</code></td></tr>
+      <tr><td>Your test wants a second tab</td><td><code>tab2 = context.new_page()</code>; <code>page.bring_to_front()</code> to switch focus</td></tr>
+      <tr><td>List open tabs</td><td><code>context.pages</code> (in opening order)</td></tr>
+      <tr><td>OAuth / payment popups</td><td><code>expect_popup()</code>, act in the popup, then <code>popup.wait_for_event("close")</code> and continue on the main page</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="frames">iframes</h2>
+  <p>
+    An iframe is a separate document, so normal locators do not see inside it. ShopBot's account page embeds a "Loyalty card" iframe with a points balance and a Redeem button.
+    <code>frame_locator()</code> (or <code>locator.content_frame</code>) gives you a locator scope inside the frame, with the same auto-waiting as everywhere else.
+  </p>
+<pre><code>def test_redeem_loyalty_points(logged_in_page):          # a fixture that logs in as alice (see the pytest page)
+    page = logged_in_page
+    page.goto("/account")
+
+    card = page.frame_locator('iframe[title="Loyalty card"]')
+    expect(card.locator("#points")).to_have_text("120")
+    card.get_by_role("button", name="Redeem").click()
+    expect(card.locator("#points")).to_have_text("0")
+
+
+def test_same_with_content_frame(logged_in_page):
+    page = logged_in_page
+    page.goto("/account")
+    card = page.get_by_title("Loyalty card").content_frame   # locator for the &lt;iframe&gt; -&gt; its content
+    expect(card.get_by_text("Loyalty points")).to_be_visible()</code></pre>
+  <ul>
+    <li><strong>Nested frames</strong>: chain them, <code>page.frame_locator("#outer").frame_locator("#inner").get_by_role(...)</code>.</li>
+    <li><strong>The Frame object</strong> (<code>page.frames</code>, <code>page.frame(name=...)</code>, <code>page.frame(url=...)</code>) is the older, non-locator API. Prefer locators; use Frame when you need frame-level calls such as <code>frame.evaluate()</code> or <code>frame.url</code>.</li>
+    <li><strong>Cross-origin iframes</strong> (payment widgets, embedded videos) work the same way: Playwright drives them through the browser, not through page JavaScript, so the same-origin policy does not block you.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="dialogs">Dialogs: alert, confirm, prompt, beforeunload</h2>
+  <p>
+    Native dialogs block the page until someone answers. By default Playwright <strong>dismisses</strong> them automatically (so a confirm returns <code>false</code>).
+    To answer one, register a handler <em>before</em> the action that opens it. ShopBot's "Delete account" button asks <em>"Really delete your account? This cannot be undone."</em>
+  </p>
+<pre><code>def test_cancel_account_deletion(logged_in_page):
+    page = logged_in_page
+    page.goto("/account")
+    page.once("dialog", lambda dialog: dialog.dismiss())      # press "Cancel"
+    page.get_by_role("button", name="Delete account").click()
+    expect(page.locator("#delete-msg")).to_have_text("Deletion cancelled")
+
+
+def test_confirm_account_deletion(logged_in_page):
+    page = logged_in_page
+    page.goto("/account")
+    seen = []
+
+    def handle(dialog):
+        seen.append((dialog.type, dialog.message))            # record; assert outside the handler
+        dialog.accept()                                       # press "OK"; for a prompt: dialog.accept("Alice")
+
+    page.once("dialog", handle)
+    page.get_by_role("button", name="Delete account").click()
+    expect(page.locator("#delete-msg")).to_have_text("Account scheduled for deletion")
+    assert seen == [("confirm", "Really delete your account? This cannot be undone.")]</code></pre>
+  <div class="callout">
+    <strong>Handle every dialog you listen for.</strong> If you register <code>page.on("dialog", ...)</code> and the handler neither accepts nor dismisses, the page stays frozen and
+    the click hangs until it times out. Use <code>page.once</code> for a single dialog, and do assertions after the action, not inside the handler (an exception raised inside an
+    event handler does not fail the test cleanly). <code>beforeunload</code> dialogs only appear with <code>page.close(run_before_unload=True)</code>.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="files">File upload and download</h2>
+  <p>ShopBot's account page has an Avatar file input; the order confirmation page has a "Download invoice" link that serves <code>invoice-&lt;id&gt;.txt</code> as an attachment.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Upload">
+<pre><code>from pathlib import Path
+
+def test_upload_avatar_from_disk(logged_in_page, tmp_path: Path):
+    page = logged_in_page
+    page.goto("/account")
+    avatar = tmp_path / "avatar.png"
+    avatar.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 92)          # 100 bytes
+    page.get_by_label("Avatar").set_input_files(avatar)           # works on hidden inputs too
+    page.get_by_role("button", name="Upload").click()
+    expect(page.locator("#upload-msg")).to_have_text("Uploaded avatar.png (100 bytes)")
+
+
+def test_upload_from_memory(logged_in_page):
+    page = logged_in_page
+    page.goto("/account")
+    page.get_by_label("Avatar").set_input_files(
+        {"name": "avatar.png", "mimeType": "image/png", "buffer": b"fake image bytes"}   # no temp file
+    )
+    page.get_by_role("button", name="Upload").click()
+    expect(page.locator("#upload-msg")).to_have_text("Uploaded avatar.png (16 bytes)")
+
+# several files: set_input_files([path1, path2])   clear the selection: set_input_files([])</code></pre>
+    </div>
+    <div class="tabpane" data-tab="File chooser">
+<pre><code># When there is no &lt;input&gt; you can target (a custom "Browse..." button that opens the
+# operating-system dialog), catch the file chooser instead:
+with page.expect_file_chooser() as fc_info:
+    page.get_by_label("Avatar").click()
+file_chooser = fc_info.value
+file_chooser.set_files(tmp_path / "me.jpg")            # file_chooser.is_multiple() tells you if several are allowed</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Download">
+<pre><code>def test_download_invoice(page, tmp_path):
+    page.goto("/products")                                          # gets ShopBot's session cookie
+    page.request.post("/api/cart", data={"product_id": 1, "qty": 2})   # fast set-up, same cookies
+    page.goto("/checkout")
+    page.get_by_label("Full name").fill("Alice Liddell")
+    page.get_by_label("Email").fill("alice@example.com")
+    page.get_by_label("Postcode").fill("OX1 1AA")
+    page.get_by_label("I accept the terms").check()
+    page.get_by_role("button", name="Place order").click()
+    order_id = page.get_by_test_id("order-id").inner_text()
+
+    with page.expect_download() as download_info:
+        page.get_by_role("link", name="Download invoice").click()
+    download = download_info.value
+    assert download.suggested_filename == f"invoice-{order_id}.txt"
+    target = tmp_path / download.suggested_filename
+    download.save_as(target)                                        # the temp copy is deleted with the context
+    assert target.read_text() == f"Invoice for order {order_id}\n"</code></pre>
+    </div>
+  </div>
+  <p class="muted">Downloads are accepted by default. <code>download.path()</code> waits for the download and returns its temporary location; <code>download.failure()</code> returns an error message or <code>None</code>. A PDF that opens in the built-in viewer instead of downloading is a navigation, not a download: fetch it with <code>page.request.get()</code> and check the bytes instead.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="javascript">Running JavaScript: evaluate, add_init_script, expose_function</h2>
+  <p>Sometimes you need to reach inside the page: read a value the UI does not show, prepare state before the app starts, or let page code call back into Python.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>API</th><th>Runs</th><th>Typical use</th></tr>
+      <tr><td><code>page.evaluate(js, arg)</code></td><td>Once, now, in the page; returns a JSON-serialisable result (promises are awaited)</td><td>Read <code>localStorage</code>, timings, computed values</td></tr>
+      <tr><td><code>locator.evaluate(js)</code> / <code>evaluate_all(js)</code></td><td>With the element (or all matching elements) as the first argument</td><td>Computed style, bounding boxes, collecting a list of prices</td></tr>
+      <tr><td><code>page.evaluate_handle(js)</code></td><td>Returns a handle to a live JS object instead of a copy</td><td>Rare: passing DOM objects back into other calls</td></tr>
+      <tr><td><code>page.add_init_script(js)</code> / <code>context.add_init_script(js)</code></td><td>Before any page script, in <strong>every</strong> new document and frame</td><td>Stub <code>Math.random</code>, set feature flags, install observers, fake APIs</td></tr>
+      <tr><td><code>page.expose_function(name, fn)</code> / <code>expose_binding</code></td><td>Puts <code>window.name()</code> in the page; calls run your Python and return a promise</td><td>Collect events or metrics in Python, call a helper the page cannot run</td></tr>
+    </table>
+  </div>
+<pre><code>import hashlib
+
+def test_evaluate_examples(page):
+    page.goto("http://127.0.0.1:8000/products")
+    assert page.evaluate("() =&gt; document.title") == "Products - ShopBot"
+    assert page.evaluate("([a, b]) =&gt; a + b", [2, 3]) == 5                     # pass ONE argument (use a list or dict)
+    prices = page.get_by_test_id("product-card").locator(".price").evaluate_all(
+        "els =&gt; els.map(e =&gt; parseFloat(e.textContent.replace(/[^0-9.]/g, '')))")
+    assert prices == [12.0, 39.5, 24.99, 9.5]
+
+
+def test_init_script_runs_before_the_app(page):
+    page.add_init_script("Math.random = () =&gt; 0.42; window.__events = [];")
+    page.goto("http://127.0.0.1:8000/products")
+    assert page.evaluate("Math.random()") == 0.42
+    page.goto("http://127.0.0.1:8000/cart")               # applied again on every navigation
+    assert page.evaluate("Math.random()") == 0.42
+
+
+def test_page_calls_python(page):
+    clicks = []
+    page.expose_function("reportClick", lambda label: clicks.append(label))
+    page.add_init_script("""
+      document.addEventListener('click', e =&gt; window.reportClick(e.target.textContent.trim()), true);
+    """)
+    page.goto("http://127.0.0.1:8000/products")
+    page.get_by_role("button", name="Search").click()
+    expect(page.get_by_test_id("result-count")).to_have_text("4 results")
+    assert clicks == ["Search"]
+
+    page.expose_function("sha256", lambda text: hashlib.sha256(text.encode()).hexdigest())
+    page.reload()                                           # exposed functions survive navigations
+    assert page.evaluate("async () =&gt; await window.sha256('shopbot')") == hashlib.sha256(b"shopbot").hexdigest()</code></pre>
+  <div class="callout">
+    <strong>Do not use <code>evaluate</code> to act.</strong> <code>page.evaluate("document.querySelector('button').click()")</code> skips every actionability check: it "clicks" hidden,
+    disabled or covered buttons that a real user could not, so the test passes while the feature is broken. Act with locators; use evaluate to <em>read</em> or to <em>prepare</em>.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="visual">Visual regression testing in Python</h2>
+  <p>
+    Functional assertions do not notice that the Checkout button turned white on white or that the product grid collapsed into one column. A <strong>visual regression test</strong>
+    takes a screenshot, compares it with an approved <em>baseline</em> image, and fails when too many pixels differ. The Node test runner has <code>toHaveScreenshot</code>;
+    <strong>Python has no built-in equivalent</strong>, so you either write a small helper with Pillow (below, about 40 lines) or use a community plugin.
+  </p>
+  <div class="demo" id="diff-demo">
+    <h3>Pixel diff: thresholds, masks and noise</h3>
+    <div class="bar">
+      <label>Scenario <select id="df-scn">
+        <option value="same">Same build, other run (anti-aliasing noise)</option>
+        <option value="moved">Real bug: button moved 2 px</option>
+        <option value="font">Baseline from macOS, run on Linux (fonts)</option>
+      </select></label>
+      <label>Pixel threshold <input type="range" id="df-thr" min="0" max="120" value="24"> <b id="df-thr-v">24</b></label>
+      <label>Max diff ratio <select id="df-ratio"><option value="0">0 %</option><option value="0.001" selected>0.1 %</option><option value="0.01">1 %</option><option value="0.05">5 %</option></select></label>
+    </div>
+    <div class="bar">
+      <label><input type="checkbox" id="df-mask"> mask the cart count (<code>mask=[...]</code>)</label>
+      <label><input type="checkbox" id="df-anim"> <code>animations="disabled"</code></label>
+    </div>
+    <div class="diffpanels stage" id="df-panels"></div>
+    <div class="verdict" id="df-verdict"></div>
+  </div>
+
+  <div class="codefile"><div class="fname">tests/conftest.py (visual helper)</div>
+<pre><code>from io import BytesIO
+from pathlib import Path
+
+import pytest
+from PIL import Image, ImageChops
+
+BASELINE_DIR = Path(__file__).parent / "__screenshots__"      # commit these PNGs
+
+
+def pytest_addoption(parser):
+    parser.addoption("--update-baselines", action="store_true", help="Rewrite visual baselines")
+
+
+@pytest.fixture
+def assert_screenshot(request, output_path):                   # output_path: pytest-playwright's per-test folder
+    update = request.config.getoption("--update-baselines")
+
+    def check(target, name, *, mask=(), pixel_threshold=24, max_diff_ratio=0.001):
+        png = target.screenshot(animations="disabled", caret="hide", mask=list(mask))   # page or locator
+        actual = Image.open(BytesIO(png)).convert("RGB")
+        baseline_path = BASELINE_DIR / f"{name}.png"
+
+        if update or not baseline_path.exists():
+            baseline_path.parent.mkdir(parents=True, exist_ok=True)
+            actual.save(baseline_path)
+            if not update:
+                pytest.fail(f"No baseline for {name!r}: created {baseline_path}. Review it, commit it, re-run.")
+            return
+
+        expected = Image.open(baseline_path).convert("RGB")
+        if expected.size != actual.size:
+            pytest.fail(f"{name}: size changed {expected.size} -&gt; {actual.size}")
+
+        diff = ImageChops.difference(expected, actual).convert("L")      # 0..255 per pixel
+        changed = diff.point(lambda v: 255 if v &gt; pixel_threshold else 0)
+        n_changed = changed.histogram()[255]
+        ratio = n_changed / (actual.width * actual.height)
+        if ratio &gt; max_diff_ratio:
+            out = Path(output_path)                                       # test-results/&lt;test-id&gt;/
+            out.mkdir(parents=True, exist_ok=True)
+            actual.save(out / f"{name}-actual.png")
+            overlay = actual.copy()
+            overlay.paste((255, 0, 0), mask=changed)                     # changed pixels in red
+            overlay.save(out / f"{name}-diff.png")
+            pytest.fail(f"{name}: {n_changed} pixels differ ({ratio:.3%} &gt; {max_diff_ratio:.3%}). "
+                        f"See {out}. If the change is intended, run with --update-baselines.")
+
+    return check</code></pre></div>
+
+  <div class="codefile"><div class="fname">tests/visual/test_visual.py</div>
+<pre><code>import pytest
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    # pin everything that changes pixels
+    return {**browser_context_args, "viewport": {"width": 1280, "height": 720}, "device_scale_factor": 1,
+            "locale": "en-GB", "timezone_id": "Europe/London", "color_scheme": "light"}
+
+
+def test_products_page(page, assert_screenshot):
+    page.goto("/products")
+    assert_screenshot(page, "products", mask=[page.get_by_test_id("cart-count")])   # the count varies
+
+
+def test_search_form(page, assert_screenshot):
+    page.goto("/products")
+    assert_screenshot(page.get_by_role("search"), "search-form")                    # one component only</code></pre></div>
+
+  <h3>The baseline workflow</h3>
+<pre class="term"><code><span class="c"># 1. first run: no baseline yet, so the helper saves one and fails on purpose</span>
+pytest tests/visual
+<span class="c">#    Failed: No baseline for 'products': created tests/__screenshots__/products.png. Review it, commit it, re-run.</span>
+
+<span class="c"># 2. later runs compare; a real change fails with a diff image</span>
+<span class="c">#    Failed: products: 1359 pixels differ (0.147% &gt; 0.100%). See test-results/test-visual-py-test-products-page-chromium.</span>
+
+<span class="c"># 3. the change was intended (a redesign): accept it, review the PNG diff in the pull request</span>
+pytest tests/visual --update-baselines
+git add tests/__screenshots__ &amp;&amp; git commit -m "Update visual baselines for new header"</code></pre>
+  <ul>
+    <li><strong>Generate baselines where the tests run.</strong> Fonts, anti-aliasing and GPU rendering differ between Windows, macOS and Linux. Create and compare baselines in the same Docker image as CI (see <a href="../debugging-ci/index.html">Debugging and CI</a>), one set per browser.</li>
+    <li><strong>Remove what legitimately changes</strong>: <code>mask=[locator, ...]</code> paints a box over dynamic parts (dates, counters, ads, avatars); <code>style="..."</code> injects CSS during the screenshot (<code>visibility: hidden</code> on a carousel); <code>page.clock.set_fixed_time(...)</code> freezes dates; mock API data with <code>page.route</code>.</li>
+    <li><strong>Remove motion</strong>: <code>animations="disabled"</code> finishes finite CSS animations and transitions and cancels infinite ones; <code>caret="hide"</code> (the default) hides the text cursor.</li>
+    <li><strong>Prefer component screenshots</strong> (<code>locator.screenshot()</code>) over full pages: smaller diffs, fewer unrelated failures, clearer ownership.</li>
+    <li><strong>Plugins</strong> if you would rather not maintain a helper: <a href="https://pypi.org/project/pytest-playwright-visual-snapshot/">pytest-playwright-visual-snapshot</a> provides an <code>assert_snapshot(page)</code> fixture with a pixelmatch comparison, an <code>--update-snapshots</code> flag, and ini settings for threshold and global masks. Hosted services (Percy, Applitools, Chromatic, Argos and similar) add review UIs and smarter, perceptual comparison.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="a11y">Accessibility testing</h2>
+  <p>
+    Accessible pages are better for everyone, are a legal requirement in many places, and, as a bonus, are exactly what makes role-based locators and AI agents work well.
+    Playwright offers two complementary tools: <strong>ARIA snapshots</strong> (assert on the accessibility tree that screen readers see) and <strong>axe-core</strong>
+    scans (automatic rule checks such as missing labels, alt text and contrast).
+  </p>
+  <h3>ARIA snapshots</h3>
+  <p><code>locator.aria_snapshot()</code> returns the accessibility tree as YAML. This is the real output for ShopBot's search form:</p>
+<pre><code>print(page.get_by_role("search").aria_snapshot())
+
+- search:
+  - text: Search
+  - textbox "Search":
+    - /placeholder: Search products
+  - text: Category
+  - combobox "Category":
+    - option "All" [selected]
+    - option "Kitchen"
+    - option "Office"
+  - button "Search"</code></pre>
+  <p><code>expect(...).to_match_aria_snapshot()</code> compares against a template. Matching is <strong>partial</strong>: you list only what matters, children in order, and attributes or text you omit are ignored. Values in <code>/slashes/</code> are regular expressions.</p>
+<pre><code>def test_search_form_structure(page):
+    page.goto("/products")
+    expect(page.get_by_role("search")).to_match_aria_snapshot("""
+      - search:
+        - textbox "Search"
+        - combobox "Category":
+          - option "All" [selected]
+          - option "Kitchen"
+          - option "Office"
+        - button "Search"
+    """)
+
+
+def test_results_structure(page):
+    page.goto("/products?q=mug")
+    expect(page.get_by_role("main")).to_match_aria_snapshot("""
+      - heading "Products" [level=1]
+      - paragraph: /\\d+ results?/
+      - article:
+        - heading "Ceramic Mug" [level=2]
+    """)</code></pre>
+  <p class="muted">An ARIA snapshot test fails if someone replaces the <code>&lt;button&gt;</code> with a clickable <code>&lt;div&gt;</code>, removes a label or breaks heading levels, even if the page still <em>looks</em> identical. <code>aria_snapshot(mode="ai")</code> adds element refs like <code>[ref=f1e5]</code>, the format AI agents use (see <a href="../ai-agents/index.html">Playwright for AI agents</a>).</p>
+
+  <h3>axe-core scans</h3>
+  <p><a href="https://github.com/dequelabs/axe-core">axe-core</a> is the de facto open-source rule engine (WCAG 2.x A/AA and best practices). Run it inside the page with a small package, or inject the script yourself.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="axe-playwright-python">
+<pre class="term"><code>pip install axe-playwright-python      <span class="c"># bundles axe.min.js</span></code></pre>
+<pre><code>import pytest
+from axe_playwright_python.sync_playwright import Axe
+
+axe = Axe()
+
+
+@pytest.mark.parametrize("path", ["/products", "/products/1", "/login", "/checkout", "/chat"])
+def test_no_serious_accessibility_violations(page, path):
+    page.goto(path)
+    results = axe.run(page)
+    serious = [v for v in results.response["violations"] if v["impact"] in ("serious", "critical")]
+    assert not serious, results.generate_report()</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Inject axe.min.js yourself">
+<pre><code># vendor a pinned copy of axe.min.js into your repository (no network in CI)
+AXE = Path(__file__).parent / "vendor" / "axe.min.js"
+
+def test_login_is_wcag_aa(page):
+    page.goto("/login")
+    page.add_script_tag(path=AXE)               # or url="https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.10.2/axe.min.js"
+    violations = page.evaluate("""async () =&gt; {
+        const r = await axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa']}});
+        return r.violations.map(v =&gt; ({id: v.id, impact: v.impact, help: v.help,
+                                       targets: v.nodes.map(n =&gt; n.target.join(' '))}));
+    }""")
+    assert violations == [], violations</code></pre>
+      <p class="muted">If the page's Content Security Policy blocks injected scripts, create the context with <code>bypass_csp=True</code>, or run the file's text with <code>page.evaluate(AXE.read_text())</code>.</p>
+    </div>
+  </div>
+  <p>ShopBot passes all five pages with zero violations. On a page with a picture without <code>alt</code>, an icon-only button and light grey text, the report looks like this (abridged, real output):</p>
+<pre class="term"><code>Found 3 accessibility violations:
+Rule Violated:
+button-name - Ensure buttons have discernible text
+	Impact Level: critical
+	Tags: ['cat.name-role-value', 'wcag2a', 'wcag412', ...]
+	1)	Target: button
+		Snippet: &lt;button&gt;&lt;/button&gt;
+Rule Violated:
+color-contrast - Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds
+	Impact Level: serious
+		* Element has insufficient color contrast of 1.6 (foreground color: #cccccc, ...
+Rule Violated:
+image-alt - ...</code></pre>
+  <p>Also test what automated scanners cannot see, such as <strong>keyboard access</strong>:</p>
+<pre><code>def test_search_works_with_the_keyboard(page):
+    page.goto("/products")
+    page.get_by_placeholder("Search products").focus()
+    page.keyboard.press("Tab")
+    expect(page.get_by_role("combobox", name="Category")).to_be_focused()
+    page.keyboard.press("Tab")
+    expect(page.get_by_role("button", name="Search")).to_be_focused()
+    page.keyboard.press("Enter")
+    expect(page.get_by_test_id("result-count")).to_have_text("4 results")</code></pre>
+  <div class="callout">Automated rules find only part of the real problems (commonly quoted at roughly a third to a half). Zero violations means "no known machine-detectable issues", not "accessible". Keep manual checks with a screen reader and keyboard, and test with <code>forced_colors="active"</code> and <code>reduced_motion="reduce"</code> too.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="performance">Performance measurements</h2>
+  <p>
+    Playwright is not a load-testing tool (use Locust or k6 for that) and not a full audit tool (use Lighthouse), but a real browser is the right place to measure what one
+    user experiences: page load timings, web vitals, request timings, and the effect of a slow network or CPU.
+  </p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Navigation timing">
+<pre><code>def test_products_page_load_budget(page):
+    page.goto("/products")
+    nav = page.evaluate("() =&gt; performance.getEntriesByType('navigation')[0].toJSON()")
+    timings = {
+        "ttfb_ms": nav["responseStart"] - nav["requestStart"],     # server think time + network
+        "dom_content_loaded_ms": nav["domContentLoadedEventEnd"],  # relative to navigation start
+        "load_ms": nav["loadEventEnd"],
+        "transfer_bytes": nav["transferSize"],
+    }
+    print(timings)    # e.g. {'ttfb_ms': 3.8, 'dom_content_loaded_ms': 17, 'load_ms': 46.9, 'transfer_bytes': 2267}
+    assert timings["load_ms"] &lt; 3000</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Web vitals (LCP, CLS)">
+<pre><code>VITALS = """
+window.__vitals = {lcp: 0, cls: 0};
+new PerformanceObserver(list =&gt; {
+  for (const e of list.getEntries()) window.__vitals.lcp = e.startTime;
+}).observe({type: 'largest-contentful-paint', buffered: true});
+new PerformanceObserver(list =&gt; {
+  for (const e of list.getEntries()) if (!e.hadRecentInput) window.__vitals.cls += e.value;
+}).observe({type: 'layout-shift', buffered: true});
+"""
+
+def test_web_vitals(page):
+    page.add_init_script(VITALS)                  # observers exist before the page paints
+    page.goto("/products")
+    page.wait_for_load_state("load")
+    vitals = page.evaluate("window.__vitals")     # e.g. {'lcp': 92, 'cls': 0}
+    assert vitals["lcp"] &lt; 2500                   # "good" LCP threshold
+    assert vitals["cls"] &lt; 0.1                    # "good" CLS threshold</code></pre>
+      <p class="muted">These observers are supported in Chromium-based browsers. INP needs real interactions; for the full set inject Google's <code>web-vitals</code> library with <code>add_script_tag</code> and report values through <code>expose_function</code>.</p>
+    </div>
+    <div class="tabpane" data-tab="CDP: metrics and throttling">
+<pre><code>def test_checkout_on_a_slow_phone(page, browser_name):
+    if browser_name != "chromium":
+        pytest.skip("CDP sessions are Chromium only")
+    cdp = page.context.new_cdp_session(page)
+
+    cdp.send("Performance.enable")
+    page.goto("/products")
+    metrics = {m["name"]: m["value"] for m in cdp.send("Performance.getMetrics")["metrics"]}
+    print(metrics["JSHeapUsedSize"], metrics["Nodes"], metrics["LayoutCount"], metrics["TaskDuration"])
+
+    cdp.send("Network.enable")
+    cdp.send("Network.emulateNetworkConditions", {
+        "offline": False, "latency": 400,                                # ms added per request
+        "downloadThroughput": 50 * 1024, "uploadThroughput": 20 * 1024,   # bytes per second
+    })
+    cdp.send("Emulation.setCPUThrottlingRate", {"rate": 4})              # 4x slower CPU
+    page.goto("/products")
+    load = page.evaluate("performance.getEntriesByType('navigation')[0].loadEventEnd")
+    assert load &lt; 5000                                                   # measured: about 490 ms
+    cdp.detach()</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Request timing">
+<pre><code>def test_add_to_cart_api_is_fast(page):
+    page.goto("/products/1")
+    with page.expect_response("**/api/cart") as resp_info:
+        page.get_by_role("button", name="Add to cart").click()
+    response = resp_info.value
+    response.finished()                           # wait for the body, otherwise responseEnd is -1
+    timing = response.request.timing              # ms relative to timing["startTime"]
+    assert timing["responseEnd"] &lt; 500</code></pre>
+    </div>
+  </div>
+  <div class="callout tip">Browser timings are noisy. Keep performance checks in a separate, clearly marked job (<code>@pytest.mark.perf</code>), take the <strong>median of several runs</strong>, use generous budgets that catch regressions (a 3x slowdown) rather than tiny ones, and record the numbers over time rather than only pass/fail.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="multi-user">Several users in one test</h2>
+  <p>
+    Some features only exist between people: chat, comments, shared documents, "someone else just bought the last one", admin approves what a customer submitted.
+    Because contexts are isolated (own cookies, storage and cache), <strong>one browser with two contexts is two users</strong>, cheaply, in the same test.
+  </p>
+  <div class="demo" id="chat-demo">
+    <h3>Two contexts, two users, one conversation</h3>
+    <div class="stage"></div>
+  </div>
+  <p>ShopBot's own chat is with a bot, so first a check ShopBot can do: two shoppers in one test never share a cart.</p>
+<pre><code>def test_carts_are_isolated_between_users(browser):
+    alice_ctx = browser.new_context(base_url="http://127.0.0.1:8000")
+    guest_ctx = browser.new_context(base_url="http://127.0.0.1:8000")
+    alice, guest = alice_ctx.new_page(), guest_ctx.new_page()
+
+    alice.goto("/login")
+    alice.get_by_label("Email").fill("alice@example.com")
+    alice.get_by_label("Password").fill("wonderland")
+    alice.get_by_role("button", name="Log in").click()
+    alice.goto("/products/2")
+    alice.get_by_role("button", name="Add to cart").click()
+    expect(alice.get_by_role("status")).to_have_text("Added to cart")
+
+    guest.goto("/cart")
+    expect(guest.get_by_role("link", name="Log in")).to_be_visible()         # not logged in
+    expect(guest.get_by_role("status")).to_have_text("Your cart is empty.")  # and not sharing Alice's cart
+    alice_ctx.close()
+    guest_ctx.close()</code></pre>
+  <p>For a real-time feature, imagine ShopBot adds customer-to-staff messaging at <code>/messages/{room}</code>, with a list labelled "Messages", items with <code>data-testid="message"</code>, a "Message" text box and a Send button. A fixture hands each test two logged-in pages:</p>
+<pre><code>import pytest
+from playwright.sync_api import expect
+
+
+@pytest.fixture
+def two_users(browser):
+    alice_ctx = browser.new_context(base_url="http://127.0.0.1:8000", storage_state="auth/alice.json")
+    bob_ctx = browser.new_context(base_url="http://127.0.0.1:8000", storage_state="auth/bob.json")
+    yield alice_ctx.new_page(), bob_ctx.new_page()
+    alice_ctx.close()
+    bob_ctx.close()
+
+
+def test_message_reaches_the_other_user(two_users):
+    alice, bob = two_users
+    alice.goto("/messages/order-1042")
+    bob.goto("/messages/order-1042")
+
+    alice.get_by_role("textbox", name="Message").fill("Is the mug dishwasher safe?")
+    alice.get_by_role("button", name="Send").click()
+    expect(bob.get_by_test_id("message").last).to_have_text("alice: Is the mug dishwasher safe?")
+
+    bob.get_by_role("textbox", name="Message").fill("Yes, it is.")
+    bob.get_by_role("button", name="Send").click()
+    expect(alice.get_by_test_id("message").last).to_have_text("bob: Yes, it is.")
+    expect(alice.get_by_test_id("message")).to_have_count(2)</code></pre>
+  <p class="muted">The <code>storage_state</code> files come from logging each user in once (see <a href="../network-api/index.html#auth">reusing login state</a>). This pattern was verified against a small two-user chat app with exactly this markup. Note <code>get_by_role("textbox", name="Message")</code>: <code>get_by_label("Message")</code> would also match the list labelled "Messages" (label matching is a case-insensitive substring by default) and fail with a strict-mode violation.</p>
+  <ul>
+    <li><strong>Two contexts, not two pages.</strong> Two pages in one context share cookies, so they are the same user in two tabs (useful for testing "logged out in the other tab").</li>
+    <li><strong>Mixed roles</strong>: an admin context approves a review that a customer context submitted, then the customer context sees it published.</li>
+    <li><strong>Different devices</strong>: <code>browser.new_context(**playwright.devices["iPhone 15"], storage_state=...)</code> for one of them.</li>
+    <li><strong>Different browsers</strong> in one test need two <code>Browser</code> objects (for example <code>playwright.firefox.launch()</code>); usually not worth it.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="usecases">
+    <div><b>Responsive layout checks</b>Every key page on 4 devices: no horizontal scroll, menu collapses, buttons stay tappable.</div>
+    <div><b>Internationalisation</b>German and Japanese users see correct number, currency and date formats; long translations do not break layout.</div>
+    <div><b>Time-zone bugs</b>Order "placed today" near midnight for a user in Sydney; delivery dates across DST changes.</div>
+    <div><b>Session and token expiry</b>Clock fast-forward to the warning, the auto-logout and the refresh-token flow.</div>
+    <div><b>Flash sales and countdowns</b><code>set_fixed_time</code> before, during and after the sale window.</div>
+    <div><b>Store finder</b>Geolocation granted, denied and moved; the nearest shop changes.</div>
+    <div><b>Offline-first apps</b>Service worker caching, "you are offline" messages, queued actions synced on reconnect.</div>
+    <div><b>OAuth and payment popups</b><code>expect_popup</code> for "Sign in with...", 3-D Secure frames with <code>frame_locator</code>.</div>
+    <div><b>Document flows</b>Upload an ID scan, download a signed PDF, check its name and size.</div>
+    <div><b>Design-system protection</b>Component screenshots catch unintended CSS changes in a shared library.</div>
+    <div><b>Accessibility gates in CI</b>axe scan of every page template; ARIA snapshot of navigation and forms.</div>
+    <div><b>Performance budgets</b>Fail the build if the product page's LCP on a throttled phone triples.</div>
+    <div><b>Collaboration features</b>Chat, comments, live cursors, "item reserved by another user".</div>
+    <div><b>Moderation workflows</b>Customer submits, admin approves, customer sees the result: three steps, two contexts.</div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="mistakes">Common mistakes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Mistake</th><th>What happens</th><th>Fix</th></tr>
+      <tr><td>Calling <code>clock.install()</code> after <code>page.goto()</code></td><td>Timers the page scheduled during load are real ones; <code>fast_forward</code> never fires them (verified), and values computed from the real <code>Date</code> at load stay real</td><td>Install first, then navigate</td></tr>
+      <tr><td><code>pause_at()</code> a time at or before the installed time</td><td><em>"Cannot fast-forward to the past"</em></td><td>Install slightly earlier than the time you pause at</td></tr>
+      <tr><td>Naive <code>datetime</code> for the clock</td><td>Different results on machines in different time zones</td><td><code>tzinfo=dt.timezone.utc</code> or ISO strings with <code>Z</code></td></tr>
+      <tr><td>Starting the click, then waiting for the popup</td><td>The popup opened before you listened; the wait times out</td><td><code>with page.expect_popup() as info:</code> around the click</td></tr>
+      <tr><td><code>page.locator(...)</code> for an element inside an iframe</td><td>Never found; times out</td><td><code>page.frame_locator(...)</code> or <code>locator.content_frame</code></td></tr>
+      <tr><td>A dialog listener that never accepts or dismisses</td><td>The page freezes and the action hangs</td><td>Always call <code>accept()</code> or <code>dismiss()</code>; use <code>page.once</code></td></tr>
+      <tr><td>Asserting inside an event handler</td><td>The exception is not a clean test failure</td><td>Record into a list, assert after the action</td></tr>
+      <tr><td>Clicking with <code>evaluate("el.click()")</code></td><td>Tests pass for buttons users cannot click</td><td>Act with locators</td></tr>
+      <tr><td>Baselines from a developer laptop, compared in Linux CI</td><td>Every visual test fails on font rendering</td><td>Generate and compare baselines in the same Docker image</td></tr>
+      <tr><td>Full-page screenshots with dates, counts and ads</td><td>Constant false failures; people start ignoring them</td><td><code>mask=</code>, <code>style=</code>, fixed clock, mocked data, component screenshots</td></tr>
+      <tr><td>Treating a passing axe scan as "accessible"</td><td>Keyboard traps, bad focus order and unclear text go unnoticed</td><td>Add keyboard tests, ARIA snapshots and manual reviews</td></tr>
+      <tr><td>Strict performance budgets in the functional suite</td><td>Flaky failures on busy CI runners</td><td>A separate perf job, medians, generous budgets, trends</td></tr>
+      <tr><td>Two pages in one context to simulate two users</td><td>They share cookies: it is one user</td><td>One context per user</td></tr>
+      <tr><td>Believing a device descriptor equals the device</td><td>Safari-only bugs slip through when you run Chromium</td><td>Also run <code>--browser webkit</code>; use real devices for release checks</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Task</th><th>Code</th></tr>
+      <tr><td>Phone context</td><td><code>browser.new_context(**playwright.devices["iPhone 15"])</code> or <code>pytest --device "iPhone 15"</code></td></tr>
+      <tr><td>Locale and time zone</td><td><code>new_context(locale="de-DE", timezone_id="Europe/Berlin")</code></td></tr>
+      <tr><td>Location</td><td><code>new_context(geolocation={"latitude": 51.5, "longitude": -0.12}, permissions=["geolocation"])</code>; <code>context.set_geolocation(...)</code></td></tr>
+      <tr><td>Dark mode, reduced motion</td><td><code>page.emulate_media(color_scheme="dark", reduced_motion="reduce")</code></td></tr>
+      <tr><td>Offline</td><td><code>context.set_offline(True)</code></td></tr>
+      <tr><td>Touch</td><td><code>locator.tap()</code>, <code>page.touchscreen.tap(x, y)</code> (needs <code>has_touch</code>)</td></tr>
+      <tr><td>Fake time</td><td><code>page.clock.install(time=...)</code> &rarr; <code>pause_at</code> / <code>run_for</code> / <code>fast_forward</code> / <code>resume</code></td></tr>
+      <tr><td>Freeze the date</td><td><code>page.clock.set_fixed_time("2026-12-24T18:00:00Z")</code></td></tr>
+      <tr><td>New tab</td><td><code>with page.expect_popup() as info: ...click()</code> &rarr; <code>info.value</code></td></tr>
+      <tr><td>Inside an iframe</td><td><code>page.frame_locator('iframe[title="Loyalty card"]').get_by_role(...)</code></td></tr>
+      <tr><td>Answer a dialog</td><td><code>page.once("dialog", lambda d: d.accept())</code> before the action</td></tr>
+      <tr><td>Upload</td><td><code>locator.set_input_files(path | [paths] | {"name", "mimeType", "buffer"})</code></td></tr>
+      <tr><td>Download</td><td><code>with page.expect_download() as info: ...</code> &rarr; <code>info.value.save_as(path)</code></td></tr>
+      <tr><td>Read from the page</td><td><code>page.evaluate("() =&gt; ...")</code>, <code>locator.evaluate("el =&gt; ...")</code></td></tr>
+      <tr><td>Before the app starts</td><td><code>page.add_init_script("...")</code> (every navigation)</td></tr>
+      <tr><td>Page calls Python</td><td><code>page.expose_function("name", fn)</code></td></tr>
+      <tr><td>Stable screenshot</td><td><code>screenshot(animations="disabled", mask=[...], style="...")</code></td></tr>
+      <tr><td>Accessibility tree</td><td><code>locator.aria_snapshot()</code>, <code>expect(locator).to_match_aria_snapshot("...")</code></td></tr>
+      <tr><td>axe scan</td><td><code>Axe().run(page).response["violations"]</code> (axe-playwright-python)</td></tr>
+      <tr><td>Load timings</td><td><code>page.evaluate("performance.getEntriesByType('navigation')[0].toJSON()")</code></td></tr>
+      <tr><td>Chromium internals</td><td><code>cdp = context.new_cdp_session(page)</code>; <code>cdp.send("Performance.getMetrics")</code></td></tr>
+      <tr><td>Two users</td><td>Two <code>browser.new_context(storage_state=...)</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Official guides: <a href="https://playwright.dev/python/docs/emulation">Emulation</a>, <a href="https://playwright.dev/python/docs/clock">Clock</a>, <a href="https://playwright.dev/python/docs/pages">Pages</a>, <a href="https://playwright.dev/python/docs/frames">Frames</a>, <a href="https://playwright.dev/python/docs/dialogs">Dialogs</a>, <a href="https://playwright.dev/python/docs/input">Input (uploads)</a>, <a href="https://playwright.dev/python/docs/downloads">Downloads</a>, <a href="https://playwright.dev/python/docs/evaluating">Evaluating JavaScript</a>, <a href="https://playwright.dev/python/docs/screenshots">Screenshots</a>, <a href="https://playwright.dev/python/docs/aria-snapshots">ARIA snapshots</a>, <a href="https://playwright.dev/python/docs/api/class-cdpsession">CDPSession</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="exercises">Exercises</h2>
+
+  <details class="prob"><summary>1. Prices for a Japanese user <span class="diff easy">easy</span></summary>
+    <p class="q">Write a test with a context for a Japanese user in Tokyo, and assert that <code>Intl.NumberFormat</code> formats 1234.5 yen as <code>"￥1,235"</code> and that 2026-12-24T18:00Z is the 25th in Tokyo.</p>
+<pre><code>def test_japanese_user(browser):
+    context = browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo")
+    page = context.new_page()
+    page.goto("http://127.0.0.1:8000/")
+    yen = page.evaluate("() =&gt; new Intl.NumberFormat(undefined, {style: 'currency', currency: 'JPY'}).format(1234.5)")
+    assert yen == "￥1,235"
+    assert page.evaluate("() =&gt; new Date('2026-12-24T18:00:00Z').getDate()") == 25    # UTC+9
+    context.close()</code></pre>
+  </details>
+
+  <details class="prob"><summary>2. A "sale ends" countdown <span class="diff med">medium</span></summary>
+    <p class="q">A banner counts down from 10:00 and then shows "Sale over". Using the inline page below, check the text after 3 seconds and after 10 minutes without waiting.</p>
+<pre><code>SALE = """&lt;p id="left"&gt;&lt;/p&gt;&lt;script&gt;
+  const end = Date.now() + 10 * 60 * 1000, el = document.getElementById('left');
+  const tick = () =&gt; { const s = Math.max(0, Math.round((end - Date.now()) / 1000));
+    el.textContent = s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left` : 'Sale over'; };
+  tick(); setInterval(tick, 1000);
+&lt;/script&gt;"""
+
+def test_sale_countdown(page):
+    page.clock.install(time="2026-11-27T07:59:00Z")
+    page.clock.pause_at("2026-11-27T08:00:00Z")       # frozen BEFORE the page loads
+    page.set_content(SALE)                            # so end is exactly 08:10:00
+    expect(page.locator("#left")).to_have_text("10:00 left")
+    page.clock.run_for(3000)
+    expect(page.locator("#left")).to_have_text("9:57 left")
+    page.clock.fast_forward("10:00")
+    expect(page.locator("#left")).to_have_text("Sale over")</code></pre>
+    <p class="muted">Pausing before the page loads matters here. If you load first and pause afterwards, the page computes <code>end</code> from a moment that depends on how long loading took, and the text after <code>run_for</code> is sometimes 9:56 and sometimes 9:57: a flaky test made of fake time.</p>
+  </details>
+
+  <details class="prob"><summary>3. Confirm and verify in a popup <span class="diff med">medium</span></summary>
+    <p class="q">From ShopBot's home page, open the Terms tab, check its heading, close it, and prove that the first tab still works by searching for "pan" there.</p>
+<pre><code>def test_terms_then_search(page):
+    page.goto("/")
+    with page.expect_popup() as info:
+        page.get_by_role("link", name="Terms (opens a new tab)").click()
+    terms = info.value
+    expect(terms.get_by_role("heading", level=1)).to_have_text("Terms and conditions")
+    terms.close()
+
+    page.get_by_role("link", name="Products", exact=True).click()
+    page.get_by_placeholder("Search products").fill("pan")
+    page.get_by_role("button", name="Search").click()
+    expect(page.get_by_test_id("product-card")).to_have_count(1)</code></pre>
+  </details>
+
+  <details class="prob"><summary>4. Accessibility gate with an allow-list <span class="diff med">medium</span></summary>
+    <p class="q">Your team has a known contrast issue on one page that design will fix next quarter. Write an axe test that fails on any serious or critical violation <em>except</em> <code>color-contrast</code> on <code>/checkout</code>, and prints the report.</p>
+<pre><code>KNOWN = {("/checkout", "color-contrast")}      # tracked in the backlog; remove when fixed
+
+@pytest.mark.parametrize("path", ["/products", "/products/1", "/login", "/checkout"])
+def test_a11y_gate(page, path):
+    page.goto(path)
+    results = Axe().run(page)
+    blocking = [v for v in results.response["violations"]
+                if v["impact"] in ("serious", "critical") and (path, v["id"]) not in KNOWN]
+    assert not blocking, "\n".join(f"{v['id']}: {v['help']} ({len(v['nodes'])} elements)" for v in blocking)</code></pre>
+  </details>
+
+  <details class="prob"><summary>5. A visual test that survives the cart count <span class="diff hard">hard</span></summary>
+    <p class="q">The header shows "Cart (n)", which changes whenever another test adds to the cart. Take a stable screenshot of ShopBot's product page for the Ceramic Mug, with the reviews list hidden (it will change as reviews arrive) and the count masked. Which baseline should you compare it against in CI?</p>
+<pre><code>def test_product_page_visual(page, assert_screenshot):
+    page.goto("/products/1")
+    page.add_style_tag(content='[aria-label="Reviews"] { visibility: hidden }')   # or screenshot(style=...)
+    assert_screenshot(page, "product-1-chromium", mask=[page.get_by_test_id("cart-count")])</code></pre>
+    <p class="muted">Compare against a baseline generated in the same Docker image and browser as CI (name baselines per browser), never one from a developer laptop. <code>visibility: hidden</code> keeps the layout identical, whereas <code>display: none</code> would move everything below it.</p>
+  </details>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

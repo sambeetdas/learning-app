@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security, Observability and Cost - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Security, observability and cost</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    Three concerns cut across every design. <strong>Security</strong>: only the right people and services can do the right things, and data is protected wherever it is.
+    <strong>Observability</strong>: you can tell what the system is doing and why, fast enough to fix problems before users suffer. <strong>Cost</strong>: the system stays affordable as it grows.
+    Interviewers often reserve the last minutes for exactly these topics.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="auth">Authentication and authorisation</h2>
+  <p><strong>Authentication</strong> proves who you are; <strong>authorisation</strong> decides what you may do. Do not build your own identity system: use a standard protocol and a managed identity provider.</p>
+  <div class="demo" id="oauth-demo">
+    <h3>OAuth 2.0 + OpenID Connect: authorisation code flow with PKCE</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Concept</th><th>What to know</th></tr>
+      <tr><td>OpenID Connect (OIDC)</td><td>Login on top of OAuth 2.0: an <em>ID token</em> tells the app who the user is</td></tr>
+      <tr><td>Access token</td><td>Short-lived (minutes to an hour), sent to APIs as <code>Authorization: Bearer ...</code>; usually a signed JWT that APIs validate locally</td></tr>
+      <tr><td>Refresh token</td><td>Long-lived, used to get new access tokens; store securely, rotate, and revoke on logout</td></tr>
+      <tr><td>PKCE</td><td>Protects the code exchange for public clients (mobile, SPA) that cannot keep a secret</td></tr>
+      <tr><td>Sessions vs tokens</td><td>Server-side sessions are easy to revoke; JWTs avoid a lookup per request but cannot be revoked before expiry (keep them short)</td></tr>
+      <tr><td>Service-to-service</td><td>Workload identities (Azure managed identities, AWS IAM roles) instead of stored secrets; mTLS inside a mesh</td></tr>
+      <tr><td>Authorisation models</td><td><strong>RBAC</strong> (roles), <strong>ABAC</strong> (attributes: department, region), <strong>ReBAC</strong> (relationships: "can edit if member of the document's folder", Google Zanzibar style)</td></tr>
+    </table>
+  </div>
+
+  <h2 id="data-protection">Protecting data and the network</h2>
+  <ul>
+    <li><strong>Encryption in transit</strong> (TLS 1.2+ everywhere, including internal traffic) and <strong>at rest</strong> (managed by the platform; customer-managed keys when compliance requires).</li>
+    <li><strong>Envelope encryption:</strong> data is encrypted with a data key, which is itself encrypted by a master key in a key management service (Key Vault, KMS). Rotating the master key does not require re-encrypting all data.</li>
+    <li><strong>Secrets</strong> live in a vault, never in code or config files; prefer identities that need no secret at all.</li>
+    <li><strong>Network:</strong> private endpoints for databases and storage, no public IPs on back ends, WAF and DDoS protection at the edge, network segmentation.</li>
+    <li><strong>Zero trust:</strong> never trust the network location; verify every request (identity, device, context), grant least privilege, assume breach and limit the blast radius.</li>
+    <li><strong>Privacy:</strong> minimise collected data, classify PII, mask it in logs, honour deletion requests, keep data in the required region (data residency).</li>
+    <li><strong>Application security:</strong> validate input, parameterise queries (SQL injection), encode output (XSS), check authorisation on every object (broken access control is the top web risk), rate-limit authentication endpoints, and keep dependencies patched.</li>
+    <li><strong>Audit logs:</strong> record who did what, when, immutably; essential for incident response and compliance.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="observability">Observability: logs, metrics, traces</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Signal</th><th>What it is</th><th>Best for</th></tr>
+      <tr><td><strong>Metrics</strong></td><td>Numeric time series (request rate, error rate, latency percentiles, CPU, queue depth)</td><td>Dashboards, alerting, capacity planning; cheap to store</td></tr>
+      <tr><td><strong>Logs</strong></td><td>Structured events (JSON) with context</td><td>Debugging specific requests; expensive at volume, so sample and set retention</td></tr>
+      <tr><td><strong>Traces</strong></td><td>The path of one request across services as a tree of timed spans</td><td>Finding which hop is slow or failing in a distributed system</td></tr>
+      <tr><td><strong>Profiles</strong></td><td>Where CPU and memory go inside a process</td><td>Performance tuning</td></tr>
+    </table>
+  </div>
+  <div class="demo">
+    <h3>A distributed trace</h3>
+    <div class="bar"><label>Scenario <select id="tr-s"><option value="ok">Normal request (180 ms)</option><option value="slow">Slow request (1.9 s)</option></select></label></div>
+    <div id="trace"></div>
+    <div class="caption" id="trace-msg"></div>
+  </div>
+  <ul>
+    <li><strong>Standardise on OpenTelemetry</strong> for instrumentation, and propagate a trace context (W3C <code>traceparent</code>) through HTTP calls and messages.</li>
+    <li><strong>What to measure:</strong> the four golden signals (latency, traffic, errors, saturation); RED for services (rate, errors, duration); USE for resources (utilisation, saturation, errors).</li>
+    <li><strong>Sampling:</strong> keep all errors and slow traces, sample the rest (tail-based sampling).</li>
+    <li><strong>Cardinality:</strong> metrics labelled by user id or URL explode in cost; use bounded labels and put details in traces/logs.</li>
+  </ul>
+
+  <h2 id="sre">SLIs, SLOs and error budgets</h2>
+  <p>An <strong>SLI</strong> is a measurement of what users care about (share of checkout requests that succeed in under 500 ms). An <strong>SLO</strong> is the target (99.9% over 28 days). The <strong>error budget</strong> is what is left (0.1%): while budget remains, ship features; when it burns too fast, slow down and fix reliability. Alert on <strong>burn rate</strong> (how fast the budget is being consumed), not on every blip.</p>
+  <div class="demo">
+    <h3>Error budget calculator</h3>
+    <div class="calc-grid">
+      <label>SLO (%)<input type="number" id="slo" value="99.9" step="0.01"></label>
+      <label>Window (days)<input type="number" id="win" value="28"></label>
+      <label>Requests per day<input type="number" id="rpd" value="5000000"></label>
+      <label>Current error rate (%)<input type="number" id="err" value="0.5" step="0.01"></label>
+    </div>
+    <div class="readout" id="slo-out"></div>
+  </div>
+  <p class="muted">Incident practice: clear on-call ownership, runbooks, a severity scale, an incident commander for big events, status-page communication, and blameless post-incident reviews with tracked follow-up actions.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="cost">Cost</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Cost driver</th><th>Levers</th></tr>
+      <tr><td>Compute</td><td>Right-size instances, autoscale (and scale to zero), reserved instances / savings plans for steady load, spot/low-priority VMs for interruptible batch work, ARM-based instances</td></tr>
+      <tr><td>Databases</td><td>Choose serverless or provisioned by load shape, cache reads, archive cold data, avoid over-provisioned throughput</td></tr>
+      <tr><td>Storage</td><td>Lifecycle rules to cool and archive tiers, compression, delete what you do not need, deduplicate</td></tr>
+      <tr><td>Network egress</td><td>Serve through a CDN, keep chatty services in the same zone/region, compress payloads</td></tr>
+      <tr><td>Observability</td><td>Sample traces and logs, drop noisy debug logs, set retention per data type</td></tr>
+      <tr><td>AI / LLM tokens</td><td>Smaller models for easy requests, prompt caching, shorter prompts and outputs, batch APIs for offline work, semantic caching (see <a href="../ai-foundations/index.html#cost">AI cost</a>)</td></tr>
+    </table>
+  </div>
+  <p>Make cost visible per team, per feature and per tenant (tags, showback), and treat cost per request or per active user as a metric alongside latency and errors (FinOps).</p>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

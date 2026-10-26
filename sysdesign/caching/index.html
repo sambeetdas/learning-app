@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Caching - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Caching</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    A cache keeps a copy of data in a faster place so repeated reads skip the slow path. Reading from Redis takes ~0.3 ms; the same data from a database query may take 5-50 ms; from another region, 100 ms or more.
+    Because most workloads are skewed (a small share of items gets most of the reads), even a small cache absorbs a large share of the traffic. The hard parts are <strong>keeping it fresh</strong>, <strong>surviving its failures</strong>, and <strong>avoiding stampedes</strong>.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="where">Where caches live</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Layer</th><th>What it caches</th><th>Invalidation</th></tr>
+      <tr><td>Browser / app</td><td>Static files, API responses (HTTP Cache-Control, ETags), local DB on mobile</td><td>TTL, versioned file names, ETag revalidation</td></tr>
+      <tr><td>CDN / edge</td><td>Images, video segments, JS/CSS, cacheable API responses</td><td>TTL, purge APIs, immutable URLs (see <a href="../../cdn/index.html">CDN</a>)</td></tr>
+      <tr><td>API gateway / reverse proxy</td><td>Whole responses for anonymous or common requests</td><td>Short TTLs, vary by headers</td></tr>
+      <tr><td>In-process (application memory)</td><td>Config, reference data, tiny hot sets</td><td>TTL; each instance has its own copy (may disagree briefly)</td></tr>
+      <tr><td>Distributed cache (Redis, Memcached)</td><td>Objects, query results, sessions, computed views, rate-limit counters</td><td>TTL + explicit deletes on writes</td></tr>
+      <tr><td>Database buffer cache</td><td>Pages and indexes in RAM</td><td>Managed by the database</td></tr>
+      <tr><td>AI: prompt / semantic cache</td><td>LLM responses for identical or similar prompts; KV cache for shared prompt prefixes</td><td>TTL, similarity threshold (see <a href="../llm-gateway/index.html">LLM gateway</a>)</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="strategies">Caching strategies</h2>
+  <div class="demo" id="cs-demo">
+    <h3>How reads and writes interact with the cache</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Strategy</th><th>Read</th><th>Write</th><th>Trade-off</th></tr>
+      <tr><td><strong>Cache-aside (lazy loading)</strong></td><td>App checks cache; on miss reads DB and fills cache</td><td>App writes DB, then deletes the cache key</td><td>The default. Only caches what is used; first read is slow; brief staleness possible</td></tr>
+      <tr><td><strong>Read-through</strong></td><td>Cache library loads from DB on miss</td><td>Usually paired with write-through</td><td>Simpler app code; cache must know the data source</td></tr>
+      <tr><td><strong>Write-through</strong></td><td>Always warm</td><td>Write cache and DB synchronously</td><td>Fresh cache, slower writes, caches data nobody reads</td></tr>
+      <tr><td><strong>Write-behind (write-back)</strong></td><td>Always warm</td><td>Write cache; flush to DB asynchronously in batches</td><td>Very fast writes; data loss if the cache dies before flushing</td></tr>
+      <tr><td><strong>Refresh-ahead</strong></td><td>Hot keys refreshed before they expire</td><td>-</td><td>No miss latency for hot keys; extra load for keys that go cold</td></tr>
+    </table>
+  </div>
+  <p class="muted"><strong>Delete, don't update,</strong> the cached value after a write: two concurrent writers updating the cache can leave the older value in it. Even with deletes, a slow reader can write back a stale value, so keep TTLs as a safety net.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="eviction">Eviction policies</h2>
+  <p>When the cache is full, something must go. Simulate 20,000 requests over 1,000 items where popularity follows a Zipf (power-law) distribution, as real traffic does.</p>
+  <div class="demo">
+    <h3>Hit rate by policy and cache size</h3>
+    <div class="bar">
+      <label>Cache size (items) <input type="range" id="ev-size" min="10" max="400" value="100"> <b id="ev-size-v">100</b></label>
+      <label>Skew <select id="ev-skew"><option value="0.6">mild</option><option value="0.9" selected>typical web</option><option value="1.2">extreme</option></select></label>
+    </div>
+    <div class="stage" id="ev-stage"></div>
+    <div class="readout" id="ev-out"></div>
+  </div>
+  <ul>
+    <li><strong>LRU</strong> (least recently used): the common default; good for recency-driven workloads.</li>
+    <li><strong>LFU</strong> (least frequently used): keeps long-term favourites; slow to adapt when popularity shifts. Modern caches (W-TinyLFU in Caffeine, Redis LFU mode) combine both.</li>
+    <li><strong>TTL-based expiry</strong> bounds staleness regardless of policy; add random jitter so keys do not all expire at once.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="problems">Cache failure modes</h2>
+  <div class="demo" id="cp-demo">
+    <h3>Stampede and penetration</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Problem</th><th>What happens</th><th>Fix</th></tr>
+      <tr><td><strong>Stampede (thundering herd)</strong></td><td>A hot key expires; thousands of requests miss at once and hammer the database</td><td>Request coalescing (single-flight lock per key), refresh-ahead, serve stale while revalidating</td></tr>
+      <tr><td><strong>Avalanche</strong></td><td>Many keys expire at the same moment, or the cache cluster restarts empty</td><td>Jittered TTLs, warm-up, replicas, rate-limit DB fallbacks</td></tr>
+      <tr><td><strong>Penetration</strong></td><td>Requests for keys that do not exist always miss and hit the database (often an attack)</td><td>Cache negative results briefly; a Bloom filter of valid keys</td></tr>
+      <tr><td><strong>Hot key</strong></td><td>One key gets so much traffic that its cache shard saturates</td><td>Replicate hot keys, local in-process copies, key splitting</td></tr>
+      <tr><td><strong>Stale data</strong></td><td>The cache serves values that changed in the database</td><td>Delete on write, short TTLs, change-data-capture driven invalidation, versioned keys</td></tr>
+      <tr><td><strong>Cache as a hidden dependency</strong></td><td>The database cannot handle the load if the cache disappears</td><td>Capacity-plan the fallback path or load-shed; treat the cache tier as critical infrastructure</td></tr>
+    </table>
+  </div>
+
+  <h2 id="sizing">Sizing a cache</h2>
+  <ul>
+    <li>Estimate the <strong>working set</strong>: the items read in a typical hour or day, times their size. The 80/20 rule is a starting guess; measure the real distribution.</li>
+    <li>Add overhead (keys, metadata, fragmentation: 20-50%) and replicas.</li>
+    <li>Target a hit rate from the database capacity: if the DB can serve 2,000 reads/s and you have 40,000 reads/s, you need a 95% hit rate.</li>
+    <li>Use the <a href="../estimation/index.html#calculator">calculator</a> to size memory.</li>
+  </ul>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

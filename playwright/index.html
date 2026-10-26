@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playwright with Python - Learning App</title>
+  <link rel="stylesheet" href="assets/pw.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Playwright with Python</h1>
+    <nav><a href="../index.html">&larr; All topics</a><a href="introduction/index.html">Start: Introduction &rarr;</a></nav>
+  </header>
+
+  <p>
+    <strong>Playwright</strong> is an open-source library from Microsoft for driving real browsers (Chromium, Firefox and WebKit) from code.
+    You use it to <strong>test web applications end to end</strong>, to automate anything a person can do in a browser, and, increasingly, as the
+    <strong>"hands and eyes" of AI agents</strong> that browse the web. Its Python package gives you a clean API, built-in waiting so tests are not flaky,
+    a pytest plugin, network mocking, tracing, and a built-in MCP server that lets an LLM control a browser.
+  </p>
+  <p>
+    This topic goes from your first script to advanced testing, then to AI: how agents use Playwright, how to test AI and agentic applications,
+    and four end-to-end projects that build AI-powered testing tools. All code is Python.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="taste">A first taste</h2>
+<pre><code>from playwright.sync_api import sync_playwright, expect
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)        # a real browser window
+    page = browser.new_page()
+    page.goto("http://127.0.0.1:8000/products")
+    page.get_by_placeholder("Search products").fill("mug")
+    page.get_by_role("button", name="Search").click()  # waits until the button is ready, then clicks
+    expect(page.get_by_test_id("product-card")).to_have_count(1)   # retries until true or timeout
+    browser.close()</code></pre>
+  <p class="muted">No sleeps and no manual waits: Playwright waits for elements to be ready before acting, and its assertions retry until the page reaches the expected state.</p>
+
+  <h2 id="architecture">How it works</h2>
+  <p>Your Python code does not talk to the browser directly. It sends commands to the Playwright <strong>driver</strong> (a bundled Node.js process), which speaks each browser's automation protocol. Press Play to follow one click.</p>
+  <div class="demo" id="arch-demo">
+    <h3>From <code>page.click()</code> to the browser and back</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div id="arch-legend"></div>
+
+  <h2 id="roadmap">Learning path</h2>
+  <h3>Beginner <span class="lvl beginner">start here</span></h3><div class="hub" id="lvl-Beginner"></div>
+  <h3>Intermediate <span class="lvl intermediate">real test suites</span></h3><div class="hub" id="lvl-Intermediate"></div>
+  <h3>Advanced <span class="lvl advanced">debugging, CI and power features</span></h3><div class="hub" id="lvl-Advanced"></div>
+  <h3>AI and agents <span class="lvl ai">Playwright + LLMs</span></h3><div class="hub" id="lvl-AI"></div>
+  <h3>End-to-end projects <span class="lvl advanced">build AI testing tools</span></h3><div class="hub" id="lvl-Project"></div>
+
+  <h2 id="usecases">What people use Playwright for</h2>
+  <div class="usecases">
+    <div><b>End-to-end testing</b>User journeys across pages: sign-up, search, checkout, in Chromium, Firefox and WebKit.</div>
+    <div><b>Regression and smoke tests in CI</b>Run hundreds of tests in parallel on every pull request; block bad releases.</div>
+    <div><b>API testing</b>Call REST endpoints with the same tool, and mix API set-up with UI checks.</div>
+    <div><b>Visual regression</b>Compare screenshots with a baseline to catch layout and styling changes.</div>
+    <div><b>Accessibility testing</b>Run accessibility scans and assert on the accessibility tree.</div>
+    <div><b>Mobile and device emulation</b>Viewports, touch, geolocation, locale, time zone, dark mode.</div>
+    <div><b>Network mocking</b>Fake back-end responses, simulate errors and slow networks, replay HAR files.</div>
+    <div><b>Web scraping and data extraction</b>Pages that need JavaScript, logins or scrolling (respect terms and robots.txt).</div>
+    <div><b>Browser automation (RPA)</b>Fill forms, download reports, upload files in internal tools without APIs.</div>
+    <div><b>Synthetic monitoring</b>Run a login-and-buy script every few minutes in production and alert on failure.</div>
+    <div><b>Screenshots and PDFs</b>Generate thumbnails, social cards, invoices and reports from HTML.</div>
+    <div><b>Performance checks</b>Measure load timings and web vitals in a real browser.</div>
+    <div><b>AI agent browsing</b>Give an LLM a browser through the Playwright MCP server or your own tools.</div>
+    <div><b>Testing AI apps</b>Test chatbots and agents: streaming UIs, mocked LLMs, LLM-as-judge assertions.</div>
+    <div><b>AI-generated and self-healing tests</b>Turn user stories into tests and repair broken locators, with human review.</div>
+    <div><b>Exploratory testing agents</b>Agents that explore an app, find bugs and file reports with traces.</div>
+  </div>
+
+  <h2 id="shopbot">The example app: ShopBot</h2>
+  <p>So that every example is concrete, the pages test the same small imaginary web shop, <strong>ShopBot</strong>, running locally at <code>http://127.0.0.1:8000</code>. Substitute your own application's URL and labels.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Page</th><th>What is on it</th></tr>
+      <tr><td><code>/products</code></td><td>A search box (placeholder "Search products"), a category select, a Search button, product cards (<code>data-testid="product-card"</code>) and a result count</td></tr>
+      <tr><td><code>/products/{id}</code></td><td>Name, price, a Quantity field, an "Add to cart" button, a status message, and customer reviews (one review contains a planted prompt-injection text)</td></tr>
+      <tr><td><code>/cart</code>, <code>/checkout</code></td><td>Cart table and total; a checkout form (name, email, postcode, terms checkbox) with validation errors in an alert</td></tr>
+      <tr><td><code>/login</code>, <code>/account</code></td><td>Email and password login (demo user <code>alice@example.com</code> / <code>wonderland</code>); account page with an avatar upload, a "Delete account" button with a confirm dialog, and an iframe</td></tr>
+      <tr><td><code>/chat</code></td><td>An AI support assistant: a question box and a Send button; answers stream in token by token and cite sources (returns, shipping, warranty)</td></tr>
+      <tr><td><code>/api/...</code></td><td>JSON endpoints: <code>GET /api/products</code>, <code>POST /api/cart</code>, <code>POST /api/chat</code> (server-sent events), <code>GET /api/slow</code></td></tr>
+    </table>
+  </div>
+
+  <h2 id="versions">Versions used</h2>
+  <p>Examples were written against <strong>Playwright for Python 1.64</strong> and <strong>pytest-playwright 0.10</strong> on Python 3.12 (October 2026). Playwright releases roughly monthly; check the release notes when upgrading.</p>
+  <p class="muted">Related topics in this app: <a href="../sysdesign/ai-evaluation/index.html">Evaluating RAG, LLM and AI systems</a>, <a href="../sysdesign/agentic-ai/index.html">AI agent system design</a>, <a href="../streaming-api/index.html">Streaming APIs</a> (SSE, used by chat UIs).</p>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="assets/core.js"></script>
+  <script src="assets/pw.js"></script>
+  <script src="hub.js"></script>
+  <script src="assets/page.js"></script>
+</body>
+</html>

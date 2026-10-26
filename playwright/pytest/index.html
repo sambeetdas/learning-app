@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testing with pytest: fixtures, isolation and page objects - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .lanes { display: grid; grid-template-columns: 9.5rem repeat(5, minmax(5.5rem, 1fr)); gap: 4px; font-size: .78rem; min-width: 640px; }
+    .lanes .hd { color: var(--muted); font-weight: 700; text-align: center; padding: .2rem; border-bottom: 1px solid var(--line); }
+    .lanes .hd.now { color: var(--accent); border-bottom: 2px solid var(--accent); }
+    .lanes .nm { font-family: ui-monospace, Consolas, monospace; font-weight: 700; padding: .35rem .3rem; }
+    .lanes .nm small { display: block; font-weight: 400; color: var(--muted); font-family: system-ui, sans-serif; }
+    .lanes .cellx { min-height: 2.4rem; border-radius: 6px; padding: .25rem .35rem; border: 1px dashed transparent; }
+    .lanes .live { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
+    .lanes .live.sess { border-color: var(--purple); background: color-mix(in srgb, var(--purple) 14%, var(--bg)); }
+    .lanes .live.new { box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 45%, transparent); }
+    .lanes .dead { border: 1px dashed var(--line); color: var(--muted); opacity: .6; }
+    .lanes .ck { display: inline-block; font-family: ui-monospace, Consolas, monospace; font-size: .7rem; padding: 0 .3rem; border-radius: 4px; background: var(--code-bg); margin-top: 2px; }
+    .wk { display: grid; grid-template-columns: 7rem 1fr; gap: .4rem; align-items: center; margin: .35rem 0; }
+    .wk .wname { font: 700 .8rem ui-monospace, Consolas, monospace; }
+    .wk .wname small { display: block; font: 400 .7rem system-ui, sans-serif; color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 1.9rem; align-items: center; }
+    .chip { font: .72rem ui-monospace, Consolas, monospace; padding: .2rem .45rem; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); white-space: nowrap; }
+    .chip.run { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--bg)); }
+    .chip.done { border-color: var(--good); color: var(--good); }
+    .chip.f1 { border-left: 4px solid var(--c-svc); } .chip.f2 { border-left: 4px solid var(--c-data); } .chip.f3 { border-left: 4px solid var(--c-ai); } .chip.f4 { border-left: 4px solid var(--c-msg); }
+    .matrix td.run { color: var(--good); font-weight: 700; } .matrix td.skip { color: var(--warn); } .matrix td.desel { color: var(--muted); opacity: .6; }
+    .tree { font: .85rem/1.45 ui-monospace, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Testing with pytest: fixtures, isolation and page objects</h1><nav></nav></header>
+
+  <p>
+    Scripts that call <code>sync_playwright()</code> are fine for experiments, but a real test suite needs set-up and tear-down, isolation between tests,
+    configuration per environment, parallel runs, retries and reports. The official <strong>pytest-playwright</strong> plugin gives you all of that on top of
+    <strong>pytest</strong>, the standard Python test runner. You write plain functions that ask for a <code>page</code>; the plugin launches browsers, creates a fresh
+    browser context for every test, and adds command-line flags such as <code>--browser</code>, <code>--headed</code> and <code>--tracing</code>.
+  </p>
+  <p>
+    This page covers the fixtures and their lifetimes, how to override them in <code>conftest.py</code>, your own fixtures, parametrisation and markers,
+    cross-browser and parallel runs, configuration, the <strong>Page Object Model</strong> with a complete ShopBot example, test data, retries and the layout of a
+    real suite. Every snippet was run against ShopBot with pytest-playwright 0.10 and pytest 9.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="first">Install and write the first test</h2>
+<pre class="term"><code>pip install pytest-playwright            <span class="c"># also installs playwright and pytest</span>
+playwright install chromium              <span class="c"># or: playwright install  (all three engines)</span>
+playwright install --with-deps chromium  <span class="c"># Linux CI: also installs the system libraries</span></code></pre>
+  <div class="codefile"><div class="fname">tests/test_search.py</div>
+<pre><code>from playwright.sync_api import Page, expect
+
+
+def test_search_finds_mug(page: Page):              # ask for the "page" fixture by name
+    page.goto("/products")                          # relative URL: base_url comes from config
+    page.get_by_placeholder("Search products").fill("mug")
+    page.get_by_role("button", name="Search").click()
+    expect(page.get_by_test_id("product-card")).to_have_count(1)
+    expect(page.get_by_test_id("result-count")).to_have_text("1 results")</code></pre></div>
+<pre class="term"><code>pytest --base-url http://127.0.0.1:8000                 <span class="c"># headless Chromium</span>
+pytest --headed --slowmo 300                            <span class="c"># watch it, 300 ms between actions</span>
+pytest -k mug -x -v                                     <span class="c"># usual pytest flags still work</span>
+pytest --browser firefox --browser webkit               <span class="c"># each test runs once per browser</span>
+pytest --tracing retain-on-failure --screenshot only-on-failure --video retain-on-failure</code></pre>
+  <p class="muted">Test files are named <code>test_*.py</code>, test functions <code>test_*</code>. The type hint <code>page: Page</code> is optional but gives you autocompletion. The test id becomes <code>test_search_finds_mug[chromium]</code> because the plugin parametrises every browser test by browser name.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="fixtures">The built-in fixtures and their scopes</h2>
+  <p>A <strong>fixture</strong> is a function that pytest runs to provide a value a test asks for, and whose code after <code>yield</code> runs as clean-up. Its <strong>scope</strong> decides how long the value lives: <code>function</code> (a new one per test, the default), <code>module</code>, <code>package</code> or <code>session</code> (one for the whole run, or per worker when running in parallel). pytest-playwright builds the browser stack from fixtures with carefully chosen scopes:</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Fixture</th><th>Scope</th><th>What it is</th></tr>
+      <tr><td><code>playwright</code></td><td>session</td><td>The started <code>Playwright</code> object (driver process). Use it for <code>playwright.request</code>, <code>playwright.devices</code> or a second browser type.</td></tr>
+      <tr><td><code>browser_name</code>, <code>browser_channel</code>, <code>is_chromium</code>, <code>is_firefox</code>, <code>is_webkit</code></td><td>session</td><td>Which browser this run uses (from <code>--browser</code> and <code>--browser-channel</code>).</td></tr>
+      <tr><td><code>browser_type</code></td><td>session</td><td><code>playwright.chromium</code>, <code>.firefox</code> or <code>.webkit</code>.</td></tr>
+      <tr><td><code>browser_type_launch_args</code></td><td>session</td><td>The dict passed to <code>browser_type.launch()</code>: headless, channel, slow_mo... Override it to add options.</td></tr>
+      <tr><td><code>browser</code></td><td>session</td><td>The launched <code>Browser</code>. Launching takes around a second, so it is shared.</td></tr>
+      <tr><td><code>browser_context_args</code></td><td>session</td><td>The dict passed to <code>browser.new_context()</code>: base_url, device, video... Override it for viewport, locale, storage_state and so on.</td></tr>
+      <tr><td><code>new_context</code></td><td>function</td><td>A factory: <code>new_context(**extra)</code> creates additional contexts (with your context args, tracing and video) and closes them after the test.</td></tr>
+      <tr><td><code>context</code></td><td>function</td><td>A fresh <code>BrowserContext</code> per test: its own cookies, local storage, cache and permissions.</td></tr>
+      <tr><td><code>page</code></td><td>function</td><td>A new tab in that context. Most tests only need this.</td></tr>
+      <tr><td><code>base_url</code></td><td>session</td><td>From <code>--base-url</code> or the <code>base_url</code> ini option; relative <code>goto()</code> and <code>page.request</code> URLs resolve against it.</td></tr>
+      <tr><td><code>output_path</code></td><td>function</td><td>This test's artefact folder under <code>--output</code> (default <code>test-results</code>).</td></tr>
+    </table>
+  </div>
+  <p>The design is the key to fast, reliable suites: the expensive thing (a browser process) is created once, the cheap thing (a context, a few milliseconds) is created per test, so every test starts with a clean, isolated "incognito profile". Step through three tests:</p>
+  <div class="demo" id="life-demo">
+    <h3>Fixture lifetimes across a pytest session</h3>
+    <div class="stage"></div>
+  </div>
+
+  <h3>Isolation, proven</h3>
+  <p>These two tests pass in any order, alone or in parallel, because the second one gets a new context with no cookies, so ShopBot gives it a new, empty cart:</p>
+<pre><code>def test_isolation_one(page: Page):
+    page.goto("/products/1")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_test_id("cart-count")).to_have_text("1")
+
+
+def test_isolation_two(page: Page):
+    page.goto("/products")
+    expect(page.get_by_test_id("cart-count")).to_have_text("0")    # fresh context: empty cart</code></pre>
+  <div class="callout"><b>Browser isolation is not server isolation.</b> A new context gives you a new cookie jar, but anything stored on the server (a user's cart, orders, a shared account's settings) is still shared. Two tests that log in as the same user see each other's server-side data. See <a href="#test-data">test data strategies</a>.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="conftest">Overriding the plugin in conftest.py</h2>
+  <p><code>conftest.py</code> is a file pytest loads automatically; fixtures defined there are available to every test in that folder and below. To change how the plugin creates browsers and contexts you <strong>override</strong> its fixtures by defining a fixture with the same name. Ask for the original as a parameter and extend it, so you keep what the plugin set from the command line (<code>--base-url</code>, <code>--device</code>, <code>--video</code>, <code>--headed</code>, <code>--browser-channel</code>).</p>
+  <div class="codefile"><div class="fname">tests/conftest.py</div>
+<pre><code>import pytest
+from playwright.sync_api import expect
+
+expect.set_options(timeout=10_000)          # web-first assertions wait up to 10 s (default 5 s)
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args: dict) -&gt; dict:
+    return {
+        **browser_context_args,              # keep base_url, --device and video settings
+        "viewport": {"width": 1280, "height": 800},
+        "locale": "en-GB",
+        "timezone_id": "Europe/London",
+        # "base_url": "http://127.0.0.1:8000",   # or hard-code it here instead of --base-url
+        # "ignore_https_errors": True,           # self-signed certificates on test servers
+    }
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args: dict, browser_name: str) -&gt; dict:
+    args = {**browser_type_launch_args, "timeout": 60_000}   # give slow CI machines 60 s to start the browser
+    if browser_name == "chromium":
+        args["args"] = ["--disable-dev-shm-usage"]          # Chromium flag: small /dev/shm in Docker
+    return args</code></pre></div>
+  <p>The override must keep <code>scope="session"</code> (the plugin's own fixtures depend on it). Two finer-grained tools:</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="One test: marker">
+<pre><code>@pytest.mark.browser_context_args(locale="de-DE", color_scheme="dark")
+def test_german_dark_mode(page: Page):
+    page.goto("/products")
+    assert page.evaluate("navigator.language") == "de-DE"</code></pre>
+    </div>
+    <div class="tabpane" data-tab="One folder: storage_state">
+      <div class="codefile"><div class="fname">tests/account/conftest.py</div>
+<pre><code>import pytest
+from playwright.sync_api import Browser, expect
+
+
+@pytest.fixture(scope="session")
+def alice_state(browser: Browser, base_url: str, tmp_path_factory) -&gt; str:
+    """Log in through the UI once (per worker) and save cookies and local storage to a file."""
+    path = tmp_path_factory.mktemp("auth") / "alice.json"
+    context = browser.new_context(base_url=base_url)
+    page = context.new_page()
+    page.goto("/login")
+    page.get_by_label("Email").fill("alice@example.com")
+    page.get_by_label("Password").fill("wonderland")
+    page.get_by_role("button", name="Log in").click()
+    expect(page.get_by_test_id("user-name")).to_have_text("Alice")
+    context.storage_state(path=path)
+    context.close()
+    return str(path)
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args: dict, alice_state: str) -&gt; dict:
+    """Every test in tests/account/ starts signed in as Alice."""
+    return {**browser_context_args, "storage_state": alice_state}</code></pre></div>
+<pre><code># tests/account/test_account.py
+def test_account_page(page: Page):
+    page.goto("/account")                  # no login steps: the context already has Alice's cookie
+    expect(page.get_by_text("Signed in as alice@example.com")).to_be_visible()</code></pre>
+    </div>
+    <div class="tabpane" data-tab="One launch option: parametrize">
+<pre><code># Each distinct value launches its own browser (the fixture is session scoped).
+@pytest.mark.parametrize("browser_type_launch_args", [{"slow_mo": 200}], indirect=True)
+def test_demo_in_slow_motion(page: Page):
+    page.goto("/products")</code></pre>
+    </div>
+  </div>
+  <p class="muted">The nested <code>conftest.py</code> overrides the parent's <code>browser_context_args</code> and receives the parent's value as its argument, so locale and viewport are kept. Log-in reuse, multiple roles and per-worker accounts are covered in depth on the <a href="../network-api/index.html">network and authentication page</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="custom">Custom fixtures</h2>
+  <p>Anything several tests need goes into a fixture: an API client, a signed-in page, seeded data, page objects. Code before <code>yield</code> is set-up, code after it is tear-down and runs even when the test fails.</p>
+  <div class="codefile"><div class="fname">tests/conftest.py (continued)</div>
+<pre><code>from collections.abc import Iterator
+
+from playwright.sync_api import APIRequestContext, BrowserContext, Page, Playwright
+
+from pages import CartPage, ProductsPage
+
+
+@pytest.fixture(scope="session")
+def api(playwright: Playwright, base_url: str) -&gt; Iterator[APIRequestContext]:
+    """A browser-less HTTP client for set-up and API checks (one per session or worker)."""
+    ctx = playwright.request.new_context(base_url=base_url)
+    yield ctx
+    ctx.dispose()
+
+
+@pytest.fixture
+def logged_in_page(context: BrowserContext) -&gt; Iterator[Page]:
+    """A page signed in as Alice. Logs in over HTTP (fast), logs out afterwards."""
+    response = context.request.post("/login", form={"email": "alice@example.com", "password": "wonderland"})
+    assert response.ok, f"login failed: {response.status}"
+    page = context.new_page()          # context.request shares the context's cookies
+    yield page
+    context.request.post("/logout")    # tear-down: end the server-side session
+
+
+@pytest.fixture
+def cart_with(page: Page):
+    """Factory fixture: cart_with({1: 2}) puts two of product 1 in this test's cart via the API."""
+    page.goto("/products")             # the first response sets ShopBot's session cookie
+
+    def _fill(items: dict[int, int]) -&gt; CartPage:
+        for product_id, qty in items.items():
+            r = page.request.post("/api/cart", data={"product_id": product_id, "qty": qty})
+            assert r.ok, r.text()
+        return CartPage(page).open()
+    return _fill
+
+
+@pytest.fixture
+def products_page(page: Page) -&gt; ProductsPage:
+    return ProductsPage(page)</code></pre></div>
+  <p>Using them reads like a specification. Set-up through the API is much faster and less brittle than clicking through the UI for things the test is not about:</p>
+<pre><code>def test_cart_seeded_by_api(cart_with):
+    cart = cart_with({1: 2, 4: 1})                       # 2 mugs + 1 notebook set, no clicking
+    expect(cart.rows).to_have_count(2)
+    expect(cart.total).to_have_text("£33.50")
+
+
+def test_logged_in(logged_in_page: Page):
+    logged_in_page.goto("/account")
+    expect(logged_in_page.get_by_test_id("user-name")).to_have_text("Alice")
+
+
+def test_stock_limit(api: APIRequestContext):            # a pure API test: no browser page at all
+    r = api.post("/api/cart", data={"product_id": 2, "qty": 9})
+    assert r.status == 422
+    assert r.json() == {"detail": "Only 8 in stock"}</code></pre>
+  <h3>Test data with guaranteed clean-up</h3>
+  <p>For data your application lets you create and delete, the pattern is a factory fixture that records what it created and deletes it in tear-down. ShopBot has no users API, so this one is for your own application:</p>
+<pre><code>import uuid
+
+@pytest.fixture
+def make_user(api: APIRequestContext):
+    created: list[int] = []
+
+    def _make(**overrides) -&gt; dict:
+        body = {"email": f"test-{uuid.uuid4().hex[:8]}@example.com", "password": "S3cret!pass", **overrides}
+        r = api.post("/api/users", data=body)
+        assert r.ok, r.text()
+        created.append(r.json()["id"])
+        return r.json()
+
+    yield _make
+    for user_id in created:                  # runs even if the test failed half-way
+        api.delete(f"/api/users/{user_id}")
+
+
+def test_new_user_can_log_in(make_user, page: Page):
+    user = make_user(name="Bob")
+    ...</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Choose the scope by cost and by what may be shared</th><th>Scope</th></tr>
+      <tr><td>Page objects, pages, contexts, anything a test modifies</td><td><code>function</code> (default)</td></tr>
+      <tr><td>Read-only reference data loaded from a file, an expensive seeded catalogue</td><td><code>module</code> or <code>session</code></td></tr>
+      <tr><td>API client, saved log-in state, a started test server</td><td><code>session</code> (remember: once per xdist worker)</td></tr>
+    </table>
+  </div>
+  <p class="muted">Async tests: pytest-playwright is for the sync API. For <code>async def</code> tests use the separate package <code>pytest-playwright-asyncio</code> (do not install both in one environment).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="parametrize">Parametrisation and markers</h2>
+  <p><code>@pytest.mark.parametrize</code> runs one test function with several inputs; each case is reported separately. It is ideal for search queries, validation rules and roles:</p>
+<pre><code>@pytest.mark.parametrize(
+    "query, category, expected",
+    [
+        ("mug", "", 1),
+        ("a", "", 3),
+        ("", "kitchen", 2),
+        ("", "office", 2),
+        pytest.param("zzz", "", 0, id="no-results"),
+    ],
+)
+def test_search_counts(products_page: ProductsPage, query, category, expected):
+    products_page.open().search(query, category)
+    expect(products_page.cards).to_have_count(expected)
+    expect(products_page.result_count).to_have_text(f"{expected} results")
+
+
+@pytest.mark.parametrize(
+    "email, password",
+    [("alice@example.com", "wrong"), ("bob@example.com", "wonderland")],
+    ids=["bad-password", "unknown-user"],
+)
+def test_bad_login(page: Page, email, password):
+    page.goto("/login")
+    page.get_by_label("Email").fill(email)
+    page.get_by_label("Password").fill(password)
+    page.get_by_role("button", name="Log in").click()
+    expect(page.get_by_role("alert")).to_have_text("Invalid email or password")</code></pre>
+  <p><strong>Markers</strong> label tests. pytest-playwright provides <code>skip_browser</code>, <code>only_browser</code> and <code>browser_context_args</code>; you register your own (such as <code>slow</code> and <code>smoke</code>) in the configuration and select them with <code>-m</code>.</p>
+<pre><code>import re
+
+import pytest
+from playwright.sync_api import Page, expect
+
+
+@pytest.mark.skip_browser("webkit")             # known WebKit-only issue: skip there
+def test_drag_and_drop(page: Page): ...
+
+
+@pytest.mark.only_browser("chromium")           # e.g. it uses a CDP session or page.pdf()
+def test_invoice_pdf(page: Page, is_chromium: bool): ...
+
+
+@pytest.mark.slow                               # a long end-to-end journey
+def test_full_checkout(cart_with, page: Page):
+    cart = cart_with({2: 1})
+    cart.checkout_link.click()
+    page.get_by_label("Full name").fill("Alice Liddell")
+    page.get_by_label("Email").fill("alice@example.com")
+    page.get_by_label("Postcode").fill("OX1 1AA")
+    page.get_by_label("I accept the terms").check()
+    page.get_by_role("button", name="Place order").click()
+    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    expect(page.get_by_test_id("order-id")).to_have_text(re.compile(r"^\d{6}$"))
+
+
+def test_layout(page: Page, browser_name: str):
+    if browser_name == "firefox":               # branch on the browser when you must
+        pytest.skip("scrollbar width differs")
+    ...</code></pre>
+<pre class="term"><code>pytest -m smoke                       <span class="c"># only tests marked smoke</span>
+pytest -m "not slow"                  <span class="c"># everything except the slow journeys</span>
+pytest -m "smoke or slow" --strict-markers   <span class="c"># unknown marker names become errors</span></code></pre>
+  <div class="demo" id="matrix-demo">
+    <h3>Which tests run? Choose browsers and a <code>-m</code> expression</h3>
+    <div class="bar" id="mx-ctl"></div>
+    <div class="stage"></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cross-browser">Cross-browser and device runs</h2>
+  <p>The same tests run on every engine; choose them on the command line, not in the code:</p>
+<pre class="term"><code>playwright install chromium firefox webkit
+pytest --browser chromium --browser firefox --browser webkit   <span class="c"># 3 x the tests: test_x[chromium], test_x[firefox], test_x[webkit]</span>
+pytest --browser-channel chrome          <span class="c"># the installed Google Chrome instead of bundled Chromium</span>
+pytest --browser-channel msedge          <span class="c"># Microsoft Edge</span>
+pytest --browser webkit --device "iPhone 15"   <span class="c"># Safari's engine with a phone viewport, touch and user agent</span></code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Run</th><th>Catches</th><th>Typical schedule</th></tr>
+      <tr><td>Chromium (or Chrome channel)</td><td>Most bugs; it is the majority of users</td><td>Every pull request</td></tr>
+      <tr><td>Firefox</td><td>Gecko layout and event differences, stricter standards behaviour</td><td>Every PR for important journeys, or nightly</td></tr>
+      <tr><td>WebKit</td><td>Safari behaviour (dates, flexbox gaps, autoplay, storage) without a Mac</td><td>Nightly, or every PR if many users are on iOS</td></tr>
+      <tr><td><code>--device</code> runs</td><td>Responsive layout, touch, mobile navigation</td><td>Nightly smoke subset</td></tr>
+    </table>
+  </div>
+  <p class="muted">WebKit on Windows or Linux is close to, but not identical with, Safari on macOS and iOS. If Safari matters a lot, add a run on a real device cloud as well (see <a href="../debugging-ci/index.html">debugging and CI</a>).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="parallel">Parallel runs with pytest-xdist</h2>
+  <p><code>pip install pytest-xdist</code>, then <code>pytest -n auto</code> starts one <strong>worker process</strong> per CPU core and spreads the tests across them. Each worker is a separate Python process with its <strong>own session fixtures</strong>: its own Playwright driver and browser. Because every test already has its own context, Playwright tests parallelise well; what usually breaks is shared <em>server</em> data.</p>
+  <div class="demo" id="xdist-demo">
+    <h3>Three workers sharing a queue of tests</h3>
+    <div class="flowtabs" id="xd-tabs"></div>
+    <div class="stage"></div>
+  </div>
+<pre class="term"><code>pytest -n auto                         <span class="c"># one worker per CPU core (--dist load is implied)</span>
+pytest -n 4 --dist loadfile            <span class="c"># all tests of a file on the same worker</span>
+pytest -n 4 --dist loadgroup           <span class="c"># tests with the same xdist_group run on one worker</span>
+pytest -n 4 --dist worksteal           <span class="c"># split up front, idle workers steal from busy ones</span></code></pre>
+<pre><code>@pytest.mark.xdist_group("alice-cart")        # these share Alice's server-side cart: keep them together (with --dist loadgroup)
+def test_alice_adds_mug(logged_in_page): ...
+
+
+@pytest.fixture(scope="session")
+def account(worker_id: str) -&gt; dict:
+    """One test account per worker: gw0 -&gt; qa+gw0@example.com, gw1 -&gt; qa+gw1@..., 'master' without -n."""
+    return {"email": f"qa+{worker_id}@example.com", "password": os.environ["QA_PASSWORD"]}</code></pre>
+  <div class="callout tip"><b>Rule of thumb.</b> Parallel tests must not depend on order or on each other's data. Give each worker (or each test) its own data, use unique names (<code>uuid4</code>), and never assert on global counts such as "there are 12 orders". The <code>worker_id</code> fixture and the <code>PYTEST_XDIST_WORKER</code> environment variable tell you which worker you are in. More workers than cores, or than your test server can handle, makes runs slower and flakier.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="config">Configuration in pyproject.toml</h2>
+  <p>Put the flags you always use in <code>addopts</code> so that a bare <code>pytest</code> does the right thing locally and in CI. Command-line flags are added after <code>addopts</code>.</p>
+  <div class="codefile"><div class="fname">pyproject.toml</div>
+<pre><code>[project]
+name = "shopbot-e2e"
+version = "0.1.0"
+requires-python = "&gt;=3.10"
+dependencies = [
+    "pytest-playwright&gt;=0.10",
+    "pytest-xdist&gt;=3.8",
+    "pytest-rerunfailures&gt;=16",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]                      # so tests can "from pages import ProductsPage"
+base_url = "http://127.0.0.1:8000"      # overridden by --base-url or PYTEST_BASE_URL
+addopts = [
+    "--strict-markers",
+    "--tracing=retain-on-failure",
+    "--screenshot=only-on-failure",
+    "--video=retain-on-failure",
+    "--output=test-results",
+]
+markers = [
+    "slow: long end-to-end journeys (deselect with -m 'not slow')",
+    "smoke: a handful of fast checks run on every commit",
+]
+xfail_strict = true</code></pre></div>
+  <p class="muted">Prefer not to put <code>--browser</code> in <code>addopts</code>: the option appends, so <code>pytest --browser firefox</code> would then run Chromium <em>and</em> Firefox. A <code>pytest.ini</code> file with a <code>[pytest]</code> section works the same way if you do not use <code>pyproject.toml</code>. Video recording needs Playwright's ffmpeg build: <code>playwright install</code> downloads it with the browsers; if you only use a branded channel (<code>--browser-channel chrome</code>), run <code>playwright install ffmpeg</code>.</p>
+  <h3>pytest-playwright command-line options</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Flag</th><th>Default</th><th>Effect</th></tr>
+      <tr><td><code>--browser chromium|firefox|webkit</code></td><td>chromium</td><td>Repeat to run every test on several engines</td></tr>
+      <tr><td><code>--browser-channel chrome|msedge|...</code></td><td>none</td><td>Use an installed branded browser</td></tr>
+      <tr><td><code>--headed</code> / <code>--slowmo MS</code></td><td>headless / 0</td><td>Show the window / pause between actions</td></tr>
+      <tr><td><code>--device "iPhone 15"</code></td><td>none</td><td>Emulate a device from <code>playwright.devices</code></td></tr>
+      <tr><td><code>--base-url URL</code></td><td>ini <code>base_url</code></td><td>Base for relative URLs</td></tr>
+      <tr><td><code>--output DIR</code></td><td>test-results</td><td>Where traces, screenshots and videos go (one folder per test, <code>-retry1</code> suffix for reruns)</td></tr>
+      <tr><td><code>--tracing on|off|retain-on-failure</code></td><td>off</td><td>Record a Playwright trace per test</td></tr>
+      <tr><td><code>--video on|off|retain-on-failure</code></td><td>off</td><td>Record a video per test</td></tr>
+      <tr><td><code>--screenshot on|off|only-on-failure</code> + <code>--full-page-screenshot</code></td><td>off</td><td>Screenshot at the end of each test</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="pom">The Page Object Model</h2>
+  <p>When twenty tests all write <code>page.get_by_placeholder("Search products")</code> and the placeholder changes, you fix twenty tests. A <strong>page object</strong> is a class that owns the locators and actions of one page, so tests talk in the language of the application ("search for mug, open the card, add two to the cart") and each locator lives in exactly one place. <strong>Component objects</strong> do the same for parts that appear on many pages (a navigation bar) or many times on one page (a product card); they wrap a <code>Locator</code> instead of the whole page.</p>
+  <p>Guidelines that keep page objects useful: expose locators as attributes so tests can assert on them with <code>expect</code>; make action methods return the page object the user lands on; keep assertions in tests (an action may wait for its own outcome); no sleeps; no test logic (<code>if</code> on test data) inside page objects.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="components.py">
+      <div class="codefile"><div class="fname">pages/components.py</div>
+<pre><code>import re
+
+from playwright.sync_api import Locator, Page
+
+
+class NavBar:
+    """The main navigation bar shown on every ShopBot page."""
+
+    def __init__(self, page: Page):
+        self.page = page
+        self.root = page.get_by_role("navigation", name="Main")
+        self.cart_link = self.root.get_by_role("link", name=re.compile(r"^Cart"))
+        self.cart_count = self.root.get_by_test_id("cart-count")
+        self.user_name = self.root.get_by_test_id("user-name")
+        self.login_link = self.root.get_by_role("link", name="Log in")
+
+    def open_cart(self) -&gt; "CartPage":
+        from .cart import CartPage          # local import avoids a circular import
+        self.cart_link.click()
+        return CartPage(self.page)
+
+
+class ProductCard:
+    """One product card on /products. Wraps a locator, not the whole page."""
+
+    def __init__(self, root: Locator):
+        self.root = root
+        self.title = root.get_by_role("heading")
+        self.price = root.get_by_text(re.compile(r"^£"))
+        self.stock = root.get_by_text(re.compile(r"stock$"))
+
+    def open(self) -&gt; "ProductPage":
+        from .product import ProductPage
+        self.root.get_by_role("link").click()
+        return ProductPage(self.root.page)</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="base.py">
+      <div class="codefile"><div class="fname">pages/base.py</div>
+<pre><code>from playwright.sync_api import Page
+
+from .components import NavBar
+
+
+class BasePage:
+    path = "/"
+
+    def __init__(self, page: Page):
+        self.page = page
+        self.nav = NavBar(page)              # every page has the navigation bar
+
+    def open(self):
+        self.page.goto(self.path)            # relative: base_url comes from pytest
+        return self</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="products.py">
+      <div class="codefile"><div class="fname">pages/products.py</div>
+<pre><code>from playwright.sync_api import Page
+
+from .base import BasePage
+from .components import ProductCard
+
+
+class ProductsPage(BasePage):
+    path = "/products"
+
+    def __init__(self, page: Page):
+        super().__init__(page)
+        self.search_box = page.get_by_placeholder("Search products")
+        self.category = page.get_by_label("Category")
+        self.search_button = page.get_by_role("button", name="Search")
+        self.cards = page.get_by_test_id("product-card")
+        self.result_count = page.get_by_test_id("result-count")
+        self.no_results = page.get_by_role("status")
+
+    def search(self, text: str = "", category: str = "") -&gt; "ProductsPage":
+        self.search_box.fill(text)
+        self.category.select_option(category)        # "" = All
+        self.search_button.click()
+        return self
+
+    def card(self, name: str) -&gt; ProductCard:
+        return ProductCard(self.cards.filter(has=self.page.get_by_role("heading", name=name)))</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="product.py">
+      <div class="codefile"><div class="fname">pages/product.py</div>
+<pre><code>from playwright.sync_api import Page
+
+from .base import BasePage
+
+
+class ProductPage(BasePage):
+    def __init__(self, page: Page, product_id: int | None = None):
+        super().__init__(page)
+        if product_id is not None:
+            self.path = f"/products/{product_id}"
+        self.heading = page.get_by_role("heading", level=1)
+        self.quantity = page.get_by_label("Quantity")
+        self.add_button = page.get_by_role("button", name="Add to cart")
+        self.status = page.get_by_role("status")
+        self.reviews = page.get_by_role("list", name="Reviews").get_by_role("listitem")
+
+    def add_to_cart(self, qty: int = 1) -&gt; "ProductPage":
+        self.quantity.fill(str(qty))
+        self.add_button.click()
+        return self</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="cart.py">
+      <div class="codefile"><div class="fname">pages/cart.py</div>
+<pre><code>from playwright.sync_api import Locator, Page
+
+from .base import BasePage
+
+
+class CartPage(BasePage):
+    path = "/cart"
+
+    def __init__(self, page: Page):
+        super().__init__(page)
+        self.rows = page.get_by_role("row").filter(has=page.get_by_role("cell"))   # body rows only
+        self.total = page.get_by_test_id("cart-total")
+        self.empty_message = page.get_by_text("Your cart is empty.")
+        self.checkout_link = page.get_by_role("link", name="Checkout")
+
+    def row(self, product: str) -&gt; Locator:
+        return self.rows.filter(has_text=product)
+
+    def quantity_of(self, product: str) -&gt; Locator:
+        return self.row(product).get_by_role("cell").nth(1)</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="__init__.py">
+      <div class="codefile"><div class="fname">pages/__init__.py</div>
+<pre><code>from .cart import CartPage
+from .product import ProductPage
+from .products import ProductsPage
+
+__all__ = ["CartPage", "ProductPage", "ProductsPage"]</code></pre></div>
+    </div>
+  </div>
+  <p>The tests now read as user journeys, and the expectations stay visible in the test:</p>
+  <div class="codefile"><div class="fname">tests/test_cart.py</div>
+<pre><code>from playwright.sync_api import Page, expect
+
+from pages import CartPage, ProductPage, ProductsPage
+
+
+def test_add_two_mugs(products_page: ProductsPage):
+    products_page.open().search("mug")
+    product = products_page.card("Ceramic Mug").open()
+    product.add_to_cart(2)
+    expect(product.status).to_have_text("Added to cart")
+    expect(product.nav.cart_count).to_have_text("2")
+
+    cart = product.nav.open_cart()
+    expect(cart.rows).to_have_count(1)
+    expect(cart.quantity_of("Ceramic Mug")).to_have_text("2")
+    expect(cart.total).to_have_text("£24.00")
+
+
+def test_out_of_stock(page: Page):
+    lamp = ProductPage(page, product_id=3).open()
+    expect(lamp.heading).to_have_text("Desk Lamp")
+    expect(lamp.add_button).to_be_disabled()
+
+
+def test_empty_cart(cart_page: CartPage):
+    cart_page.open()
+    expect(cart_page.empty_message).to_be_visible()
+    expect(cart_page.checkout_link).to_have_count(0)</code></pre></div>
+  <div class="cols">
+    <div class="card"><h3>Page objects: good for</h3><ul><li>Suites with more than a handful of tests</li><li>Locators reused across tests and teams</li><li>Readable journeys that product people can review</li><li>A single place to fix when the UI changes (and a natural target for AI "self-healing" tools)</li></ul></div>
+    <div class="card note"><h3>Avoid</h3><ul><li>A god object with every locator of the site</li><li>Methods like <code>verify_everything()</code> that hide assertions</li><li>Returning raw strings (<code>inner_text()</code>) for tests to compare: return locators and use <code>expect</code>, which retries</li><li>Deep inheritance trees; prefer composition (components)</li></ul></div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="test-data">Test data strategies</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Strategy</th><th>How</th><th>Good for</th><th>Watch out</th></tr>
+      <tr><td>Inline values and <code>parametrize</code></td><td>Literals in the test</td><td>Validation rules, search terms, small tables of cases</td><td>Duplicated magic values: move shared ones to constants</td></tr>
+      <tr><td>Data files</td><td>JSON/CSV/YAML in <code>tests/data/</code>, loaded by a session fixture or fed to <code>parametrize</code></td><td>Many cases maintained by non-developers</td><td>Keep ids readable (<code>ids=</code>) so failures say which row</td></tr>
+      <tr><td>Factory fixtures + API seeding</td><td><code>cart_with(...)</code>, <code>make_user(...)</code> create exactly what a test needs through the API</td><td>Most UI tests: fast, explicit, independent</td><td>Needs a test or admin API; clean up in tear-down</td></tr>
+      <tr><td>Unique values</td><td><code>f"order-{uuid4().hex[:8]}"</code>, timestamped emails</td><td>Parallel runs against shared environments</td><td>Leftover data grows: schedule a clean-up job</td></tr>
+      <tr><td>Per-worker accounts</td><td>Key accounts on <code>worker_id</code></td><td>Server-side state per user (carts, settings)</td><td>Create the accounts up front; rotate passwords via secrets</td></tr>
+      <tr><td>Reset or snapshot</td><td>A test-only <code>/reset</code> endpoint, or a database restored from a snapshot / fresh container per run</td><td>Hermetic CI environments</td><td>Never expose reset endpoints in production</td></tr>
+      <tr><td>Mocked back end</td><td><code>page.route()</code> fulfils API calls with fixed JSON</td><td>Rare states (errors, empty lists, huge lists), front-end-only tests</td><td>Mocks can drift from the real API: keep some unmocked journeys</td></tr>
+      <tr><td>Synthetic data generators</td><td>Libraries such as Faker, or an LLM generating realistic edge cases ahead of time</td><td>Names, addresses, Unicode and long inputs</td><td>Seed the generator; commit generated data so runs are reproducible</td></tr>
+    </table>
+  </div>
+  <p class="muted">Never use real customer data, and keep secrets (passwords, API keys) in environment variables or the CI secret store, not in the repository.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="retries">Retries with pytest-rerunfailures</h2>
+  <p>Retries hide flakiness, they do not fix it. Used carefully they stop a rare network hiccup from blocking a release while you collect evidence. Combine them with tracing so the failing attempt is kept: pytest-playwright writes each attempt into its own folder (<code>...-retry1</code>).</p>
+<pre class="term"><code>pip install pytest-rerunfailures
+pytest --reruns 2 --reruns-delay 1                       <span class="c"># rerun any failure up to twice, 1 s apart</span>
+pytest --reruns 2 --only-rerun TimeoutError              <span class="c"># only action time-outs (a failed expect() is an AssertionError)</span>
+pytest --reruns 2 --fail-on-flaky                        <span class="c"># still exit with code 7 if a test needed a rerun</span>
+pytest --reruns 1 --tracing retain-on-failure            <span class="c"># keep the trace of the failed attempt</span></code></pre>
+<pre><code>@pytest.mark.flaky(reruns=3, reruns_delay=2)     # per test, for a known third-party slowness
+def test_payment_provider_redirect(page: Page): ...</code></pre>
+  <p>The summary marks such tests as <code>R</code> (rerun) and lists them, so track them: a test that needs reruns every week is a bug in the test or the application. The <a href="../debugging-ci/index.html">debugging page</a> has a table of flakiness causes and fixes.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="layout">Project layout for a real suite</h2>
+<pre class="tree"><code>shopbot-e2e/
+├── pyproject.toml              dependencies + [tool.pytest.ini_options]
+├── pages/                      page and component objects (no assertions, no pytest imports)
+│   ├── __init__.py
+│   ├── base.py                 BasePage
+│   ├── components.py           NavBar, ProductCard
+│   ├── products.py             ProductsPage
+│   ├── product.py              ProductPage
+│   └── cart.py                 CartPage
+├── tests/
+│   ├── conftest.py             plugin overrides, api, logged_in_page, cart_with, page-object fixtures
+│   ├── data/
+│   │   └── search_cases.json   table-driven cases
+│   ├── test_search.py
+│   ├── test_cart.py
+│   ├── test_checkout.py        @pytest.mark.slow journeys
+│   ├── test_login.py
+│   ├── api/
+│   │   └── test_products_api.py   API-only tests (fast, no page)
+│   └── account/
+│       ├── conftest.py         storage_state override: signed in as Alice
+│       └── test_account.py
+├── test-results/               traces, screenshots, videos (git-ignored)
+└── .github/workflows/e2e.yml   CI (see the debugging and CI page)</code></pre>
+<pre class="term"><code>pytest -m smoke -n auto                                  <span class="c"># on every commit</span>
+pytest -n auto --reruns 1                                <span class="c"># on every pull request</span>
+pytest -n auto --browser chromium --browser firefox --browser webkit   <span class="c"># nightly</span>
+pytest tests/api                                         <span class="c"># API tests only</span></code></pre>
+  <p class="muted">Keep the tests in their own repository folder (or their own repository) with pinned versions. Upgrade Playwright deliberately: run <code>pip install -U pytest-playwright playwright</code> and <code>playwright install</code> together, because each Playwright version expects its own browser builds.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="usecases">
+    <div><b>Pull-request gate</b>A smoke subset (<code>-m smoke</code>) runs in two minutes on every push; the full suite runs in parallel before merging.</div>
+    <div><b>Nightly cross-browser</b>The same suite with three <code>--browser</code> flags and a device run, reported to the team channel.</div>
+    <div><b>Multi-tenant SaaS</b>Parametrised fixtures run the same journey for each plan or role (admin, editor, viewer) with a saved storage state each.</div>
+    <div><b>Shared staging environment</b>Unique data and per-worker accounts keep parallel runs from different teams from colliding.</div>
+    <div><b>Regulated forms</b>Data files hold hundreds of validation cases maintained by analysts; <code>parametrize</code> turns each row into a test.</div>
+    <div><b>Release verification</b>After deploy, <code>pytest -m smoke --base-url https://www.example.com</code> runs read-only checks against production.</div>
+    <div><b>AI-generated tests</b>Agents generate tests that use your page objects and fixtures, which keeps the generated code short and reviewable (see the test generator project).</div>
+    <div><b>Front-end only teams</b>Mocked API fixtures let the UI be tested before the back end exists.</div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="mistakes">Common mistakes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Mistake</th><th>Symptom</th><th>Fix</th></tr>
+      <tr><td>Creating browsers yourself with <code>sync_playwright()</code> inside tests</td><td>Slow runs, no tracing, CLI flags ignored</td><td>Use the <code>page</code>/<code>context</code>/<code>browser</code> fixtures, or <code>new_context</code> for extra contexts</td></tr>
+      <tr><td>Overriding <code>browser_context_args</code> without <code>**browser_context_args</code></td><td><code>--base-url</code>, <code>--device</code> and videos silently stop working</td><td>Request the original and merge it</td></tr>
+      <tr><td>Overriding it with function scope</td><td><code>ScopeMismatch</code> error</td><td>Keep <code>scope="session"</code>; use the marker for one test</td></tr>
+      <tr><td>Tests that depend on each other (test 2 expects the cart from test 1)</td><td>Pass in order, fail alone or with <code>-n</code></td><td>Each test creates its own state (fixtures, API seeding)</td></tr>
+      <tr><td>A session-scoped <code>page</code> or <code>context</code> to "save time"</td><td>State leaks between tests; one failure cascades</td><td>Share the browser and saved <code>storage_state</code>, not the context</td></tr>
+      <tr><td>Sharing one account across parallel workers</td><td>Random cart totals, logged-out sessions</td><td>Per-worker accounts or unique data per test</td></tr>
+      <tr><td><code>--browser</code> in <code>addopts</code></td><td>Extra browsers when someone passes <code>--browser</code></td><td>Leave browser choice to the command line or CI matrix</td></tr>
+      <tr><td>Assertions on <code>locator.inner_text()</code> with <code>==</code></td><td>Flaky failures while the page is still updating</td><td><code>expect(locator).to_have_text(...)</code> retries</td></tr>
+      <tr><td>Blanket <code>--reruns 5</code></td><td>Real bugs pass on the third try and ship</td><td>Few reruns, <code>--fail-on-flaky</code> or a flaky report, fix root causes</td></tr>
+      <tr><td>Hard-coded <code>http://localhost:8000</code> in every <code>goto</code></td><td>Cannot point the suite at staging</td><td>Relative URLs plus <code>base_url</code></td></tr>
+      <tr><td><code>new_context(locale="fr-FR")</code> when your <code>browser_context_args</code> already sets <code>locale</code></td><td><code>TypeError: got multiple values for keyword argument 'locale'</code></td><td>Pass only new keys, use the <code>browser_context_args</code> marker, or call <code>browser.new_context(...)</code> directly</td></tr>
+      <tr><td>Starting <code>context.tracing</code> yourself while running with <code>--tracing</code></td><td><code>Tracing has been already started</code></td><td>Use one or the other</td></tr>
+      <tr><td>Installing both pytest-playwright and pytest-playwright-asyncio</td><td>Plugin conflict error at start-up</td><td>Pick one per environment</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Task</th><th>Code or command</th></tr>
+      <tr><td>A test with a page</td><td><code>def test_x(page: Page): ...</code></td></tr>
+      <tr><td>Extra context in one test</td><td><code>ctx = new_context(color_scheme="dark"); p = ctx.new_page()</code> (only keys not already in <code>browser_context_args</code>)</td></tr>
+      <tr><td>Context options for all tests</td><td>Override <code>browser_context_args</code> (session) in <code>conftest.py</code></td></tr>
+      <tr><td>Context options for one test</td><td><code>@pytest.mark.browser_context_args(color_scheme="dark")</code></td></tr>
+      <tr><td>Launch options</td><td>Override <code>browser_type_launch_args</code>, or <code>--headed</code>, <code>--slowmo</code>, <code>--browser-channel</code></td></tr>
+      <tr><td>Signed-in tests in a folder</td><td>Folder <code>conftest.py</code> adding <code>"storage_state": path</code></td></tr>
+      <tr><td>Fixture with clean-up</td><td><code>@pytest.fixture</code> + <code>yield value</code> + clean-up code</td></tr>
+      <tr><td>API client</td><td><code>playwright.request.new_context(base_url=...)</code>; <code>page.request</code> shares cookies</td></tr>
+      <tr><td>Data-driven test</td><td><code>@pytest.mark.parametrize("a, b", [...], ids=[...])</code></td></tr>
+      <tr><td>Browser-specific</td><td><code>@pytest.mark.skip_browser("webkit")</code>, <code>@pytest.mark.only_browser("chromium")</code>, <code>browser_name</code></td></tr>
+      <tr><td>Select by marker</td><td><code>pytest -m "smoke and not slow"</code></td></tr>
+      <tr><td>All engines</td><td><code>pytest --browser chromium --browser firefox --browser webkit</code></td></tr>
+      <tr><td>Parallel</td><td><code>pytest -n auto</code>, <code>--dist loadfile|loadgroup|worksteal</code>, <code>worker_id</code></td></tr>
+      <tr><td>Retries</td><td><code>--reruns 2 --reruns-delay 1</code>, <code>@pytest.mark.flaky(reruns=2)</code></td></tr>
+      <tr><td>Evidence on failure</td><td><code>--tracing retain-on-failure --screenshot only-on-failure --video retain-on-failure</code></td></tr>
+      <tr><td>Assertion timeout</td><td><code>expect.set_options(timeout=10_000)</code> or <code>expect(loc).to_be_visible(timeout=...)</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Official documentation: <a href="https://playwright.dev/python/docs/test-runners">Playwright pytest plugin</a>, <a href="https://playwright.dev/python/docs/pom">Page object models</a>, <a href="https://docs.pytest.org/en/stable/how-to/fixtures.html">pytest fixtures</a>, <a href="https://docs.pytest.org/en/stable/how-to/parametrize.html">pytest parametrisation</a>, <a href="https://pytest-xdist.readthedocs.io/en/stable/distribution.html">pytest-xdist distribution modes</a>, <a href="https://github.com/pytest-dev/pytest-rerunfailures">pytest-rerunfailures</a>.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>Write a page object method and test for the "Kitchen" category filter <span class="diff easy">easy</span></summary>
+    <p class="q">Using <code>ProductsPage</code>, assert that filtering by Kitchen shows exactly the Ceramic Mug and the Cast Iron Pan, in that order.</p>
+<pre><code>from playwright.sync_api import expect
+
+
+def test_kitchen_filter(products_page):
+    products_page.open().search(category="kitchen")
+    expect(products_page.cards.get_by_role("heading")).to_have_text(["Ceramic Mug", "Cast Iron Pan"])
+    expect(products_page.result_count).to_have_text("2 results")</code></pre>
+    <p><code>to_have_text</code> with a list checks every matching element in order, and retries as a whole.</p>
+  </details>
+  <details class="prob"><summary>Make every test in <code>tests/mobile/</code> run as an iPhone 15 <span class="diff med">medium</span></summary>
+    <p class="q">Without changing the tests and without the <code>--device</code> flag.</p>
+<pre><code># tests/mobile/conftest.py
+import pytest
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args: dict, playwright) -&gt; dict:
+    return {**browser_context_args, **playwright.devices["iPhone 15"]}</code></pre>
+    <p>The device descriptor contains <code>viewport</code>, <code>user_agent</code>, <code>device_scale_factor</code>, <code>is_mobile</code> and <code>has_touch</code>. Its <code>default_browser_type</code> is a hint only; run the folder with <code>--browser webkit</code> for the closest match to Safari (on Firefox, remove <code>is_mobile</code>, which it does not support).</p>
+  </details>
+  <details class="prob"><summary>Find the isolation bug <span class="diff med">medium</span></summary>
+    <p class="q">A colleague expects the second test to pass because the first one "always runs first". It fails, every time. Why, and how do you fix it?</p>
+<pre><code>def test_first_adds(page):
+    page.goto("/products/1")
+    page.get_by_role("button", name="Add to cart").click()
+
+def test_second_checks_cart(page):
+    page.goto("/cart")
+    expect(page.get_by_test_id("cart-total")).to_have_text("£12.00")</code></pre>
+    <p>Each test gets its own context, so the second test never has the first test's session cookie and ShopBot shows it an empty cart. Even if the state were shared some other way (a shared account), the test would still break under <code>-n 4</code>, <code>-k</code> or random ordering. Make every test self-contained:</p>
+<pre><code>def test_cart_total(cart_with):
+    cart = cart_with({1: 1})
+    expect(cart.total).to_have_text("£12.00")</code></pre>
+  </details>
+  <details class="prob"><summary>A fixture that records a trace only for tests marked <code>@pytest.mark.trace</code> <span class="diff hard">hard</span></summary>
+    <p class="q">Without using <code>--tracing</code>. Save it to the test's <code>output_path</code>.</p>
+<pre><code># conftest.py  (register "trace" under markers in pyproject.toml)
+import os
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def trace_marked(request, context, output_path):
+    if not request.node.get_closest_marker("trace"):
+        yield
+        return
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    yield
+    os.makedirs(output_path, exist_ok=True)
+    context.tracing.stop(path=os.path.join(output_path, "trace.zip"))</code></pre>
+    <p>Because it is <code>autouse</code> and requests <code>context</code>, every test in its scope gets a context; put it in the <code>conftest.py</code> of browser-test folders only. Do not combine it with <code>--tracing</code>: the plugin has already started tracing and <code>tracing.start()</code> raises "Tracing has been already started". Open the result with <code>playwright show-trace</code>.</p>
+  </details>
+  <details class="prob"><summary>Per-worker test accounts <span class="diff hard">hard</span></summary>
+    <p class="q">Your app has an admin API <code>POST /api/admin/users</code>. Give each xdist worker its own signed-in user, created once per worker and deleted at the end.</p>
+<pre><code>import os
+import uuid
+
+import pytest
+
+
+@pytest.fixture(scope="session")
+def worker_user(api, worker_id):
+    email = f"qa-{worker_id}-{uuid.uuid4().hex[:6]}@example.com"
+    r = api.post("/api/admin/users", data={"email": email, "password": "S3cret!pass"},
+                 headers={"Authorization": f"Bearer {os.environ['ADMIN_TOKEN']}"})
+    assert r.ok, r.text()
+    yield r.json()
+    api.delete(f"/api/admin/users/{r.json()['id']}",
+               headers={"Authorization": f"Bearer {os.environ['ADMIN_TOKEN']}"})
+
+
+@pytest.fixture(scope="session")
+def worker_state(browser, base_url, worker_user, tmp_path_factory) -&gt; str:
+    ctx = browser.new_context(base_url=base_url)
+    ctx.request.post("/login", form={"email": worker_user["email"], "password": "S3cret!pass"})
+    path = tmp_path_factory.mktemp("auth") / "state.json"
+    ctx.storage_state(path=path)
+    ctx.close()
+    return str(path)</code></pre>
+    <p>Session fixtures run once per worker, so each worker creates, uses and deletes its own user. Tests then use <code>new_context(storage_state=worker_state)</code> or a folder-level <code>browser_context_args</code> override.</p>
+  </details>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

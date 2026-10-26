@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reliability and Resilience - System Design</title>
+  <link rel="stylesheet" href="../assets/sd.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Reliability and resilience</h1>
+    <nav><a href="../index.html">System design home</a></nav>
+  </header>
+
+  <p>
+    At scale, something is always failing: a disk, a server, a zone, a dependency, a deployment, a certificate. Reliable systems assume failure and are designed so that a failure stays <strong>small</strong> (isolation),
+    <strong>short</strong> (fast detection and recovery), and <strong>invisible</strong> to users where possible (redundancy and graceful degradation). This page covers the patterns that make that happen.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="principles">Core principles</h2>
+  <ul>
+    <li><strong>Redundancy across failure domains:</strong> at least two of everything, spread over zones (and regions for the most critical systems).</li>
+    <li><strong>Static stability:</strong> the system keeps working during a failure without needing to make changes (pre-provisioned capacity in surviving zones, no dependency on a control plane during recovery).</li>
+    <li><strong>Fail fast and contain:</strong> timeouts, circuit breakers and bulkheads stop one slow component from consuming every thread in the fleet.</li>
+    <li><strong>Degrade gracefully:</strong> serve stale data, drop optional features (recommendations, personalisation), and keep the core flow alive.</li>
+    <li><strong>Make operations idempotent</strong> so retries are safe.</li>
+    <li><strong>Detect fast:</strong> health checks, SLO-based alerts, synthetic tests (see <a href="../security-ops/index.html#observability">observability</a>).</li>
+    <li><strong>Recover fast:</strong> automated failover, fast rollback, practised runbooks. Mean time to recovery often matters more than mean time between failures.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="retries">Timeouts, retries, backoff and jitter</h2>
+  <p>
+    Every remote call needs a <strong>timeout</strong>; without one, a hung dependency holds threads forever. Transient failures should be <strong>retried</strong>, but naive retries are dangerous:
+    when a service recovers, every client retrying at the same moment creates a new spike that knocks it over again (a retry storm). <strong>Exponential backoff</strong> spaces retries out, and <strong>jitter</strong> (randomness) spreads them so clients do not synchronise.
+  </p>
+  <div class="demo">
+    <h3>Retry storm simulator: 1,000 clients after a 2-second outage</h3>
+    <div class="bar"><label>Strategy <select id="rt-strat"><option value="none">Immediate retries (every 100 ms)</option><option value="exp">Exponential backoff, no jitter</option><option value="jitter" selected>Exponential backoff + full jitter</option></select></label></div>
+    <canvas class="plot" id="rt-chart" width="760" height="230"></canvas>
+    <div class="readout" id="rt-out"></div>
+  </div>
+<pre><code>import random, time
+def call_with_retries(fn, attempts=5, base=0.1, cap=5.0):
+    for i in range(attempts):
+        try:
+            return fn(timeout=2.0)                      # always set a timeout
+        except TransientError:
+            if i == attempts - 1: raise
+            sleep = random.uniform(0, min(cap, base * 2 ** i))   # "full jitter"
+            time.sleep(sleep)</code></pre>
+  <ul>
+    <li>Retry only <strong>idempotent</strong> operations (or use idempotency keys); retry only <strong>transient</strong> errors (timeouts, 429, 503), never 400s.</li>
+    <li>Retry at <strong>one layer</strong>: retries at every layer multiply (3 attempts at each of 3 layers = 27 calls to the bottom service).</li>
+    <li>Use a <strong>retry budget</strong> (for example, retries may add at most 10% extra load).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="circuit">Circuit breakers</h2>
+  <p>When a dependency keeps failing, stop calling it for a while: fail fast (or serve a fallback) instead of waiting on timeouts. After a cool-down, let a few trial requests through; if they succeed, close the circuit.</p>
+  <div class="demo">
+    <h3>Circuit breaker state machine</h3>
+    <div class="bar">
+      <button type="button" id="cb-ok" class="primary">Send request (dependency healthy)</button>
+      <button type="button" id="cb-fail">Send request (dependency failing)</button>
+      <button type="button" id="cb-wait">Wait 30 s</button>
+      <button type="button" id="cb-reset">Reset</button>
+    </div>
+    <div class="stage" id="cb-stage"></div>
+    <div class="caption" id="cb-msg"></div>
+  </div>
+
+  <h2 id="bulkhead">Bulkheads, load shedding and rate limiting</h2>
+  <div class="demo" id="bh-demo">
+    <h3>Isolating failures</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Bulkheads:</strong> separate thread pools, connection pools or even deployments per dependency or per customer tier, so one overwhelmed part cannot sink the ship.</li>
+    <li><strong>Load shedding:</strong> when overloaded, reject excess work early (fast 503) rather than accepting everything and timing out on all of it. Prioritise: shed batch and background traffic before user-facing requests.</li>
+    <li><strong>Rate limiting and quotas</strong> protect shared services from any single client (see the <a href="../rate-limiter/index.html">rate limiter design</a>).</li>
+    <li><strong>Shuffle sharding:</strong> assign each customer to a random small set of workers, so a "poison" customer can only affect the few other customers sharing exactly that set.</li>
+    <li><strong>Cell-based architecture:</strong> run many independent copies (cells) of the whole stack, each serving a subset of customers; a bad deploy or failure affects one cell (see <a href="../architecture/index.html#cells">cells</a>).</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="dr">Disaster recovery: RPO and RTO</h2>
+  <p><strong>RPO</strong> (recovery point objective) is how much data you can afford to lose; <strong>RTO</strong> (recovery time objective) is how long you can be down. Both cost money: lower targets need more standby infrastructure.</p>
+  <div class="demo" id="dr-demo">
+    <h3>Disaster recovery strategies</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Strategy</th><th>Second region runs</th><th>RPO</th><th>RTO</th><th>Cost</th></tr>
+      <tr><td>Backup and restore</td><td>Nothing (backups stored there)</td><td>Hours</td><td>Hours to a day</td><td>$</td></tr>
+      <tr><td>Pilot light</td><td>Replicated data; compute off</td><td>Minutes</td><td>Tens of minutes</td><td>$$</td></tr>
+      <tr><td>Warm standby</td><td>A scaled-down full copy</td><td>Seconds to minutes</td><td>Minutes</td><td>$$$</td></tr>
+      <tr><td>Active-active (multi-region)</td><td>Full production traffic</td><td>~0 (seconds)</td><td>~0 (automatic)</td><td>$$$$</td></tr>
+    </table>
+  </div>
+  <p class="muted">Test restores and failovers regularly ("game days"); an untested backup is a hope, not a plan. Also protect against human error and ransomware with immutable, point-in-time backups.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="deploy">Safe deployments</h2>
+  <p>Most outages are caused by changes. Make every change gradual, observable and reversible.</p>
+  <div class="demo" id="dep-demo">
+    <h3>Deployment strategies</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <ul>
+    <li><strong>Rolling:</strong> replace instances in batches; simple, no extra capacity; both versions run together briefly.</li>
+    <li><strong>Blue/green:</strong> deploy the new version alongside, switch traffic at once, switch back to roll back.</li>
+    <li><strong>Canary:</strong> send 1-5% of traffic to the new version, compare error rates and latency automatically, then expand in waves (zone by zone, region by region).</li>
+    <li><strong>Feature flags</strong> separate deploying code from releasing features, and act as instant kill switches.</li>
+    <li><strong>Backward-compatible changes</strong> (expand &rarr; migrate &rarr; contract) let old and new versions run side by side, which makes rollback safe.</li>
+  </ul>
+
+  <h2 id="chaos">Chaos engineering and testing</h2>
+  <p>Inject failures deliberately in controlled experiments (kill instances, add latency, fail a zone, block a dependency) to verify the system degrades as designed. Start in test environments, then run small, well-monitored experiments in production. Load-test regularly at expected peak and beyond. Azure Chaos Studio and AWS Fault Injection Service provide managed fault injection.</p>
+
+  <h2 id="refs">References</h2>
+  <div class="cloud-cols"><div class="card arch"><h3>Azure</h3><ul id="ref-az"></ul></div><div class="card arch"><h3>AWS</h3><ul id="ref-aws"></ul></div></div>
+  <div class="pager"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/sd.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

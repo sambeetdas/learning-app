@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Locators: finding elements - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .pgwrap { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: .8rem; align-items: start; }
+    @media (max-width: 800px) { .pgwrap { grid-template-columns: 1fr; } }
+    .pgwrap .mockbrowser { max-width: none; }
+    .pgview { font-size: .82rem; }
+    .pgview nav { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: .35rem; }
+    .pgview nav .right { margin-left: auto; }
+    .pgview h1 { font-size: 1.05rem; margin: .45rem 0 .3rem; border: 0; padding: 0; }
+    .pgview h2 { font-size: .9rem; margin: 0 0 .15rem; border: 0; padding: 0; }
+    .pgview form { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+    .pgview input, .pgview select, .pgview button { font: inherit; font-size: .8rem; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: .1rem .35rem; }
+    .pgview input { width: 8.5rem; }
+    .pgview p { margin: .25rem 0; }
+    .pgview .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: .4rem; }
+    .pgview .card { border: 1px solid var(--line); border-radius: 7px; padding: .35rem .5rem; }
+    .pgview .hit, .pgview .multi { outline: 3px solid var(--good); outline-offset: 1px; background: color-mix(in srgb, var(--good) 16%, var(--bg)); border-radius: 4px; }
+    .pgview .multi { outline-color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, var(--bg)); }
+    .pgview .act { outline: 3px solid var(--accent); outline-offset: 1px; background: color-mix(in srgb, var(--accent) 16%, var(--bg)); border-radius: 4px; }
+    .presets { display: flex; flex-direction: column; gap: .5rem; max-height: 27rem; overflow: auto; }
+    .presets b { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .presets .grp { display: flex; flex-wrap: wrap; gap: .25rem; }
+    .presets .grp button { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+    .demo .presets button { font: .74rem ui-monospace, Consolas, monospace; padding: .15rem .4rem; text-align: left; }
+    .demo .presets button.active { border-color: var(--accent); color: var(--accent); }
+    .pgin { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin: .6rem 0 .3rem; }
+    .pgin code { background: none; }
+    .demo .pgin input { flex: 1 1 18rem; font: .85rem ui-monospace, Consolas, monospace; }
+    #pg-out { white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: .8rem; }
+    #pg-out .v-hit { color: var(--good); font-weight: 700; } #pg-out .v-multi { color: var(--warn); font-weight: 700; } #pg-out .v-none { color: var(--bad); font-weight: 700; }
+    .chainview .mockbrowser { max-width: none; }
+    .chainview .card { display: inline-block; vertical-align: top; width: calc(50% - .6rem); min-width: 150px; margin: .2rem; padding: .3rem .5rem; border: 1px solid var(--line); border-radius: 7px; font-size: .8rem; transition: opacity .25s; }
+    .chainview .card.out { opacity: .3; }
+    .chainview .card .ln { color: var(--accent); text-decoration: underline; }
+    .chainview .card .hit, .chainview .card .act { outline: 3px solid var(--good); outline-offset: 1px; border-radius: 3px; }
+    .chainview .card .act { outline-color: var(--accent); }
+    .chainview .card.hit { outline: 3px solid var(--good); } .chainview .card.multi { outline: 3px solid var(--warn); }
+    .count-badge { display: inline-block; font: 700 .78rem system-ui; padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--line); margin: .3rem 0; }
+    .count-badge.one { color: var(--good); border-color: var(--good); } .count-badge.many { color: var(--warn); border-color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Locators: finding elements</h1><nav></nav></header>
+
+  <p>
+    Every test has to find things on the page: the search box, the "Add to cart" button, the third product card. In Playwright you do that with
+    <strong>locators</strong>. A locator is a <em>description</em> of how to find element(s), for example "the button whose accessible name is Search".
+    It does not hold on to a DOM node; it is re-evaluated every time you act or assert, so it survives re-renders, and it waits for the element to appear.
+  </p>
+  <p>This page covers which locator to choose, the full <code>get_by_role</code> options, filtering and chaining, strictness errors, iframes and shadow DOM, and ARIA snapshots.
+    The <a href="#playground">locator playground</a> lets you try locators against a copy of ShopBot's products page.</p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="philosophy">The locator philosophy</h2>
+  <div class="cols">
+    <div class="card arch">
+      <h3>Locate the way a user does</h3>
+      <p>A user does not see <code>div.css-1x9k2 &gt; span:nth-child(3)</code>. They see a <strong>button labelled "Add to cart"</strong>, a <strong>text box labelled "Email"</strong>, a <strong>heading "Products"</strong>.
+        Locators built on roles, labels and visible text keep working when developers rename classes or restructure the HTML, and they fail when something a user would notice really changes.</p>
+    </div>
+    <div class="card arch">
+      <h3>Four properties of a locator</h3>
+      <ul>
+        <li><strong>Lazy:</strong> creating one does nothing; it is resolved when used.</li>
+        <li><strong>Re-resolved:</strong> every action looks up the element again (no stale references).</li>
+        <li><strong>Auto-waiting:</strong> actions and <code>expect</code> wait for it to appear and be ready.</li>
+        <li><strong>Strict:</strong> an action on a locator that matches several elements fails, instead of silently clicking the first.</li>
+      </ul>
+    </div>
+  </div>
+<pre><code>search = page.get_by_role("button", name="Search")   # nothing happens yet
+page.goto("/products")
+search.click()                                         # resolved now, waits until clickable
+page.goto("/products?q=mug")
+search.click()                                         # resolved again on the new page: still works</code></pre>
+  <p>Accessible locators are also a free accessibility check: if you cannot find your "Search" button by role and name, neither can a screen reader user.</p>
+
+  <h2 id="priority">Which locator to use: the priority order</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>#</th><th>Locator</th><th>Use it for</th><th>ShopBot example</th></tr>
+      <tr><td>1</td><td><code>get_by_role(role, name=...)</code></td><td>Almost everything interactive: buttons, links, headings, form fields, checkboxes, dialogs, alerts</td><td><code>page.get_by_role("button", name="Add to cart")</code></td></tr>
+      <tr><td>2</td><td><code>get_by_label(text)</code></td><td>Form fields with a <code>&lt;label&gt;</code> (or <code>aria-label</code>)</td><td><code>page.get_by_label("Email")</code></td></tr>
+      <tr><td>3</td><td><code>get_by_placeholder(text)</code></td><td>Inputs that have only a placeholder</td><td><code>page.get_by_placeholder("Search products")</code></td></tr>
+      <tr><td>4</td><td><code>get_by_text(text)</code></td><td>Non-interactive content: messages, paragraphs, list items</td><td><code>page.get_by_text("Your cart is empty.")</code></td></tr>
+      <tr><td>5</td><td><code>get_by_alt_text(text)</code> / <code>get_by_title(text)</code></td><td>Images by <code>alt</code>; elements (and iframes) by <code>title</code></td><td><code>page.get_by_title("Loyalty card")</code></td></tr>
+      <tr><td>6</td><td><code>get_by_test_id(id)</code></td><td>When there is no good user-facing handle, or text changes (translations, dynamic data). A contract between developers and testers</td><td><code>page.get_by_test_id("product-card")</code></td></tr>
+      <tr><td>7</td><td><code>locator("css")</code> / <code>locator("xpath=...")</code></td><td>Last resort: structure-dependent, breaks on refactors</td><td><code>page.locator(".price")</code></td></tr>
+    </table>
+  </div>
+  <div class="callout tip"><strong>Rule of thumb.</strong> If a person could describe the element in words ("the Search button"), use role, label or text. If they would have to point at it ("that grey box, the second one"), add a test id rather than writing a long CSS path.</div>
+
+  <h2 id="by-role">get_by_role in depth</h2>
+  <p><code>get_by_role</code> searches the <strong>accessibility tree</strong>: the same roles and names that assistive technology sees. Roles come from HTML semantics (a <code>&lt;button&gt;</code> is a button, <code>&lt;a href&gt;</code> a link, <code>&lt;h2&gt;</code> a heading) or from an explicit <code>role="..."</code> attribute. The <strong>accessible name</strong> comes from the element's text, its <code>&lt;label&gt;</code>, <code>aria-label</code> or <code>aria-labelledby</code>.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Role</th><th>HTML that has it</th><th>ShopBot example</th></tr>
+      <tr><td><code>button</code></td><td><code>&lt;button&gt;</code>, <code>&lt;input type=submit&gt;</code></td><td><code>get_by_role("button", name="Place order")</code></td></tr>
+      <tr><td><code>link</code></td><td><code>&lt;a href&gt;</code></td><td><code>get_by_role("link", name="Ceramic Mug")</code></td></tr>
+      <tr><td><code>heading</code></td><td><code>&lt;h1&gt;</code> ... <code>&lt;h6&gt;</code></td><td><code>get_by_role("heading", level=1)</code></td></tr>
+      <tr><td><code>textbox</code></td><td><code>&lt;input&gt;</code> (text, email, password...), <code>&lt;textarea&gt;</code></td><td><code>get_by_role("textbox", name="Email")</code></td></tr>
+      <tr><td><code>spinbutton</code></td><td><code>&lt;input type=number&gt;</code></td><td><code>get_by_role("spinbutton", name="Quantity")</code></td></tr>
+      <tr><td><code>combobox</code> / <code>option</code></td><td><code>&lt;select&gt;</code> / <code>&lt;option&gt;</code></td><td><code>get_by_role("combobox", name="Category")</code></td></tr>
+      <tr><td><code>checkbox</code></td><td><code>&lt;input type=checkbox&gt;</code></td><td><code>get_by_role("checkbox", name="I accept the terms")</code></td></tr>
+      <tr><td><code>list</code> / <code>listitem</code></td><td><code>&lt;ul&gt;</code>, <code>&lt;ol&gt;</code> / <code>&lt;li&gt;</code></td><td><code>get_by_role("list", name="Reviews").get_by_role("listitem")</code></td></tr>
+      <tr><td><code>navigation</code>, <code>main</code>, <code>search</code>, <code>article</code></td><td><code>&lt;nav&gt;</code>, <code>&lt;main&gt;</code>, <code>role=search</code>, <code>&lt;article&gt;</code></td><td><code>get_by_role("navigation", name="Main")</code></td></tr>
+      <tr><td><code>alert</code>, <code>status</code></td><td><code>role="alert"</code>, <code>role="status"</code></td><td><code>get_by_role("alert")</code> (checkout errors)</td></tr>
+      <tr><td><code>dialog</code>, <code>img</code>, <code>table</code>/<code>row</code>/<code>cell</code></td><td><code>&lt;dialog&gt;</code>, <code>&lt;img alt&gt;</code>, tables</td><td><code>get_by_role("row", name="Ceramic Mug")</code> (cart table)</td></tr>
+    </table>
+  </div>
+  <h3>Options</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Option</th><th>Meaning</th><th>Example and result on ShopBot <code>/products</code></th></tr>
+      <tr><td><code>name="..."</code></td><td>Accessible name contains the text, <strong>case-insensitive</strong>, whitespace normalised</td><td><code>get_by_role("link", name="cart")</code> matches "Cart (0)"</td></tr>
+      <tr><td><code>exact=True</code></td><td>Name must equal the text, case-sensitive</td><td><code>get_by_role("link", name="Cart", exact=True)</code> matches nothing (the name is "Cart (0)")</td></tr>
+      <tr><td><code>name=re.compile(...)</code></td><td>Regular expression on the name</td><td><code>get_by_role("link", name=re.compile(r"^Cart \(\d+\)$"))</code></td></tr>
+      <tr><td><code>level=n</code></td><td>Heading level</td><td><code>get_by_role("heading", level=2)</code> matches the 4 product names</td></tr>
+      <tr><td><code>checked=True/False</code></td><td>Checkbox / radio state</td><td><code>get_by_role("checkbox", checked=False)</code> (unticked terms box on <code>/checkout</code>)</td></tr>
+      <tr><td><code>disabled=True</code></td><td>Disabled elements</td><td><code>get_by_role("button", name="Add to cart", disabled=True)</code> on the out-of-stock Desk Lamp</td></tr>
+      <tr><td><code>selected</code>, <code>expanded</code>, <code>pressed</code></td><td>Option selected, disclosure open, toggle pressed (<code>aria-*</code> states)</td><td><code>get_by_role("option", selected=True)</code> matches "All"</td></tr>
+      <tr><td><code>include_hidden=True</code></td><td>Also match elements hidden from the accessibility tree (default: hidden ones are skipped)</td><td>Rarely needed; prefer asserting on what users can see</td></tr>
+    </table>
+  </div>
+<pre><code>import re
+
+page.goto("/products")
+page.get_by_role("heading", name="Products")                       # the h1
+page.get_by_role("textbox", name="Search").fill("lamp")           # name comes from &lt;label&gt;Search ...&lt;/label&gt;
+page.get_by_role("combobox", name="Category").select_option("office")
+page.get_by_role("button", name="Search").click()
+page.get_by_role("link", name=re.compile("lamp", re.I)).click()
+expect(page.get_by_role("button", name="Add to cart")).to_be_disabled()   # Desk Lamp is out of stock</code></pre>
+
+  <h2 id="other-getters">The other get_by methods</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Method</th><th>Matches</th><th>Notes</th></tr>
+      <tr><td><code>get_by_label("Email")</code></td><td>The input/select/textarea associated with a <code>&lt;label&gt;</code> (wrapping or <code>for=</code>), <code>aria-labelledby</code> or <code>aria-label</code></td><td>Substring and case-insensitive by default. The label text is the label's whole text, so on ShopBot <code>get_by_label("Category", exact=True)</code> finds nothing (the label also contains the option texts); prefer <code>get_by_role("combobox", name="Category", exact=True)</code></td></tr>
+      <tr><td><code>get_by_placeholder("Search products")</code></td><td>Inputs by <code>placeholder</code></td><td>Placeholders are a weak label; prefer a real label in the app</td></tr>
+      <tr><td><code>get_by_text("In stock")</code></td><td>The <em>smallest</em> element containing the text</td><td>Substring, case-insensitive, whitespace normalised. <code>exact=True</code> for whole-string, case-sensitive; or a regex. Matches 3 cards' "In stock" paragraphs, not "Out of stock"</td></tr>
+      <tr><td><code>get_by_alt_text("ShopBot logo")</code></td><td><code>&lt;img alt&gt;</code>, <code>&lt;area&gt;</code>, <code>&lt;input type=image&gt;</code></td><td></td></tr>
+      <tr><td><code>get_by_title("Loyalty card")</code></td><td>Elements by <code>title</code> attribute</td><td>On <code>/account</code> it finds the iframe</td></tr>
+      <tr><td><code>get_by_test_id("product-card")</code></td><td><code>data-testid</code> attribute, exact and case-sensitive</td><td>Change the attribute name once with <code>p.selectors.set_test_id_attribute("data-qa")</code></td></tr>
+    </table>
+  </div>
+<pre><code>page.get_by_text("In stock")                      # 3 paragraphs
+page.get_by_text("In stock", exact=True)          # 3 (whole text equals "In stock")
+page.get_by_text("ceramic mug")                   # 1: the link (case-insensitive)
+page.get_by_text("ceramic mug", exact=True)       # 0: exact is case-sensitive
+page.get_by_text(re.compile(r"^\d+ results$"))    # the result count paragraph
+page.get_by_text("Search")                        # 2: the "Search" label AND the Search button</code></pre>
+
+  <h2 id="playground">Locator playground</h2>
+  <p>A copy of ShopBot's <code>/products</code> page. Click a preset or type your own locator, then press <strong>Find</strong> (or Enter). One match is highlighted in green: an action would run on it. Several matches turn orange: an action would raise a <strong>strict mode violation</strong>. No match: an action would wait and then time out.
+    Supported: <code>get_by_role</code> (<code>name</code>, <code>exact</code>, <code>level</code>, <code>selected</code>), <code>get_by_text</code>, <code>get_by_label</code>, <code>get_by_placeholder</code>, <code>get_by_test_id</code>, <code>locator("css")</code>, <code>filter(has_text=, has_not_text=, has=, has_not=, visible=)</code>, <code>nth()</code>, <code>first</code>, <code>last</code>, <code>and_()</code>, <code>or_()</code>, chaining, and <code>re.compile("...", re.I)</code>.</p>
+  <div class="demo" id="pg">
+    <h3>Try a locator on ShopBot</h3>
+    <div class="pgwrap">
+      <div class="mockbrowser"><div class="chrome"><i></i><i></i><i></i><span class="url">127.0.0.1:8000/products</span></div><div class="viewport pgview"></div></div>
+      <div class="presets" aria-label="Preset locators"></div>
+    </div>
+    <div class="pgin"><code>page.</code><input type="text" id="pg-in" aria-label="Locator expression" spellcheck="false" autocomplete="off"><button type="button" class="primary" id="pg-go">Find</button></div>
+    <div class="readout" id="pg-out" aria-live="polite"></div>
+  </div>
+  <p class="muted">The matching rules follow Playwright's (role and accessible name, label association, smallest element containing the text), and each preset's count was checked against real Playwright 1.64 on ShopBot. It is a teaching model, not the real engine: hidden elements, ARIA attributes beyond these, and CSS pseudo-classes specific to Playwright are not modelled.</p>
+
+  <h2 id="filtering">Filtering and chaining</h2>
+  <p>Real pages repeat structures: four product cards, each with a heading, a price and a stock line. Start from the repeated item and narrow it down instead of writing one long selector.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Tool</th><th>Keeps</th><th>Example</th></tr>
+      <tr><td><code>filter(has_text="Lamp")</code></td><td>Elements whose text contains the string (or matches a regex), anywhere inside</td><td><code>cards.filter(has_text="Lamp")</code> → Desk Lamp card</td></tr>
+      <tr><td><code>filter(has_not_text="In stock")</code></td><td>Elements that do not contain the text</td><td>→ Desk Lamp card (out of stock)</td></tr>
+      <tr><td><code>filter(has=locator)</code></td><td>Elements containing a match of the inner locator (searched <em>inside</em> each element)</td><td><code>cards.filter(has=page.get_by_role("heading", name="Desk Lamp"))</code></td></tr>
+      <tr><td><code>filter(has_not=locator)</code></td><td>Elements that do not contain it</td><td><code>cards.filter(has_not=page.get_by_text("Out of stock"))</code> → 3 cards</td></tr>
+      <tr><td><code>filter(visible=True)</code></td><td>Only visible elements</td><td>Useful when responsive layouts render a hidden mobile and a visible desktop copy</td></tr>
+      <tr><td><code>outer.get_by_role(...)</code> (chaining)</td><td>Matches searched inside each element of the outer locator</td><td><code>cards.filter(has_text="Pan").locator(".price")</code> → "£39.50"</td></tr>
+    </table>
+  </div>
+<pre><code>cards = page.get_by_test_id("product-card")
+in_stock = cards.filter(has_text="In stock")                         # 3 cards
+pan = cards.filter(has=page.get_by_role("heading", name="Cast Iron Pan"))
+expect(pan.locator(".price")).to_have_text("£39.50")
+pan.get_by_role("link").click()                                      # exactly one link: no strictness error</code></pre>
+  <div class="demo" id="chain-demo">
+    <h3>Narrowing down step by step</h3>
+    <div class="stage chainview"></div>
+  </div>
+  <div class="callout"><strong>Inner locators are relative.</strong> In <code>filter(has=page.get_by_role("heading"))</code> the inner locator is written with <code>page.</code> but is searched inside each card, not across the page. It must not start from a different page or frame.</div>
+
+  <h2 id="nth-and-or">nth, first, last, and_ and or_</h2>
+<pre><code>cards = page.get_by_test_id("product-card")
+cards.first                    # Ceramic Mug card
+cards.nth(1)                   # Cast Iron Pan card (0-based)
+cards.last                     # Notebook Set card
+cards.nth(-1)                  # also the last one
+
+# and_: both must match the same element
+page.get_by_role("button").and_(page.get_by_text("Search"))        # the Search button, not the label
+
+# or_: either one (handy when the UI can be in two states)
+login_or_user = page.get_by_role("link", name="Log in").or_(page.get_by_test_id("user-name"))
+expect(login_or_user).to_be_visible()
+
+# iterate over all matches (no waiting: make sure the list has loaded first)
+expect(cards).to_have_count(4)
+for card in cards.all():
+    print(card.get_by_role("heading").inner_text())
+print(cards.get_by_role("heading").all_inner_texts())   # ['Ceramic Mug', 'Cast Iron Pan', 'Desk Lamp', 'Notebook Set']</code></pre>
+  <div class="callout"><strong>Use position sparingly.</strong> <code>first</code> and <code>nth()</code> silence the strictness check. They are right when order is part of what you test ("the newest message is first"), and wrong as a quick fix for "it matched two things"; that usually means your locator is not specific enough. If you use <code>or_</code> and both sides can be visible at once, add <code>.first</code> to avoid a strict mode violation.</div>
+
+  <h2 id="strictness">Strictness violations</h2>
+  <p>Actions such as <code>click()</code>, <code>fill()</code> and <code>inner_text()</code> need exactly one element. If the locator matches more, Playwright stops with an error that lists the candidates and suggests a unique locator for each ("aka"). This is the real output on ShopBot:</p>
+<pre><code>page.get_by_test_id("product-card").click()</code></pre>
+<pre class="term"><code>playwright._impl._errors.Error: Locator.click: Error: strict mode violation: get_by_test_id("product-card") resolved to 4 elements:
+    1) &lt;article class="card" data-testid="product-card"&gt;…&lt;/article&gt; aka get_by_text("Ceramic Mug£12.00In stock")
+    2) &lt;article class="card" data-testid="product-card"&gt;…&lt;/article&gt; aka get_by_text("Cast Iron Pan£39.50In stock")
+    3) &lt;article class="card" data-testid="product-card"&gt;…&lt;/article&gt; aka get_by_text("Desk Lamp£24.99Out of stock")
+    4) &lt;article class="card" data-testid="product-card"&gt;…&lt;/article&gt; aka get_by_text("Notebook Set£9.50In stock")
+
+Call log:
+  - waiting for get_by_test_id("product-card")</code></pre>
+  <p>Fixes, best first: make the locator more specific (a role with a name, <code>filter(has=...)</code>, chaining inside a container); assert on the whole list (<code>expect(cards).to_have_count(4)</code> works on many elements); and only if order matters, <code>first</code> / <code>nth()</code>.</p>
+  <p>When nothing matches, actions do not fail immediately; they wait for the element to appear (default 30 s) and then raise a timeout:</p>
+<pre class="term"><code>playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="Buy now")</code></pre>
+
+  <h2 id="css-xpath">CSS and XPath (and why they are the last resort)</h2>
+<pre><code>page.locator(".price")                     # CSS
+page.locator("article h2 a")               # CSS descendant
+page.locator("[data-testid=product-card]") # attribute (get_by_test_id is clearer)
+page.locator("xpath=//article//a")         # XPath (prefix optional when it starts with //)
+page.locator("article", has_text="Out of stock").get_by_role("link")   # mix: CSS + filter + role</code></pre>
+  <ul>
+    <li>CSS and XPath describe the <em>structure</em>, which changes far more often than the visible UI. <code>div:nth-child(3) &gt; span</code> breaks when a banner is added.</li>
+    <li>CSS in Playwright pierces open shadow roots; <strong>XPath does not</strong>.</li>
+    <li>Avoid generated class names (<code>.css-1x9k2</code>, <code>.sc-AxjAm</code>): they change with every build.</li>
+    <li>Old selector strings such as <code>"text=Search"</code> and <code>"button &gt;&gt; nth=1"</code> still work, but the <code>get_by_*</code> methods are clearer and are what codegen produces.</li>
+  </ul>
+
+  <h2 id="frames-shadow">Iframes and shadow DOM</h2>
+  <h3>Iframes</h3>
+  <p>An iframe is a separate document, so page-level locators do not see inside it. ShopBot's account page has a "Loyalty card" iframe with a Redeem button:</p>
+<pre><code># after logging in
+card = page.frame_locator("iframe[title='Loyalty card']")
+expect(card.locator("#points")).to_have_text("120")
+card.get_by_role("button", name="Redeem").click()
+expect(card.locator("#points")).to_have_text("0")
+
+# the same, starting from a user-facing locator for the iframe element
+frame = page.get_by_title("Loyalty card").content_frame
+expect(frame.get_by_role("button", name="Redeem")).to_be_visible()</code></pre>
+  <h3>Shadow DOM</h3>
+  <p>Web components hide their internals in a shadow root. Playwright's role, text, label, test id and CSS locators <strong>pierce open shadow roots automatically</strong>; you write the locator as if the shadow boundary was not there. (Closed shadow roots cannot be reached, by design.)</p>
+<pre><code># &lt;promo-banner&gt; renders &lt;p&gt;10% off mugs&lt;/p&gt;&lt;button&gt;Claim offer&lt;/button&gt; inside an open shadow root
+page.get_by_role("button", name="Claim offer").click()   # works
+page.locator("promo-banner button").count()              # 1: CSS pierces too
+page.locator("xpath=//promo-banner//button").count()     # 0: XPath does not</code></pre>
+
+  <h2 id="aria-snapshots">ARIA snapshots</h2>
+  <p><code>locator.aria_snapshot()</code> returns the accessibility tree under an element as YAML: roles, names and states, without any CSS or markup noise. It is the same structure the Playwright MCP server shows to AI agents, and a fast way to see which roles and names you can use. This is the real output for ShopBot's search form and first product card:</p>
+  <div class="cols">
+<pre><code>print(page.get_by_role("search").aria_snapshot())
+
+- search:
+  - text: Search
+  - textbox "Search":
+    - /placeholder: Search products
+  - text: Category
+  - combobox "Category":
+    - option "All" [selected]
+    - option "Kitchen"
+    - option "Office"
+  - button "Search"</code></pre>
+<pre><code>print(page.get_by_test_id("product-card").first.aria_snapshot())
+
+- article:
+  - heading "Ceramic Mug" [level=2]:
+    - link "Ceramic Mug":
+      - /url: /products/1
+  - paragraph: £12.00
+  - paragraph: In stock</code></pre>
+  </div>
+  <p>Assert on structure with <code>to_match_aria_snapshot</code>. The template is matched <strong>partially</strong>: you list what matters, in order, and may leave out children, attributes and names; text values can be regular expressions.</p>
+<pre><code>expect(page.get_by_role("search")).to_match_aria_snapshot("""
+  - search:
+    - textbox "Search"
+    - combobox "Category"
+    - button "Search"
+""")
+expect(page.get_by_test_id("product-card").first).to_match_aria_snapshot("""
+  - article:
+    - heading "Ceramic Mug" [level=2]
+    - paragraph: /£\\d+\\.\\d{2}/
+    - paragraph: In stock
+""")</code></pre>
+  <p class="muted">Failure messages from <code>expect</code> also include an ARIA snapshot of the page, which shows at a glance what was there instead.</p>
+
+  <h2 id="mistakes">Common mistakes</h2>
+  <ul>
+    <li><strong>Copying a CSS path from DevTools</strong> (<code>#root &gt; div &gt; div:nth-child(2) &gt; button</code>). Use codegen's "Pick locator" or write a role locator.</li>
+    <li><strong>Silencing strictness with <code>.first</code></strong> and then clicking the wrong one of two "Delete" buttons. Narrow down by container instead.</li>
+    <li><strong>Forgetting the name is a substring.</strong> <code>get_by_role("button", name="Log")</code> also matches "Log out"; add <code>exact=True</code> when names overlap.</li>
+    <li><strong>Matching by translated or dynamic text</strong> in a multi-language app. Use test ids (or run with a fixed locale) for those.</li>
+    <li><strong>Looking inside an iframe with a page locator.</strong> Use <code>frame_locator()</code> or <code>content_frame</code>.</li>
+    <li><strong>Iterating with <code>all()</code> before the list has loaded.</strong> <code>all()</code> and <code>count()</code> do not wait; assert the count first.</li>
+    <li><strong>Using <code>page.query_selector()</code> / ElementHandles</strong> from old tutorials. They are not auto-waiting and go stale; use locators.</li>
+  </ul>
+
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Need</th><th>Code</th></tr>
+      <tr><td>Button / link by name</td><td><code>page.get_by_role("button", name="Search")</code>, <code>page.get_by_role("link", name="Cart")</code></td></tr>
+      <tr><td>Exact name</td><td><code>get_by_role("link", name="Products", exact=True)</code></td></tr>
+      <tr><td>Form field</td><td><code>page.get_by_label("Email")</code>, <code>page.get_by_role("textbox", name="Email")</code></td></tr>
+      <tr><td>Text on the page</td><td><code>page.get_by_text("Added to cart")</code></td></tr>
+      <tr><td>Test id</td><td><code>page.get_by_test_id("cart-total")</code></td></tr>
+      <tr><td>One item of a list</td><td><code>cards.filter(has_text="Lamp")</code>, <code>cards.filter(has=page.get_by_role("heading", name="Desk Lamp"))</code></td></tr>
+      <tr><td>Inside a container</td><td><code>page.get_by_role("navigation", name="Main").get_by_role("link", name="Account")</code></td></tr>
+      <tr><td>By position</td><td><code>.first</code>, <code>.last</code>, <code>.nth(2)</code></td></tr>
+      <tr><td>Both / either</td><td><code>a.and_(b)</code>, <code>a.or_(b)</code></td></tr>
+      <tr><td>Iframe</td><td><code>page.frame_locator("iframe[title='Loyalty card']").get_by_role("button", name="Redeem")</code></td></tr>
+      <tr><td>All texts</td><td><code>locator.all_inner_texts()</code>; count: <code>locator.count()</code> (no waiting)</td></tr>
+      <tr><td>See roles and names</td><td><code>print(page.get_by_role("main").aria_snapshot())</code></td></tr>
+      <tr><td>Custom test id attribute</td><td><code>p.selectors.set_test_id_attribute("data-qa")</code></td></tr>
+    </table>
+  </div>
+
+  <h2 id="exercises">Exercises</h2>
+  <p>Try your answers in the playground first, then check them against the solutions.</p>
+  <details class="prob"><summary>On <code>/products</code>, write a locator for the price of the Desk Lamp, without CSS classes.</summary>
+<pre><code>lamp = page.get_by_test_id("product-card").filter(has=page.get_by_role("heading", name="Desk Lamp"))
+expect(lamp.get_by_text("£")).to_have_text("£24.99")</code></pre>
+    <p class="muted">Inside one card only one element contains "£", so <code>get_by_text("£")</code> is unique there.</p>
+  </details>
+  <details class="prob"><summary><code>page.get_by_text("Search").click()</code> fails with a strict mode violation. Why, and what are two better locators?</summary>
+    <p>"Search" is the text of the search box's <code>&lt;label&gt;</code> and of the button, so 2 elements match. Use <code>page.get_by_role("button", name="Search")</code>, or if you really mean text, <code>page.get_by_role("button").and_(page.get_by_text("Search"))</code>.</p>
+  </details>
+  <details class="prob"><summary>Get the names of all products that are in stock, as a Python list.</summary>
+<pre><code>in_stock = page.get_by_test_id("product-card").filter(has_not_text="Out of stock")
+names = in_stock.get_by_role("heading").all_inner_texts()
+print(names)    # ['Ceramic Mug', 'Cast Iron Pan', 'Notebook Set']</code></pre>
+  </details>
+  <details class="prob"><summary>The nav shows "Log in" for guests and the user's name (<code>data-testid="user-name"</code>) after login. Write one assertion that passes in both states, and one that proves the user is logged in.</summary>
+<pre><code>expect(page.get_by_role("link", name="Log in").or_(page.get_by_test_id("user-name"))).to_be_visible()
+expect(page.get_by_test_id("user-name")).to_have_text("Alice")</code></pre>
+  </details>
+  <details class="prob"><summary>On <code>/products/1</code>, check that there are exactly two reviews and that the first one mentions coffee.</summary>
+<pre><code>reviews = page.get_by_role("list", name="Reviews").get_by_role("listitem")
+expect(reviews).to_have_count(2)
+expect(reviews.first).to_contain_text("coffee")</code></pre>
+  </details>
+  <details class="prob"><summary>Write an ARIA snapshot assertion for ShopBot's main navigation that checks the order of the first three links and nothing else.</summary>
+<pre><code>expect(page.get_by_role("navigation", name="Main")).to_match_aria_snapshot("""
+  - navigation "Main":
+    - link "ShopBot"
+    - link "Products"
+    - link "Support chat"
+""")</code></pre>
+    <p class="muted">Partial matching lets the template omit the later links and the <code>/url</code> children.</p>
+  </details>
+
+  <h2 id="refs">References</h2>
+  <ul>
+    <li><a href="https://playwright.dev/python/docs/locators">Locators guide</a> and <a href="https://playwright.dev/python/docs/other-locators">other locators (CSS, XPath, legacy)</a></li>
+    <li><a href="https://playwright.dev/python/docs/api/class-locator">Locator API reference</a></li>
+    <li><a href="https://playwright.dev/python/docs/frames">Frames</a></li>
+    <li><a href="https://playwright.dev/python/docs/aria-snapshots">ARIA snapshots</a></li>
+  </ul>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

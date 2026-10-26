@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Actions, auto-waiting and assertions - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .aw { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: .8rem; align-items: start; }
+    @media (max-width: 760px) { .aw { grid-template-columns: 1fr; } }
+    .aw .mockbrowser { max-width: none; }
+    .aw .viewport { position: relative; min-height: 10.5rem; }
+    .aw .viewport h4 { margin: 0 0 .2rem; font-size: 1rem; }
+    .aw .el.dis { opacity: .5; border-style: dashed; }
+    .aw .el.ghost { visibility: hidden; }
+    .aw .el.moving { transform: translateX(2.2rem); }
+    .aw .el.ro { background: var(--panel); color: var(--muted); }
+    .aw .overlay { position: absolute; inset: 0; background: color-mix(in srgb, var(--fg) 55%, transparent); color: var(--bg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .9rem; border-radius: 0 0 10px 10px; }
+    .aw .status { min-height: 1.3rem; font-size: .85rem; color: var(--good); margin-top: .3rem; }
+    .aw .status.err { color: var(--bad); }
+    .clock { font: 700 .85rem ui-monospace, Consolas, monospace; margin: .2rem 0; }
+    .scen { display: flex; gap: .35rem; flex-wrap: wrap; margin: .3rem 0 .5rem; }
+    .scen button.active { background: var(--accent); color: var(--on-color); border-color: var(--accent); }
+    .checks.big span { font-size: .85rem; padding: .3rem .7rem; }
+    .logbox { font: .74rem ui-monospace, Consolas, monospace; white-space: pre-wrap; background: var(--code-bg); border-radius: 8px; padding: .4rem .6rem; min-height: 6rem; margin: 0; }
+    .race { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    @media (max-width: 760px) { .race { grid-template-columns: 1fr; } }
+    .lane { border: 1px solid var(--line); border-radius: 10px; padding: .5rem .7rem; background: var(--bg); min-width: 0; }
+    .lane h4 { margin: 0 0 .35rem; font: 700 .8rem ui-monospace, Consolas, monospace; }
+    .lane .bubble { font-size: .82rem; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .35rem .5rem; min-height: 3.2rem; }
+    .lane .bubble .cursor { display: inline-block; width: .45rem; height: .9rem; background: var(--accent); vertical-align: -2px; margin-left: 2px; }
+    .tl { display: flex; gap: 2px; align-items: flex-end; margin: .5rem 0 .2rem; height: 1.6rem; position: relative; }
+    .tl .tick { position: absolute; bottom: 0; transform: translateX(-50%); font: 700 .66rem ui-monospace, Consolas, monospace; padding: .05rem .3rem; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); white-space: nowrap; }
+    .tl .tick.ok { color: var(--good); border-color: var(--good); } .tl .tick.bad { color: var(--bad); border-color: var(--bad); } .tl .tick.wait { color: var(--warn); border-color: var(--warn); }
+    .tl .now { position: absolute; bottom: 0; width: 2px; height: 1.6rem; background: var(--accent); }
+    .tlaxis { height: 2px; background: var(--line); margin-bottom: .15rem; }
+    .verdict { font-weight: 700; font-size: .85rem; margin-top: .3rem; min-height: 1.3rem; }
+    .verdict.ok { color: var(--good); } .verdict.bad { color: var(--bad); } .verdict.wait { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Actions, auto-waiting and assertions</h1><nav></nav></header>
+
+  <p>
+    Once you can find an element, you do something with it (an <strong>action</strong>: click, fill, check, select, upload) and then check the result (an <strong>assertion</strong>).
+    Playwright's big idea is that both <strong>wait automatically</strong>: an action waits until the element is ready to receive it, and an <code>expect</code> assertion keeps re-checking until the page shows what you expect.
+    That is why good Playwright tests contain no <code>sleep</code> calls at all.
+  </p>
+  <p>This page lists the actions, explains exactly what Playwright waits for before each one (with an animation), shows web-first assertions versus plain <code>assert</code>, and covers timeouts, waiting for navigation and network responses, and the anti-patterns that make tests flaky.</p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <h2 id="actions">Actions at a glance</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Action</th><th>What it does</th><th>ShopBot example</th></tr>
+      <tr><td><code>click()</code></td><td>Scrolls into view, waits for actionability, clicks the centre. Options: <code>button="right"</code>, <code>modifiers=["Shift"]</code>, <code>position={"x": 5, "y": 5}</code>, <code>click_count</code></td><td><code>page.get_by_role("button", name="Add to cart").click()</code></td></tr>
+      <tr><td><code>dblclick()</code></td><td>Double click</td><td><code>page.get_by_test_id("result-count").dblclick()</code> (selects the text)</td></tr>
+      <tr><td><code>fill(text)</code></td><td>Focuses the field, replaces its whole value, fires <code>input</code>. Works on inputs, textareas and <code>contenteditable</code></td><td><code>page.get_by_label("Email").fill("alice@example.com")</code></td></tr>
+      <tr><td><code>press_sequentially(text, delay=...)</code></td><td>Types one character at a time with real key events (for autocomplete, key handlers, masked inputs)</td><td><code>page.get_by_label("Your question").press_sequentially("returns", delay=50)</code></td></tr>
+      <tr><td><code>press(key)</code></td><td>One key or a chord: <code>"Enter"</code>, <code>"Tab"</code>, <code>"Control+A"</code>, <code>"ControlOrMeta+A"</code>, <code>"ArrowDown"</code></td><td><code>page.get_by_placeholder("Search products").press("Enter")</code></td></tr>
+      <tr><td><code>clear()</code></td><td>Empties a field</td><td><code>page.get_by_label("Quantity").clear()</code></td></tr>
+      <tr><td><code>check()</code> / <code>uncheck()</code> / <code>set_checked(bool)</code></td><td>Ticks or unticks a checkbox or radio, then verifies the new state</td><td><code>page.get_by_label("I accept the terms").check()</code></td></tr>
+      <tr><td><code>select_option(...)</code></td><td>Chooses option(s) of a <code>&lt;select&gt;</code> by value, <code>label=</code> or <code>index=</code>; a list selects several in a multi-select</td><td><code>page.get_by_label("Category").select_option(label="Kitchen")</code></td></tr>
+      <tr><td><code>hover()</code></td><td>Moves the mouse over the element (menus, tooltips)</td><td><code>page.get_by_role("link", name="Desk Lamp").hover()</code></td></tr>
+      <tr><td><code>drag_to(target)</code></td><td>Drag and drop with real mouse events</td><td><code>page.get_by_text("Ceramic Mug").drag_to(page.get_by_text("Wishlist"))</code> (a page with a drop zone)</td></tr>
+      <tr><td><code>set_input_files(...)</code></td><td>Sets files on an <code>&lt;input type=file&gt;</code>: a path, a list, an in-memory file, or <code>[]</code> to clear</td><td><code>page.get_by_label("Avatar").set_input_files("avatar.png")</code></td></tr>
+      <tr><td><code>focus()</code> / <code>blur()</code></td><td>Moves keyboard focus</td><td><code>page.get_by_placeholder("Search products").focus()</code></td></tr>
+      <tr><td><code>scroll_into_view_if_needed()</code></td><td>Scrolls until the element is visible (actions already do this)</td><td><code>page.get_by_role("link", name="Notebook Set").scroll_into_view_if_needed()</code></td></tr>
+    </table>
+  </div>
+<pre><code>page.goto("/products")
+page.get_by_label("Category").select_option("office")          # by value
+page.get_by_role("button", name="Search").click()
+expect(page.get_by_test_id("product-card")).to_have_count(2)  # Desk Lamp, Notebook Set
+
+page.goto("/checkout")
+page.get_by_label("Full name").fill("Alice Liddell")
+page.get_by_label("Email").fill("alice@example.com")
+page.get_by_label("Postcode").fill("OX1 1AA")
+page.get_by_label("I accept the terms").check()
+expect(page.get_by_label("I accept the terms")).to_be_checked()
+
+# uploads: a file on disk, or an in-memory file
+page.get_by_label("Avatar").set_input_files("avatar.png")
+page.get_by_label("Avatar").set_input_files(files=[{"name": "avatar.png", "mimeType": "image/png", "buffer": b"\x89PNG fake"}])
+page.get_by_role("button", name="Upload").click()
+expect(page.get_by_text("Uploaded avatar.png (9 bytes)")).to_be_visible()</code></pre>
+
+  <h3>fill() or press_sequentially()?</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th><code>fill("mug")</code></th><th><code>press_sequentially("mug", delay=50)</code></th></tr>
+      <tr><td>How</td><td>Sets the value in one step, then fires <code>input</code> (and <code>change</code> on blur)</td><td>Focuses, then sends keydown / keypress / input / keyup for each character</td></tr>
+      <tr><td>Existing text</td><td>Replaced</td><td>Kept (typing appends at the cursor; <code>clear()</code> first if needed)</td></tr>
+      <tr><td>Speed</td><td>Instant</td><td>One event round per character, plus <code>delay</code></td></tr>
+      <tr><td>Use for</td><td>Almost every form field</td><td>Search-as-you-type, autocomplete, key-by-key validation, editors that ignore <code>input</code> events</td></tr>
+    </table>
+  </div>
+  <p class="muted">The older <code>type()</code> method is deprecated; use <code>press_sequentially()</code>. For keys without an element, use <code>page.keyboard.press("Escape")</code> and <code>page.keyboard.type("...")</code>.</p>
+
+  <h2 id="auto-waiting">Auto-waiting and actionability checks</h2>
+  <p>Before an action, Playwright resolves the locator to <strong>exactly one</strong> element and runs <strong>actionability checks</strong>. If a check fails, it does not give up: it waits and retries (after 20 ms, 100 ms, 100 ms, then every 500 ms) until all checks pass or the action timeout (30 s by default) runs out.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Check</th><th>Passes when</th></tr>
+      <tr><td><strong>Attached</strong></td><td>The locator resolves to one element that is in the DOM (zero: keep waiting; several: strict mode violation)</td></tr>
+      <tr><td><strong>Visible</strong></td><td>It has a non-empty bounding box and not <code>visibility:hidden</code>. <code>display:none</code> and zero size are not visible; <code>opacity:0</code> counts as visible</td></tr>
+      <tr><td><strong>Stable</strong></td><td>Its bounding box was the same for two consecutive animation frames (not sliding in or animating)</td></tr>
+      <tr><td><strong>Receives events</strong></td><td>It is the hit target at the click point: no overlay, spinner, cookie banner or sticky header on top of it</td></tr>
+      <tr><td><strong>Enabled</strong></td><td>Not <code>disabled</code> (also not inside a disabled <code>&lt;fieldset&gt;</code> or under <code>aria-disabled="true"</code>)</td></tr>
+      <tr><td><strong>Editable</strong></td><td>Enabled and not <code>readonly</code> / <code>aria-readonly="true"</code> (only for typing actions)</td></tr>
+    </table>
+  </div>
+  <p>Pick a scenario and step through what Playwright does when your test calls <code>click()</code> on ShopBot's "Add to cart" button:</p>
+  <div class="demo" id="aw-demo">
+    <h3>What click() waits for</h3>
+    <div class="scen" role="group" aria-label="Scenario"></div>
+    <div class="stage"></div>
+  </div>
+  <p>Which checks run depends on the action (from the official actionability table):</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Action</th><th>Visible</th><th>Stable</th><th>Receives events</th><th>Enabled</th><th>Editable</th></tr>
+      <tr><td><code>click()</code>, <code>dblclick()</code>, <code>tap()</code>, <code>check()</code>, <code>uncheck()</code>, <code>set_checked()</code></td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>-</td></tr>
+      <tr><td><code>hover()</code>, <code>drag_to()</code></td><td>Yes</td><td>Yes</td><td>Yes</td><td>-</td><td>-</td></tr>
+      <tr><td><code>screenshot()</code></td><td>Yes</td><td>Yes</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td><code>fill()</code>, <code>clear()</code></td><td>Yes</td><td>-</td><td>-</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td><code>select_option()</code></td><td>Yes</td><td>-</td><td>-</td><td>Yes</td><td>-</td></tr>
+      <tr><td><code>select_text()</code></td><td>Yes</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td><code>scroll_into_view_if_needed()</code></td><td>-</td><td>Yes</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td><code>focus()</code>, <code>blur()</code>, <code>press()</code>, <code>press_sequentially()</code>, <code>set_input_files()</code>, <code>dispatch_event()</code></td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+    </table>
+  </div>
+  <p class="muted">Every action, including the ones with no checks, still waits for the locator to resolve to one element.</p>
+  <p>When the checks never pass, the error's <strong>call log</strong> tells you which one. Real output for a click on the covered button, and for the disabled "Add to cart" of the out-of-stock Desk Lamp:</p>
+<pre class="term"><code>TimeoutError: Locator.click: Timeout 2000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="Add to cart")
+    - locator resolved to &lt;button type="submit"&gt;Add to cart&lt;/button&gt;
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - &lt;div id="cookie-banner"&gt;We use cookies&lt;/div&gt; intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    ...</code></pre>
+<pre class="term"><code>TimeoutError: Locator.click: Timeout 1500ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="Add to cart")
+    - locator resolved to &lt;button disabled&gt;Add to cart&lt;/button&gt;
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not enabled
+    - retrying click action
+    ...</code></pre>
+  <h3>Escape hatches: <code>force</code> and <code>trial</code></h3>
+<pre><code>page.get_by_role("button", name="Add to cart").click(trial=True)   # run the checks, do not click
+page.get_by_role("button", name="Add to cart").click(force=True)   # skip non-essential checks</code></pre>
+  <p><code>trial=True</code> is useful to wait until something <em>could</em> be clicked. <code>force=True</code> bypasses the checks that protect you from clicking through an overlay or on a disabled button; if you need it, a real user probably could not do what your test does. Fix the page or the test (close the cookie banner first) instead.</p>
+
+  <h2 id="assertions">Web-first assertions versus plain assert</h2>
+  <p>A <strong>web-first assertion</strong> takes a locator or page, not a value: <code>expect(locator).to_have_text("...")</code>. It re-reads the page until the condition holds or the timeout (5 s by default) expires. A plain <code>assert</code> reads the value <strong>once</strong>, at whatever moment the line runs.</p>
+  <div class="cols">
+<pre><code># flaky: reads the text once, immediately
+page.get_by_role("button", name="Send").click()
+assert "[shipping]" in page.get_by_test_id("bot-message").inner_text()</code></pre>
+<pre><code># reliable: retries until the streamed answer contains it
+page.get_by_role("button", name="Send").click()
+expect(page.get_by_test_id("bot-message")).to_contain_text("[shipping]")</code></pre>
+  </div>
+  <p>ShopBot's chat streams its answer token by token, so the left version fails every time (measured: 5 of 5 runs), while the right one passes after about 0.85 s. Step through both:</p>
+  <div class="demo" id="poll-demo">
+    <h3>expect() keeps polling; assert checks once</h3>
+    <div class="stage"></div>
+  </div>
+  <p>When an <code>expect</code> fails, the message shows the expected and actual values, how many times it re-checked, and an ARIA snapshot of the element. Real output:</p>
+<pre class="term"><code>AssertionError: Locator expected to have text '5 results'
+Actual value: 2 results
+Call log:
+  - Expect "to_have_text" get_by_test_id("result-count") with timeout 1000ms
+  - waiting for get_by_test_id("result-count")
+    10 × locator resolved to &lt;p data-testid="result-count"&gt;2 results&lt;/p&gt;
+       - unexpected value "2 results"
+
+Aria snapshot:
+- paragraph: 2 results</code></pre>
+  <p>Add your own message as the second argument: <code>expect(page.get_by_role("status"), "the cart confirmation should appear").to_have_text("Added to cart")</code>; it becomes the first line of the error.</p>
+  <div class="callout tip"><strong>When is plain <code>assert</code> fine?</strong> For values that are already settled and not on the page: the JSON of an API response, a file you downloaded, a list you collected after an <code>expect(...).to_have_count(n)</code>. For anything that the page shows, use <code>expect</code>.</div>
+
+  <h2 id="assertion-list">The assertions</h2>
+  <p>Every assertion has a negated form with <code>not_</code>: <code>to_be_visible()</code> / <code>not_to_be_visible()</code>, <code>to_have_text()</code> / <code>not_to_have_text()</code>. The negated form also waits: it passes as soon as the condition becomes false.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Assertion</th><th>Checks</th><th>ShopBot example</th></tr>
+      <tr><td><code>to_be_visible()</code> / <code>to_be_hidden()</code></td><td>Visible / not visible (or absent)</td><td><code>expect(page.get_by_text("Added to cart")).to_be_visible()</code></td></tr>
+      <tr><td><code>to_be_attached()</code></td><td>In the DOM, visible or not</td><td><code>expect(page.get_by_role("status")).to_be_attached()</code></td></tr>
+      <tr><td><code>to_have_text(x)</code></td><td>Whole text equals (string), matches (regex), or a list for several elements in order</td><td><code>expect(cards.get_by_role("heading")).to_have_text(["Ceramic Mug", "Cast Iron Pan", "Desk Lamp", "Notebook Set"])</code></td></tr>
+      <tr><td><code>to_contain_text(x)</code></td><td>Text contains the substring</td><td><code>expect(page.get_by_role("alert")).to_contain_text("Enter a valid email")</code></td></tr>
+      <tr><td><code>to_have_count(n)</code></td><td>Number of matching elements</td><td><code>expect(page.get_by_test_id("product-card")).to_have_count(4)</code></td></tr>
+      <tr><td><code>to_have_value(v)</code> / <code>to_have_values([...])</code></td><td>Input value / selected options of a multi-select</td><td><code>expect(page.get_by_label("Quantity")).to_have_value("1")</code></td></tr>
+      <tr><td><code>to_be_checked()</code></td><td>Checkbox or radio is checked (<code>checked=False</code> for unchecked)</td><td><code>expect(page.get_by_label("I accept the terms")).to_be_checked()</code></td></tr>
+      <tr><td><code>to_be_enabled()</code> / <code>to_be_disabled()</code> / <code>to_be_editable()</code></td><td>State of controls</td><td><code>expect(page.get_by_role("button", name="Add to cart")).to_be_disabled()</code> (Desk Lamp)</td></tr>
+      <tr><td><code>to_be_focused()</code></td><td>Has keyboard focus</td><td><code>expect(page.get_by_placeholder("Search products")).to_be_focused()</code></td></tr>
+      <tr><td><code>to_be_empty()</code></td><td>Empty input, or element without text</td><td><code>expect(page.get_by_role("status")).to_be_empty()</code> (before adding)</td></tr>
+      <tr><td><code>to_be_in_viewport()</code></td><td>Intersects the viewport</td><td><code>expect(page.get_by_role("heading", level=1)).to_be_in_viewport()</code></td></tr>
+      <tr><td><code>to_have_attribute(name, v)</code></td><td>Attribute value</td><td><code>expect(page.get_by_test_id("bot-message")).to_have_attribute("aria-busy", "false")</code></td></tr>
+      <tr><td><code>to_have_class(x)</code> / <code>to_contain_class(x)</code></td><td>The full <code>class</code> attribute / contains these classes</td><td><code>expect(page.get_by_role("status")).to_have_class("ok")</code></td></tr>
+      <tr><td><code>to_have_id</code>, <code>to_have_css</code>, <code>to_have_js_property</code></td><td>id, computed CSS, a JavaScript property</td><td><code>expect(page.get_by_label("Quantity")).to_have_js_property("valueAsNumber", 2)</code></td></tr>
+      <tr><td><code>to_have_accessible_name</code>, <code>to_have_role</code></td><td>Accessibility tree</td><td><code>expect(page.get_by_placeholder("Search products")).to_have_accessible_name("Search")</code></td></tr>
+      <tr><td><code>to_match_aria_snapshot(yaml)</code></td><td>Structure of the accessibility tree (see the <a href="../locators/index.html#aria-snapshots">locators page</a>)</td><td></td></tr>
+      <tr><td><code>expect(page).to_have_url(x)</code> / <code>to_have_title(x)</code></td><td>Page URL / title (string or regex)</td><td><code>expect(page).to_have_url(re.compile(r"q=mug"))</code></td></tr>
+      <tr><td><code>expect(api_response).to_be_ok()</code></td><td>An <code>APIResponse</code> (from <code>page.request</code>) has a 2xx status</td><td><code>expect(page.request.get("/api/products")).to_be_ok()</code></td></tr>
+    </table>
+  </div>
+  <p class="muted">Python has no built-in soft assertions (that continue after a failure); the <code>pytest-check</code> plugin provides them. Screenshot comparison (<code>to_have_screenshot</code>) exists only in the Node.js runner; see the advanced page for Python alternatives.</p>
+
+  <h2 id="timeouts">Timeouts</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Timeout</th><th>Default</th><th>Applies to</th><th>Change it</th></tr>
+      <tr><td>Action</td><td>30 s</td><td><code>click</code>, <code>fill</code>, <code>inner_text</code>, <code>wait_for</code>...</td><td><code>page.set_default_timeout(10_000)</code> or <code>context.set_default_timeout(...)</code>; per call <code>click(timeout=5_000)</code></td></tr>
+      <tr><td>Navigation</td><td>30 s</td><td><code>goto</code>, <code>reload</code>, <code>wait_for_url</code>, <code>go_back</code></td><td><code>page.set_default_navigation_timeout(20_000)</code>; per call <code>goto(url, timeout=...)</code></td></tr>
+      <tr><td>Assertion</td><td>5 s</td><td>Every <code>expect(...)</code></td><td><code>expect.set_options(timeout=7_000)</code> globally; per call <code>to_have_text("...", timeout=10_000)</code></td></tr>
+      <tr><td>Whole test</td><td>none</td><td>A pytest test</td><td>The <code>pytest-timeout</code> plugin (<code>--timeout 120</code>)</td></tr>
+    </table>
+  </div>
+  <p>Values are milliseconds (a <code>datetime.timedelta</code> also works). <code>timeout=0</code> means wait forever, which is rarely what you want. To set suite-wide defaults with pytest-playwright:</p>
+<div class="codefile"><div class="fname">tests/conftest.py</div><pre><code>import pytest
+from playwright.sync_api import expect
+
+expect.set_options(timeout=7_000)          # every expect() in the suite
+
+
+@pytest.fixture(autouse=True)
+def default_timeouts(context):
+    context.set_default_timeout(10_000)             # actions such as click() and fill()
+    context.set_default_navigation_timeout(20_000)  # goto(), reload(), wait_for_url()</code></pre></div>
+  <div class="callout"><strong>Do not "fix" flakiness by raising timeouts.</strong> A longer timeout only helps when the app is legitimately slow (a report that takes 15 s). If a test fails at 5 s and passes at 30 s, find out what it is waiting for.</div>
+
+  <h2 id="navigation">Waiting for navigation and network</h2>
+  <p>Most of the time you need nothing special: <code>goto()</code> waits for the <code>load</code> event, and the next <code>expect</code> waits for the new page's content. When you need more control:</p>
+<pre><code>import re
+
+# 1. After a click that navigates: wait for the URL (glob or regex)
+page.get_by_role("button", name="Log in").click()
+page.wait_for_url("**/account")
+expect(page).to_have_url(re.compile(r".*/account"))     # usually enough on its own
+
+# 2. Wait for a specific response triggered by an action
+with page.expect_response(lambda r: r.url.endswith("/api/cart") and r.request.method == "POST") as info:
+    page.get_by_role("button", name="Add to cart").click()
+response = info.value
+assert response.ok and response.json()["count"] &gt;= 1      # settled data: plain assert is fine
+
+# 3. Downloads, pop-ups and dialogs are events too
+with page.expect_download() as dl:
+    page.get_by_role("link", name="Download invoice").click()
+print(dl.value.suggested_filename)                        # invoice-123456.txt
+
+page.once("dialog", lambda dialog: dialog.accept())       # register BEFORE the click
+page.get_by_role("button", name="Delete account").click()
+expect(page.get_by_text("Account scheduled for deletion")).to_be_visible()
+
+# 4. Load states (rarely needed)
+page.goto("/products", wait_until="domcontentloaded")     # commit | domcontentloaded | load | networkidle
+page.wait_for_load_state("load")</code></pre>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Tool</th><th>Use when</th></tr>
+      <tr><td><code>expect(page).to_have_url(...)</code></td><td>You want to check where you landed (it waits)</td></tr>
+      <tr><td><code>page.wait_for_url(...)</code></td><td>A script (not a test) must not continue until the URL changes</td></tr>
+      <tr><td><code>page.expect_response(...)</code> / <code>expect_request(...)</code></td><td>You need the response data, or the UI gives no visible sign that a request finished</td></tr>
+      <tr><td><code>locator.wait_for(state="visible" | "hidden" | "attached" | "detached")</code></td><td>Scripts that must wait for an element without asserting (in tests prefer <code>expect</code>)</td></tr>
+      <tr><td><code>page.wait_for_load_state()</code></td><td>After something opened a page you did not navigate yourself (for example a pop-up from <code>expect_popup</code>)</td></tr>
+    </table>
+  </div>
+  <h3>Why <code>networkidle</code> is discouraged</h3>
+  <p><code>wait_until="networkidle"</code> waits until there have been no network connections for 500 ms. The official docs mark it as <em>discouraged</em> for testing: pages with analytics beacons, polling, long-polling, WebSockets or streaming (like ShopBot's chat) may never become idle, or become idle before your data has arrived; and it always costs at least half a second. It tests the network, not what the user sees. Wait for the thing you care about instead: <code>expect(page.get_by_test_id("result-count")).to_be_visible()</code>.</p>
+
+  <h2 id="anti-patterns">Anti-patterns</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Anti-pattern</th><th>Why it hurts</th><th>Do this instead</th></tr>
+      <tr><td><code>page.wait_for_timeout(2000)</code> or <code>time.sleep(2)</code></td><td>Too short on a slow CI machine (flaky), too long everywhere else (slow). <code>time.sleep</code> also blocks Playwright's event processing in the sync API</td><td>Wait for an outcome: <code>expect(...).to_be_visible()</code>, <code>expect_response</code></td></tr>
+      <tr><td><code>if page.get_by_text("Accept cookies").is_visible(): ...click()</code></td><td><code>is_visible()</code> answers <strong>right now</strong> without waiting. Measured on ShopBot: right after clicking "Add to cart", <code>page.get_by_text("Added to cart").is_visible()</code> returned <code>False</code></td><td>Make the state deterministic (set the cookie consent in the context), or <code>expect(...).to_be_visible()</code>; for genuinely optional overlays use <code>page.add_locator_handler()</code></td></tr>
+      <tr><td><code>assert locator.inner_text() == "..."</code></td><td>One-shot read: a race with the page</td><td><code>expect(locator).to_have_text("...")</code></td></tr>
+      <tr><td><code>assert locator.count() == 4</code></td><td><code>count()</code> does not wait</td><td><code>expect(locator).to_have_count(4)</code></td></tr>
+      <tr><td><code>click(force=True)</code> to get past an error</td><td>Clicks through overlays and disabled states: hides real bugs</td><td>Find out which check failed in the call log and fix the cause</td></tr>
+      <tr><td><code>wait_until="networkidle"</code> everywhere</td><td>Slow, and unreliable with polling or streaming</td><td>Assert on the content you need</td></tr>
+      <tr><td>Raising every timeout to 60 s</td><td>Failures take a minute to report and real slowness is hidden</td><td>Keep defaults; raise one timeout for one known-slow step</td></tr>
+      <tr><td>Registering <code>page.once("dialog", ...)</code> after the click</td><td>The dialog appears before the handler exists; Playwright auto-dismisses it</td><td>Register handlers (and <code>expect_*</code> blocks) before the action that triggers them</td></tr>
+    </table>
+  </div>
+
+  <h2 id="usecases">Real-world uses of these techniques</h2>
+  <div class="usecases">
+    <div><b>Checkout journey</b>Fill, check, click, then <code>expect</code> the order id: the classic smoke test that blocks a release.</div>
+    <div><b>Streaming chat UIs</b><code>to_contain_text</code> and <code>to_have_attribute("aria-busy", "false")</code> wait for an LLM answer to finish streaming.</div>
+    <div><b>Cookie banners and overlays</b>Actionability reports "intercepts pointer events"; set consent up front or use a locator handler.</div>
+    <div><b>File workflows</b><code>set_input_files</code> for uploads, <code>expect_download</code> for invoices and exports.</div>
+    <div><b>Slow back ends</b><code>expect_response</code> plus a per-step timeout for a report endpoint, instead of a global 60 s.</div>
+    <div><b>Accessibility gates</b><code>to_have_accessible_name</code> and <code>to_have_role</code> catch unlabelled buttons and inputs.</div>
+  </div>
+
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Need</th><th>Code</th></tr>
+      <tr><td>Type into a field</td><td><code>loc.fill("text")</code>; key by key: <code>loc.press_sequentially("text", delay=50)</code></td></tr>
+      <tr><td>Submit with Enter</td><td><code>loc.press("Enter")</code></td></tr>
+      <tr><td>Checkbox / select / upload</td><td><code>loc.check()</code>, <code>loc.select_option(label="Kitchen")</code>, <code>loc.set_input_files("f.png")</code></td></tr>
+      <tr><td>Assert text</td><td><code>expect(loc).to_have_text("x")</code> / <code>to_contain_text("x")</code></td></tr>
+      <tr><td>Assert presence / absence</td><td><code>expect(loc).to_be_visible()</code> / <code>expect(loc).to_be_hidden()</code></td></tr>
+      <tr><td>Assert count / value / URL</td><td><code>to_have_count(4)</code>, <code>to_have_value("1")</code>, <code>expect(page).to_have_url(re.compile("/cart"))</code></td></tr>
+      <tr><td>Negate</td><td><code>expect(loc).not_to_be_visible()</code></td></tr>
+      <tr><td>Custom message / timeout</td><td><code>expect(loc, "why").to_have_text("x", timeout=10_000)</code></td></tr>
+      <tr><td>Global timeouts</td><td><code>context.set_default_timeout(10_000)</code>, <code>expect.set_options(timeout=7_000)</code></td></tr>
+      <tr><td>Wait for a response</td><td><code>with page.expect_response("**/api/cart") as info: ...</code></td></tr>
+      <tr><td>Wait for a URL</td><td><code>page.wait_for_url("**/account")</code></td></tr>
+      <tr><td>Dialogs</td><td><code>page.once("dialog", lambda d: d.accept())</code> before the click</td></tr>
+    </table>
+  </div>
+
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>Write a test that adds 3 Ceramic Mugs to the cart and checks the confirmation and the cart counter in the navigation (start with an empty cart).</summary>
+<pre><code>from playwright.sync_api import Page, expect
+
+
+def test_add_three_mugs(page: Page):
+    page.goto("/products/1")
+    page.get_by_label("Quantity").fill("3")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_have_text("Added to cart")
+    expect(page.get_by_test_id("cart-count")).to_have_text("3")</code></pre>
+    <p class="muted">Each test gets a new context, so the cart starts empty and the count is exactly 3.</p>
+  </details>
+  <details class="prob"><summary>The checkout form is submitted with an invalid email and no postcode, by a new user with an empty cart. Assert all the error messages at once.</summary>
+<pre><code>def test_checkout_validation(page: Page):
+    page.goto("/checkout")
+    page.get_by_label("Full name").fill("Alice")
+    page.get_by_label("Email").fill("not-an-email")
+    page.get_by_label("I accept the terms").check()
+    page.get_by_role("button", name="Place order").click()
+    expect(page.get_by_role("alert").get_by_role("listitem")).to_have_text(
+        ["Enter a valid email", "Postcode is required", "Your cart is empty"])</code></pre>
+    <p class="muted"><code>to_have_text</code> with a list checks every item, in order, and waits until they all match.</p>
+  </details>
+  <details class="prob"><summary>This chat test (below) is flaky. Explain why and fix it.</summary>
+<pre><code>page.get_by_role("button", name="Send").click()
+time.sleep(1)
+answer = page.get_by_test_id("bot-message").inner_text()
+assert "30 days" in answer</code></pre>
+    <p>The sleep guesses how long the streamed answer takes; on a slow machine (or with a real LLM) 1 s is not enough, and on a fast one it wastes time. The read happens once. Wait for the outcome instead, and for the stream to finish if you need the complete text:</p>
+<pre><code>page.get_by_label("Your question").fill("How do returns work?")
+page.get_by_role("button", name="Send").click()
+bot = page.get_by_test_id("bot-message")
+expect(bot).to_have_attribute("aria-busy", "false")    # streaming finished
+expect(bot).to_contain_text("30 days")</code></pre>
+  </details>
+  <details class="prob"><summary>On the account page, test that cancelling the "Delete account" confirmation keeps the account.</summary>
+<pre><code>def test_cancel_delete(page: Page):
+    page.goto("/login")
+    page.get_by_label("Email").fill("alice@example.com")
+    page.get_by_label("Password").fill("wonderland")
+    page.get_by_role("button", name="Log in").click()
+    expect(page).to_have_url(re.compile(r"/account$"))
+
+    page.once("dialog", lambda dialog: dialog.dismiss())
+    page.get_by_role("button", name="Delete account").click()
+    expect(page.get_by_text("Deletion cancelled")).to_be_visible()</code></pre>
+  </details>
+  <details class="prob"><summary>Check that clicking "Add to cart" sends a POST to <code>/api/cart</code> with the quantity you entered, and that the server answers 200.</summary>
+<pre><code>def test_add_to_cart_request(page: Page):
+    page.goto("/products/2")
+    page.get_by_label("Quantity").fill("2")
+    with page.expect_request("**/api/cart") as req_info:
+        page.get_by_role("button", name="Add to cart").click()
+    request = req_info.value
+    assert request.method == "POST"
+    assert request.post_data_json == {"product_id": 2, "qty": 2}
+    assert request.response().status == 200</code></pre>
+  </details>
+
+  <h2 id="refs">References</h2>
+  <ul>
+    <li><a href="https://playwright.dev/python/docs/input">Actions (input, clicks, files, keys)</a></li>
+    <li><a href="https://playwright.dev/python/docs/actionability">Auto-waiting and actionability checks</a></li>
+    <li><a href="https://playwright.dev/python/docs/test-assertions">Assertions</a></li>
+    <li><a href="https://playwright.dev/python/docs/navigations">Navigations and load states</a></li>
+  </ul>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>

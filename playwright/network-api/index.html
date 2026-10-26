@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Network Mocking, API Testing and Authentication - Playwright</title>
+  <link rel="stylesheet" href="../assets/pw.css">
+  <style>
+    .rtable { width: 100%; border-collapse: collapse; font-size: .85rem; margin: .4rem 0; }
+    .rtable td, .rtable th { border: 1px solid var(--line); padding: .3rem .5rem; text-align: left; vertical-align: top; }
+    .rtable th { background: var(--bg); }
+    .rtable tr.m-skip td { opacity: .45; }
+    .rtable tr.m-fall td { background: color-mix(in srgb, var(--warn) 12%, var(--bg)); }
+    .rtable tr.m-win td { background: color-mix(in srgb, var(--good) 16%, var(--bg)); font-weight: 600; }
+    .rtable code { font-size: .8rem; }
+    .verdict { margin-top: .4rem; padding: .45rem .7rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); font-size: .9rem; }
+    .verdict.ok { border-color: var(--good); } .verdict.bad { border-color: var(--bad); } .verdict.net { border-color: var(--accent); }
+    .lanes { display: grid; gap: .55rem; }
+    .lane { display: grid; grid-template-columns: 9.5rem 1fr 5.5rem; gap: .5rem; align-items: center; font-size: .82rem; }
+    .lane .track { position: relative; height: 1.7rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    .lane .seg { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; font-size: .68rem; line-height: 1.45rem; text-align: center; color: var(--fg); white-space: nowrap; overflow: hidden; border: 1px solid; }
+    .lane .seg.login { background: color-mix(in srgb, var(--warn) 30%, var(--bg)); border-color: var(--warn); }
+    .lane .seg.test { background: color-mix(in srgb, var(--accent) 24%, var(--bg)); border-color: var(--accent); }
+    .lane .seg.load { background: color-mix(in srgb, var(--good) 28%, var(--bg)); border-color: var(--good); }
+    .lane .now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bad); }
+    .lane .tot { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+    .statefile { margin-top: .6rem; font: .78rem ui-monospace, Consolas, monospace; background: var(--code-bg); border-radius: 8px; padding: .5rem .7rem; white-space: pre; overflow-x: auto; }
+    .statefile.dim { opacity: .35; }
+  </style>
+</head>
+<body>
+  <header class="top"><h1>Network mocking, API testing and authentication</h1><nav></nav></header>
+
+  <p>
+    A browser page is only half of a web application: the other half is the <strong>network</strong>. Playwright sits between the page and the network, so a test can
+    <strong>watch</strong> every request, <strong>answer</strong> requests with fake data, <strong>change</strong> real responses, <strong>fail</strong> them on purpose, and
+    <strong>replay</strong> recorded traffic. The same library also has an HTTP client, <code>APIRequestContext</code>, for testing REST endpoints directly and for setting up data
+    and logins quickly before a UI check.
+  </p>
+  <p>
+    This page uses ShopBot throughout: the product page adds items with <code>fetch("POST /api/cart")</code>, the chat streams answers from <code>POST /api/chat</code> as
+    server-sent events, and <code>/login</code> sets a session cookie called <code>sid</code>. Every snippet below was run against ShopBot with Playwright 1.64 and pytest-playwright 0.10.
+  </p>
+
+  <nav id="toc" class="card" aria-label="On this page"></nav>
+
+  <!-- ===================================================== -->
+  <h2 id="routing">How request routing works</h2>
+  <p>
+    <code>page.route(url_pattern, handler)</code> (or <code>context.route(...)</code> for every page in the context) tells Playwright: "when the page makes a request whose URL matches,
+    pause it and call my handler with a <code>Route</code>". The handler must then decide the request's fate with exactly one of the calls below. Press Play and switch between the tabs.
+  </p>
+  <div class="demo" id="route-demo">
+    <h3>What can happen to a request</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+  <div id="route-legend"></div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Call</th><th>What happens</th><th>Typical use</th></tr>
+      <tr><td><code>route.fulfill(json=..., status=..., headers=..., body=..., path=...)</code></td><td>Answers the request with your response; the server never sees it</td><td>Mock an API, simulate errors, serve a fixture file</td></tr>
+      <tr><td><code>route.continue_(url=..., method=..., headers=..., post_data=...)</code></td><td>Sends the request on to the network, optionally changed</td><td>Add headers, rewrite the body, point at another host</td></tr>
+      <tr><td><code>route.fetch()</code> then <code>route.fulfill(response=..., json=...)</code></td><td>Performs the real request, lets you edit the response, then delivers it</td><td>Patch one field of a real response, inject an HTML banner</td></tr>
+      <tr><td><code>route.abort(error_code="failed")</code></td><td>Fails the request like a network error (<code>"timedout"</code>, <code>"internetdisconnected"</code>, <code>"connectionrefused"</code>, ...)</td><td>Offline and outage tests, blocking trackers and images</td></tr>
+      <tr><td><code>route.fallback(...)</code></td><td>Passes the request to the next matching handler (registered earlier), or to the network if none</td><td>Layered handlers: a logger plus a specific mock</td></tr>
+    </table>
+  </div>
+  <div class="callout tip"><b>Register routes before the request happens.</b> Call <code>page.route(...)</code> before <code>page.goto(...)</code> or before the click that triggers the fetch. A route added afterwards only affects later requests.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="matching">URL patterns and handler order</h2>
+  <p>The first argument can be a <strong>glob</strong> string, a compiled <strong>regex</strong> or a <strong>predicate</strong> function that receives the URL. Globs match the <em>whole</em> URL; regexes are searched anywhere in it.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Glob</th><th>Means</th><th>Matches</th><th>Does not match</th></tr>
+      <tr><td><code>**/api/cart</code></td><td><code>**</code> = any characters including <code>/</code></td><td><code>http://127.0.0.1:8000/api/cart</code></td><td><code>.../api/cart?x=1</code> (the query is part of the URL)</td></tr>
+      <tr><td><code>**/api/products?*</code></td><td><code>?</code> is a literal question mark; <code>*</code> = any characters except <code>/</code></td><td><code>.../api/products?limit=1</code></td><td><code>.../api/products</code></td></tr>
+      <tr><td><code>**/*.{png,jpg,svg}</code></td><td><code>{a,b}</code> = alternatives</td><td><code>.../img/logo.png</code></td><td><code>.../logo.png?v=2</code></td></tr>
+      <tr><td><code>/api/cart</code></td><td>A relative glob is resolved against the context's <code>base_url</code></td><td><code>http://127.0.0.1:8000/api/cart</code> when <code>--base-url</code> is set</td><td>The same path on another host</td></tr>
+      <tr><td><code>re.compile(r"/api/cart(\?|$)")</code></td><td>Regex: <code>search()</code> anywhere in the URL</td><td>With or without a query string</td><td><code>/api/cartoon</code></td></tr>
+    </table>
+  </div>
+  <p>When several routes match, <strong>the most recently registered handler runs first</strong>. If it calls <code>route.fallback()</code>, the next one (registered earlier) gets the request. Try it:</p>
+  <div class="demo" id="match-demo">
+    <h3>Route matcher: which handler answers this request?</h3>
+    <div class="bar">
+      <label>Request URL <input type="text" id="m-url" class="wide" value="http://127.0.0.1:8000/api/cart" aria-label="Request URL"></label>
+      <label><input type="checkbox" id="m-base" checked> <code>base_url</code> = http://127.0.0.1:8000</label>
+    </div>
+    <div class="bar" id="m-presets"></div>
+    <div id="m-out"></div>
+    <p class="muted" style="font-size:.82rem">Untick a route to "unregister" it (like <code>page.unroute(...)</code>). The table lists routes in registration order; Playwright checks them from the bottom up.</p>
+  </div>
+<pre><code>calls = []
+
+def log_all(route):                       # registered first: runs last
+    calls.append(route.request.url)
+    route.fallback()                      # let the next handler (or the network) decide
+
+def mock_cart(route):                     # registered last: runs first
+    route.fulfill(json={"count": 42})
+
+page.route("**/*", log_all)
+page.route("**/api/cart", mock_cart)</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="mock">Mocking an API response for a UI test</h2>
+  <p>
+    UI tests that depend on live back ends are slow and flaky, and many states (out of stock, server errors, an empty list, a 10,000-item list) are hard to create on a real server.
+    Mocking the <strong>browser's</strong> API calls lets you test how the UI <em>reacts</em> to each response, deterministically.
+  </p>
+<div class="codefile"><div class="fname">tests/test_cart_ui.py</div><pre><code>from playwright.sync_api import Page, expect
+
+
+def test_add_to_cart_updates_badge(page: Page):
+    page.route("**/api/cart", lambda route: route.fulfill(json={"count": 42}))
+    page.goto("/products/1")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_have_text("Added to cart")
+    expect(page.get_by_test_id("cart-count")).to_have_text("42")
+
+
+def test_out_of_stock_message(page: Page):
+    page.route("**/api/cart", lambda route: route.fulfill(status=422, json={"detail": "Only 2 in stock"}))
+    page.goto("/products/1")
+    page.get_by_role("button", name="Add to cart").click()
+    message = page.get_by_role("status")
+    expect(message).to_have_text("Only 2 in stock")
+    expect(message).to_have_class("error")
+    expect(page.get_by_test_id("cart-count")).to_have_text("0")   # badge unchanged</code></pre></div>
+<pre class="term"><code><span class="c"># the page fixture uses --base-url, so page.goto("/products/1") works</span>
+pytest tests/test_cart_ui.py --base-url http://127.0.0.1:8000</code></pre>
+  <div class="callout"><b>Mock what the browser actually fetches.</b> ShopBot renders the product cards on <code>/products</code> on the <em>server</em>, so routing <code>**/api/products</code> does not change that page: the browser never calls that endpoint there.
+    Find the real calls first with <code>page.on("request", print)</code>, the trace viewer's Network tab, or the browser's developer tools. Single-page apps (React, Vue, Angular) fetch most data from the browser, which is why mocking is so effective for them.</div>
+  <h3>Mock data from files, and for the whole context</h3>
+<pre><code>from pathlib import Path
+import json
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+# serve a file as the body (content type inferred from the extension)
+page.route("**/api/products", lambda route: route.fulfill(path=FIXTURES / "products.json"))
+
+# or build the data in Python: easier to vary per test
+products = json.loads((FIXTURES / "products.json").read_text())
+products[0]["stock"] = 0
+page.route("**/api/products", lambda route: route.fulfill(json=products))
+
+# context.route applies to every page in the context, including popups and new tabs
+context.route("**/api/cart", lambda route: route.fulfill(json={"count": 5}))
+page.unroute("**/api/cart")        # remove one route; page.unroute_all() removes them all</code></pre>
+  <p class="muted"><code>route.fulfill(json=...)</code> serialises the value and sets <code>Content-Type: application/json</code>; the default status is 200.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="modify">Modifying real requests and responses</h2>
+  <p>Sometimes you want the real server, but slightly different. <code>route.fetch()</code> performs the request and returns an <code>APIResponse</code> that you can edit before fulfilling.</p>
+  <div class="cols">
+<div class="codefile"><div class="fname">Patch a JSON response</div><pre><code>from playwright.sync_api import Route
+
+
+def add_hundred(route: Route):
+    response = route.fetch()           # the real server answers
+    data = response.json()
+    data["count"] += 100
+    route.fulfill(response=response, json=data)   # keep status and headers
+
+
+page.route("**/api/cart", add_hundred)
+page.goto("/products/1")
+page.get_by_role("button", name="Add to cart").click()
+expect(page.get_by_test_id("cart-count")).to_have_text("101")</code></pre></div>
+<div class="codefile"><div class="fname">Patch the HTML of a page</div><pre><code>def everything_sold_out(route: Route):
+    response = route.fetch()
+    body = response.text().replace("In stock", "Out of stock")
+    route.fulfill(response=response, body=body)
+
+
+page.route("**/products", everything_sold_out)
+page.goto("/products")
+expect(page.get_by_text("Out of stock")).to_have_count(4)</code></pre></div>
+  </div>
+  <p>To change the <strong>request</strong> instead, pass overrides to <code>continue_()</code>:</p>
+<pre><code>def triple_quantity(route: Route):
+    body = route.request.post_data_json            # {"product_id": 1, "qty": 1}
+    route.continue_(post_data={**body, "qty": 3})  # dicts are sent as JSON
+
+
+page.route("**/api/cart", triple_quantity)
+
+# add a header to every API call (feature flags, test-run ids, auth for a staging gateway)
+page.route("**/api/**", lambda route: route.continue_(
+    headers={**route.request.headers, "x-test-run": "nightly"}))</code></pre>
+  <div class="callout tip">For a header on <em>every</em> request you do not need a route: <code>browser.new_context(extra_http_headers={"x-test-run": "nightly"})</code>, or in pytest return it from the <code>browser_context_args</code> fixture.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="errors">Simulating errors and slow responses</h2>
+  <p>Error paths are where real users get stuck and where tests are rarely written. With routing they take one line each.</p>
+<pre><code>def test_server_error_shows_something(page: Page):
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))     # uncaught JS exceptions
+    page.route("**/api/cart", lambda route: route.fulfill(status=500, body="Internal Server Error"))
+    page.goto("/products/1")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_be_empty()
+    # ShopBot calls r.json() on the HTML error body and crashes:
+    # errors == ['Unexpected token \'I\', "Internal S"... is not valid JSON']
+
+
+def test_offline_add_to_cart(page: Page):
+    page.route("**/api/cart", lambda route: route.abort("internetdisconnected"))
+    page.goto("/products/1")
+    with page.expect_event("requestfailed") as failed:
+        page.get_by_role("button", name="Add to cart").click()
+    assert failed.value.failure == "net::ERR_INTERNET_DISCONNECTED"</code></pre>
+  <div class="callout"><b>A mock found a real bug.</b> Run against ShopBot, both tests show that the product page gives the shopper <em>no feedback at all</em> when the API fails: the status line stays empty and a JavaScript error is logged.
+    The tests above document today's behaviour; once the app is fixed, change them to expect a message such as "Something went wrong, please try again".</div>
+  <h3>Slow responses and loading states</h3>
+  <p>To test a spinner or a disabled button, the request has to stay pending while you assert. In the <strong>sync</strong> API the cleanest way is to <strong>hold</strong> the route and release it yourself (do not call <code>time.sleep</code> in a handler: it blocks the whole test thread).</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Sync: hold the route">
+<pre><code>from playwright.sync_api import Page, Route, expect
+
+
+def test_message_waits_for_server(page: Page):
+    held: list[Route] = []
+    page.route("**/api/cart", lambda route: held.append(route))   # do not answer yet
+    page.goto("/products/1")
+    with page.expect_request("**/api/cart"):
+        page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_role("status")).to_be_empty()       # still "loading"
+    held[0].fulfill(json={"count": 1})                      # now let it finish
+    expect(page.get_by_role("status")).to_have_text("Added to cart")</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Async: delay">
+<pre><code>import asyncio
+from playwright.async_api import Route
+
+
+async def slow(route: Route):
+    await asyncio.sleep(2)          # does not block other requests or the test
+    await route.continue_()
+
+await page.route("**/api/cart", slow)</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Chromium: throttle everything">
+<pre><code># Chromium only: emulate a slow network for the whole page via the DevTools protocol
+cdp = page.context.new_cdp_session(page)
+cdp.send("Network.emulateNetworkConditions", {
+    "offline": False, "latency": 400,                      # ms added to every request
+    "downloadThroughput": 50 * 1024, "uploadThroughput": 20 * 1024,   # bytes per second
+})</code></pre>
+    </div>
+  </div>
+  <p>ShopBot also has a genuinely slow endpoint, <code>GET /api/slow</code>, which answers after 2 seconds. Use it to see timeouts in action:</p>
+<pre><code>import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+with pytest.raises(PlaywrightTimeoutError):
+    with page.expect_response("**/api/slow", timeout=500):
+        page.evaluate("fetch('/api/slow')")</code></pre>
+  <p>For a fully offline browser use <code>context.set_offline(True)</code> (covered on the <a href="../advanced/index.html">advanced features</a> page).</p>
+
+  <!-- ===================================================== -->
+  <h2 id="blocking">Blocking images, fonts and analytics</h2>
+  <p>Blocking resources you do not test makes suites faster and stops tests from sending fake traffic to your analytics or advertising partners.</p>
+<pre><code>import re
+from playwright.sync_api import Route
+
+BLOCKED_TYPES = {"image", "font", "media"}
+
+
+def block_heavy(route: Route):
+    if route.request.resource_type in BLOCKED_TYPES:
+        return route.abort()
+    route.continue_()
+
+
+page.route("**/*", block_heavy)                                   # by resource type
+page.route("**/*.{png,jpg,jpeg,webp,svg}", lambda route: route.abort())   # or by extension
+page.route(re.compile(r"(google-analytics|googletagmanager|segment)\.(com|io)"),
+           lambda route: route.abort())                           # third-party trackers</code></pre>
+<pre><code># conftest.py: block trackers in every test
+import pytest
+
+@pytest.fixture(autouse=True)
+def no_analytics(context):
+    context.route(re.compile(r"(google-analytics|googletagmanager|segment)\.(com|io)"),
+                  lambda route: route.abort())</code></pre>
+  <div class="callout">Do not block images in tests that check layout or take screenshots, and remember that routing every request (<code>"**/*"</code>) adds a little overhead to each one. A focused pattern is cheaper than a catch-all handler.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="waiting">Waiting for and inspecting network traffic</h2>
+  <p>Sometimes the thing to check is the request or response itself: the right payload was sent, the server answered 200, the analytics event fired. Start waiting <strong>before</strong> the action, inside a <code>with</code> block, so a fast response cannot be missed.</p>
+<pre><code>def test_add_to_cart_sends_quantity(page: Page):
+    page.goto("/products/1")
+    page.get_by_label("Quantity").fill("2")
+    with page.expect_response("**/api/cart") as response_info:
+        page.get_by_role("button", name="Add to cart").click()
+    response = response_info.value
+    assert response.ok
+    assert response.request.method == "POST"
+    assert response.request.post_data_json == {"product_id": 1, "qty": 2}
+    assert response.json() == {"count": 2}
+
+
+# a predicate for anything a glob cannot express
+with page.expect_response(lambda r: r.url.endswith("/api/cart") and r.request.method == "POST") as info:
+    page.get_by_role("button", name="Add to cart").click()
+
+# the request only (does not wait for the response)
+with page.expect_request("**/api/chat") as request_info:
+    page.get_by_role("button", name="Send").click()
+assert request_info.value.post_data_json == {"message": "How long is shipping?"}</code></pre>
+<pre><code># log all traffic while debugging
+page.on("request", lambda r: print("&gt;&gt;", r.method, r.url))
+page.on("response", lambda r: print("&lt;&lt;", r.status, r.url))
+page.on("requestfailed", lambda r: print("xx", r.url, r.failure))</code></pre>
+  <div class="callout tip">Prefer asserting on the <strong>UI</strong> (<code>expect(...).to_have_text(...)</code>) and use <code>expect_response</code> when the network behaviour is the requirement. Never replace either with <code>page.wait_for_timeout(2000)</code>.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="har">Record and replay traffic with HAR files</h2>
+  <p>A <strong>HAR</strong> (HTTP Archive) file is a JSON recording of requests and responses. Playwright can <strong>record</strong> one while you run against the real back end, then <strong>replay</strong> it so later runs need no server for those URLs: realistic mocks without writing them by hand.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="1. Record">
+<pre><code>from playwright.sync_api import Browser, expect
+
+HAR = "tests/hars/cart.har"
+
+def record(browser: Browser):
+    context = browser.new_context(base_url="http://127.0.0.1:8000")
+    context.route_from_har(HAR, url="**/api/**", update=True)   # update=True: record
+    page = context.new_page()
+    page.goto("/products/1")
+    page.get_by_role("button", name="Add to cart").click()
+    expect(page.get_by_test_id("cart-count")).to_have_text("1")
+    context.close()                       # the HAR file is written on close</code></pre>
+    </div>
+    <div class="tabpane" data-tab="2. Replay">
+<pre><code>def test_cart_from_har(context, page):
+    context.route_from_har("tests/hars/cart.har", url="**/api/**", not_found="abort")
+    page.goto("/products/1")              # the HTML still comes from the server
+    with page.expect_response("**/api/cart") as info:
+        page.get_by_role("button", name="Add to cart").click()
+    assert info.value.json() == {"count": 1}          # served from the HAR
+    expect(page.get_by_test_id("cart-count")).to_have_text("1")</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Other ways to record">
+<pre><code># record everything a context does (not a route: requests still hit the server)
+context = browser.new_context(
+    record_har_path="session.har",
+    record_har_url_filter="**/api/**",
+    record_har_content="embed",          # "embed" bodies in the HAR, "attach" separate files, "omit"
+)</code></pre>
+<pre class="term"><code><span class="c"># record by hand in a real browser window</span>
+playwright open --save-har=cart.har --save-har-glob="**/api/**" http://127.0.0.1:8000/products/1</code></pre>
+    </div>
+  </div>
+  <ul>
+    <li>Matching uses the URL and method, and for POST requests the <strong>body</strong> too: replaying the recording above, adding product 2 does not match the recorded request for product 1, so with <code>not_found="abort"</code> it fails (with <code>"fallback"</code> it goes to the network).</li>
+    <li>Commit HAR files next to the tests and re-record them when the API changes (run once with <code>update=True</code>). Scrub tokens, cookies and personal data before committing.</li>
+    <li>Use a <code>url</code> filter so the HAR stays small and only the API is replayed.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="api-testing">API testing with APIRequestContext</h2>
+  <p>
+    <code>playwright.request.new_context()</code> creates an HTTP client (no browser) with a base URL, default headers, a cookie jar and the same <code>expect</code> style. It is useful
+    for testing the API on its own, for fast test set-up, and because API calls appear in Playwright traces next to the UI steps.
+  </p>
+<div class="codefile"><div class="fname">tests/conftest.py</div><pre><code>import pytest
+from playwright.sync_api import Playwright
+
+
+@pytest.fixture(scope="session")
+def api(playwright: Playwright, base_url: str):
+    request = playwright.request.new_context(
+        base_url=base_url,
+        extra_http_headers={"Accept": "application/json"},
+    )
+    yield request
+    request.dispose()</code></pre></div>
+<div class="codefile"><div class="fname">tests/api/test_cart_api.py</div><pre><code>import pytest
+from playwright.sync_api import APIRequestContext, expect
+
+
+def test_list_products(api: APIRequestContext):
+    response = api.get("/api/products")
+    expect(response).to_be_ok()                       # status 200-299
+    products = response.json()
+    assert len(products) == 4
+    assert {"id", "name", "price", "stock", "category"} &lt;= products[0].keys()
+
+
+@pytest.mark.parametrize("qty, status", [(1, 200), (0, 422), (-1, 422), (9, 422)])
+def test_cart_quantity_rules(api: APIRequestContext, qty: int, status: int):
+    response = api.post("/api/cart", data={"product_id": 2, "qty": qty})   # dict -&gt; JSON body
+    assert response.status == status, response.text()
+
+
+def test_more_than_stock_is_rejected(api: APIRequestContext):
+    response = api.post("/api/cart", data={"product_id": 2, "qty": 50})
+    assert response.status == 422
+    assert response.json() == {"detail": "Only 8 in stock"}
+
+
+def test_unknown_product(api: APIRequestContext):
+    response = api.post("/api/cart", data={"product_id": 999, "qty": 1})
+    assert response.status == 404</code></pre></div>
+  <p>
+    Why test the quantity rules through the API? The product page's input has <code>max="8"</code>, so the browser refuses to submit 50 and the UI can never send it. The server must still
+    reject it, because anyone can call the API directly. <strong>Validate at the API, check the user experience in the UI.</strong>
+  </p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Option</th><th>Meaning</th></tr>
+      <tr><td><code>data=</code></td><td>Body: a dict or list is sent as JSON; a string or bytes as is</td></tr>
+      <tr><td><code>form=</code></td><td>Form-encoded body (<code>application/x-www-form-urlencoded</code>), like an HTML form</td></tr>
+      <tr><td><code>multipart=</code></td><td>Multipart body, for file uploads: <code>{"file": {"name": "a.png", "mimeType": "image/png", "buffer": data}}</code></td></tr>
+      <tr><td><code>params=</code></td><td>Query string parameters</td></tr>
+      <tr><td><code>headers=</code>, <code>timeout=</code></td><td>Per request</td></tr>
+      <tr><td><code>max_redirects=0</code></td><td>Do not follow redirects (inspect a 303 and its <code>location</code> header)</td></tr>
+      <tr><td><code>fail_on_status_code=True</code></td><td>Raise on 4xx and 5xx instead of returning the response</td></tr>
+    </table>
+  </div>
+  <div class="callout"><b>Cookies matter.</b> An <code>APIRequestContext</code> keeps its own cookie jar. ShopBot only issues the <code>sid</code> session cookie on HTML pages, so call <code>api.get("/")</code> first if your test needs its own cart; without a cookie every cookieless client shares one anonymous cart, and counts leak between tests.</div>
+
+  <!-- ===================================================== -->
+  <h2 id="page-request">page.request: an API client that shares the browser's cookies</h2>
+  <p><code>page.request</code> (the same object as <code>context.request</code>) sends HTTP requests <strong>with the browser context's cookies</strong>, and cookies it receives are stored in the context. That is what makes it ideal for set-up: you act as the same user the browser is.</p>
+  <div class="demo" id="jar-demo">
+    <h3>Who shares which cookie jar?</h3>
+    <div class="flowtabs"></div><p class="flowdesc"></p><div class="stage"></div>
+  </div>
+<pre><code>def test_api_and_browser_share_the_cart(page: Page):
+    page.goto("/products")                                    # browser receives a sid cookie
+    response = page.request.post("/api/cart", data={"product_id": 1, "qty": 3})
+    assert response.json() == {"count": 3}
+    page.goto("/cart")                                        # same cookie, same cart
+    expect(page.get_by_test_id("cart-total")).to_have_text("£36.00")
+
+
+def test_log_in_through_the_api(page: Page):
+    page.request.post("/login", form={"email": "alice@example.com", "password": "wonderland"})
+    page.goto("/account")                                     # already logged in
+    expect(page.get_by_test_id("user-name")).to_have_text("Alice")</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="api-setup">Combining API set-up with UI checks</h2>
+  <p>
+    The fastest reliable end-to-end tests build their starting state through the API and spend browser time only on the behaviour under test. Filling a cart through three product
+    pages costs seconds and adds three places to fail; two API calls cost milliseconds.
+  </p>
+<div class="codefile"><div class="fname">tests/test_checkout.py</div><pre><code>import re
+from playwright.sync_api import Page, expect
+
+
+def test_checkout_with_prepared_cart(page: Page):
+    # Arrange through the API (shares the browser's cookies)
+    page.goto("/products")
+    page.request.post("/api/cart", data={"product_id": 2, "qty": 2})   # 2 x £39.50
+    page.request.post("/api/cart", data={"product_id": 4, "qty": 1})   # 1 x £9.50
+
+    # Act and assert in the UI
+    page.goto("/cart")
+    expect(page.get_by_role("row")).to_have_count(3)                  # header + 2 lines
+    expect(page.get_by_test_id("cart-total")).to_have_text("£88.50")
+    page.get_by_role("link", name="Checkout").click()
+    page.get_by_label("Full name").fill("Alice Liddell")
+    page.get_by_label("Email").fill("alice@example.com")
+    page.get_by_label("Postcode").fill("OX1 1AA")
+    page.get_by_label("I accept the terms").check()
+    page.get_by_role("button", name="Place order").click()
+    expect(page.get_by_role("status")).to_contain_text("confirmed")
+    expect(page.get_by_test_id("order-id")).to_have_text(re.compile(r"^\d{6}$"))</code></pre></div>
+  <p>The same idea works the other way round: do something in the UI, then verify the stored result through the API (for example, that an order really exists), and clean up test data through the API in a fixture's teardown.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="auth">Authentication: log in once, reuse the state</h2>
+  <p>
+    Logging in through the form in every test is slow and makes every test depend on the login page. Instead, log in <strong>once</strong>, save the context's
+    <strong>storage state</strong> (cookies, localStorage and optionally IndexedDB) to a JSON file with <code>context.storage_state(path=...)</code>, and start each test's
+    context from that file with <code>browser.new_context(storage_state=...)</code>. Each test still gets its own fresh context, so isolation is kept.
+  </p>
+  <div class="demo" id="auth-demo">
+    <h3>Logging in every test vs reusing storage_state</h3>
+    <div class="stage"></div>
+  </div>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Log in through the UI once">
+<div class="codefile"><div class="fname">tests/conftest.py</div><pre><code>import pytest
+from playwright.sync_api import Browser, expect
+
+
+@pytest.fixture(scope="session")
+def alice_state(browser: Browser, base_url: str, tmp_path_factory) -&gt; str:
+    path = tmp_path_factory.mktemp("auth") / "alice.json"
+    context = browser.new_context(base_url=base_url)
+    page = context.new_page()
+    page.goto("/login")
+    page.get_by_label("Email").fill("alice@example.com")
+    page.get_by_label("Password").fill("wonderland")
+    page.get_by_role("button", name="Log in").click()
+    expect(page.get_by_test_id("user-name")).to_have_text("Alice")   # wait until logged in
+    context.storage_state(path=path)
+    context.close()
+    return str(path)
+
+
+@pytest.fixture
+def browser_context_args(browser_context_args, alice_state):
+    return {**browser_context_args, "storage_state": alice_state}</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="Log in through the API (faster)">
+<div class="codefile"><div class="fname">tests/conftest.py</div><pre><code>import pytest
+from playwright.sync_api import Playwright
+
+
+@pytest.fixture(scope="session")
+def alice_state(playwright: Playwright, base_url: str, tmp_path_factory) -&gt; str:
+    path = tmp_path_factory.mktemp("auth") / "alice.json"
+    request = playwright.request.new_context(base_url=base_url)
+    request.get("/login")                      # ShopBot issues the session cookie on HTML pages
+    response = request.post("/login", form={"email": "alice@example.com", "password": "wonderland"})
+    assert response.url.endswith("/account"), "login failed"   # redirects are followed
+    request.storage_state(path=path)           # an APIRequestContext can save state too
+    request.dispose()
+    return str(path)</code></pre></div>
+    </div>
+    <div class="tabpane" data-tab="The test">
+<pre><code>from playwright.sync_api import Page, expect
+
+
+def test_account_page(page: Page):           # page starts logged in as Alice
+    page.goto("/account")
+    expect(page.get_by_text("Signed in as alice@example.com")).to_be_visible()</code></pre>
+<pre><code>// alice.json (shortened)
+{
+  "cookies": [
+    {"name": "sid", "value": "6f1c...e2", "domain": "127.0.0.1", "path": "/",
+     "expires": -1, "httpOnly": true, "secure": false, "sameSite": "Lax"}
+  ],
+  "origins": []
+}</code></pre>
+    </div>
+  </div>
+  <ul>
+    <li><strong>Treat state files as secrets</strong>: they contain live session cookies. Write them to a temporary directory (as above) or a git-ignored <code>.auth/</code> folder, never commit them.</li>
+    <li><strong>Session storage is not included</strong>. If your app keeps its token in <code>sessionStorage</code>, read it after login and restore it with <code>context.add_init_script(...)</code>. Pass <code>indexed_db=True</code> to <code>storage_state()</code> for apps (such as some Firebase set-ups) that keep auth in IndexedDB.</li>
+    <li>Sessions expire. Create the state per test run (a session fixture) rather than reusing a file from yesterday.</li>
+    <li>Tests that <strong>change</strong> the account (log out, change password, delete) must not share the session with others: give them their own login.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="roles">Multiple roles</h2>
+  <p>
+    Real applications have customers, staff and administrators. Keep one account per role, log each role in once, and choose the role per test with a marker. pytest-playwright also
+    ships a <code>browser_context_args</code> <strong>marker</strong> for one-off context options.
+  </p>
+<div class="codefile"><div class="fname">tests/conftest.py</div><pre><code>import pytest
+from playwright.sync_api import Playwright
+
+# one account per role (ShopBot has one demo user; your app will have more)
+ACCOUNTS = {
+    "customer": {"email": "alice@example.com", "password": "wonderland"},
+    # "admin":  {"email": "admin@example.com", "password": os.environ["ADMIN_PASSWORD"]},
+}
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "as_user(role): run the test logged in as this role")
+
+
+@pytest.fixture(scope="session")
+def auth_state(playwright: Playwright, base_url: str, tmp_path_factory):
+    cache: dict[str, str] = {}
+    auth_dir = tmp_path_factory.mktemp("auth")
+
+    def get(role: str) -&gt; str:
+        if role not in cache:                       # log in lazily, once per role
+            path = auth_dir / f"{role}.json"
+            request = playwright.request.new_context(base_url=base_url)
+            request.get("/login")                   # get a session cookie first
+            response = request.post("/login", form=ACCOUNTS[role])
+            assert response.url.endswith("/account"), f"login failed for {role}"
+            request.storage_state(path=path)
+            request.dispose()
+            cache[role] = str(path)
+        return cache[role]
+
+    return get
+
+
+@pytest.fixture
+def browser_context_args(browser_context_args, auth_state, request):
+    marker = request.node.get_closest_marker("as_user")
+    if marker is None:                              # no marker: anonymous visitor
+        return browser_context_args
+    return {**browser_context_args, "storage_state": auth_state(marker.args[0])}</code></pre></div>
+<pre><code>import pytest
+from playwright.sync_api import Page, expect
+
+
+@pytest.mark.as_user("customer")
+def test_customer_sees_account(page: Page):
+    page.goto("/account")
+    expect(page.get_by_test_id("user-name")).to_have_text("Alice")
+
+
+def test_anonymous_visitor_is_sent_to_login(page: Page):
+    page.goto("/account")
+    expect(page).to_have_url("/login")          # relative URLs use base_url
+    expect(page.get_by_role("heading", name="Log in")).to_be_visible()
+
+
+@pytest.mark.browser_context_args(locale="en-GB", timezone_id="Europe/London")
+def test_with_extra_context_options(page: Page):    # built-in marker of pytest-playwright
+    ...</code></pre>
+  <p>When one test needs <strong>two users at once</strong> (a customer and an admin, two chat participants), create two contexts with the <code>new_context</code> fixture, each from its own state file:</p>
+<pre><code>def test_admin_sees_customer_order(new_context, auth_state):
+    customer = new_context(storage_state=auth_state("customer")).new_page()
+    admin = new_context(storage_state=auth_state("admin")).new_page()
+    ...   # contexts are closed automatically after the test</code></pre>
+
+  <!-- ===================================================== -->
+  <h2 id="workers">Per-worker accounts for parallel runs</h2>
+  <p>
+    With <code>pytest -n 4</code> (pytest-xdist) four processes run tests at the same time. If they all use one account, a test in worker 1 can empty the cart that worker 2 is checking.
+    Read-only tests can share an account; tests that <strong>change server-side state</strong> need one account per worker. xdist's <code>worker_id</code> fixture is <code>"gw0"</code>,
+    <code>"gw1"</code>, ... (or <code>"master"</code> without <code>-n</code>).
+  </p>
+<pre><code>import os
+import pytest
+from playwright.sync_api import Playwright
+
+
+@pytest.fixture(scope="session")
+def worker_account(worker_id: str) -&gt; dict:
+    # pre-created accounts qa-gw0@example.com, qa-gw1@example.com, ... (or create one via an admin API here)
+    return {"email": f"qa-{worker_id}@example.com", "password": os.environ["QA_PASSWORD"]}
+
+
+@pytest.fixture(scope="session")
+def worker_state(playwright: Playwright, base_url: str, worker_account: dict, tmp_path_factory) -&gt; str:
+    path = tmp_path_factory.mktemp("auth") / "state.json"   # unique directory per worker
+    request = playwright.request.new_context(base_url=base_url)
+    request.get("/login")
+    request.post("/login", form=worker_account)
+    request.storage_state(path=path)
+    request.dispose()
+    return str(path)</code></pre>
+<pre class="term"><code>pytest -n 4 --base-url http://127.0.0.1:8000</code></pre>
+  <p class="muted">Session-scoped fixtures run once <em>per worker</em> under xdist, so each worker logs in once. If the login itself must happen only once for all workers, guard it with a file lock (the <code>filelock</code> package), as described in the pytest-xdist documentation.</p>
+
+  <!-- ===================================================== -->
+  <h2 id="websockets">WebSockets: observe and mock</h2>
+  <p>Live stock levels, chat and notifications often use WebSockets. <code>page.route_web_socket(url, handler)</code> intercepts the connection; the handler receives a <code>WebSocketRoute</code> and can reply as a fake server, or connect to the real one and sit in the middle.</p>
+  <div class="codetabs">
+    <div class="tabpane" data-tab="Fake server">
+<pre><code>import json
+from playwright.sync_api import Page, WebSocketRoute, expect
+
+
+def test_live_stock_badge(page: Page):
+    received = []
+
+    def fake_stock_server(ws: WebSocketRoute):
+        def on_message(message):
+            received.append(message)
+            if message == "subscribe:1":
+                ws.send(json.dumps({"product_id": 1, "stock": 3}))
+        ws.on_message(on_message)
+
+    page.route_web_socket("wss://shopbot.example/ws/stock", fake_stock_server)
+    page.goto("/products/1")          # a page that opens the socket and shows updates
+    ...
+    assert received == ["subscribe:1"]</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Man in the middle">
+<pre><code>def tamper(ws: WebSocketRoute):
+    server = ws.connect_to_server()               # the real server connection
+
+    def page_to_server(message):
+        if message == "ping":
+            ws.send("pong")                       # answer this one ourselves
+        else:
+            server.send(message)                  # forward everything else
+
+    ws.on_message(page_to_server)
+    server.on_message(lambda message: ws.send(message.replace("in stock", "LOW stock")))
+
+page.route_web_socket("**/ws/stock", tamper)</code></pre>
+    </div>
+    <div class="tabpane" data-tab="Close and errors">
+<pre><code># simulate the server dropping the connection
+page.route_web_socket("**/ws/stock",
+    lambda ws: ws.on_message(lambda m: ws.close(code=4001, reason="maintenance")))
+
+# observe a real (not mocked) socket
+with page.expect_websocket() as ws_info:
+    page.goto("/live")
+ws = ws_info.value
+ws.on("framereceived", lambda payload: print("&lt;&lt;", payload))
+ws.on("framesent", lambda payload: print("&gt;&gt;", payload))</code></pre>
+    </div>
+  </div>
+  <ul>
+    <li>ShopBot has no WebSocket endpoint; the fake-server and close examples were checked against a small page that opens <code>wss://shopbot.example/ws/stock</code>, which never exists on the network: the mock is the only server.</li>
+    <li>With <code>route_web_socket</code> and no <code>connect_to_server()</code>, the page never connects anywhere, and the <code>page.on("websocket")</code> / <code>expect_websocket</code> events are <strong>not</strong> fired for it. Use those events to observe real sockets.</li>
+    <li>Like <code>page.route</code>, the pattern can be relative: it is resolved against <code>base_url</code> with <code>http</code> changed to <code>ws</code>.</li>
+  </ul>
+
+  <!-- ===================================================== -->
+  <h2 id="sse">Server-sent events and streaming responses</h2>
+  <p>
+    AI chat UIs, including ShopBot's <code>/chat</code>, usually stream with <strong>server-sent events</strong> (SSE): a long HTTP response of <code>data: ...</code> lines.
+    There is no special SSE API in Playwright, because SSE is just HTTP: you can mock it with <code>route.fulfill</code> and a <code>text/event-stream</code> body.
+  </p>
+<div class="codefile"><div class="fname">tests/test_chat_mocked.py</div><pre><code>import json
+from playwright.sync_api import Page, expect
+
+
+def sse(*events: dict) -&gt; str:
+    return "".join(f"data: {json.dumps(e)}\n\n" for e in events)
+
+
+def test_chat_shows_streamed_answer_and_sources(page: Page):
+    body = sse(
+        {"type": "token", "text": "Returns are free "},
+        {"type": "token", "text": "within 30 days [returns]."},
+        {"type": "done", "sources": ["returns"]},
+    )
+    page.route("**/api/chat", lambda route: route.fulfill(
+        status=200, content_type="text/event-stream", body=body))
+    page.goto("/chat")
+    page.get_by_placeholder("Ask a question").fill("Can I return a mug?")
+    page.get_by_role("button", name="Send").click()
+    answer = page.get_by_test_id("bot-message")
+    expect(answer).to_have_attribute("aria-busy", "false")     # stream finished
+    expect(answer).to_have_text("Returns are free within 30 days [returns].")
+    expect(answer).to_have_attribute("data-sources", "returns")</code></pre></div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Consideration</th><th>What to do</th></tr>
+      <tr><td><code>route.fulfill</code> delivers the whole body at once</td><td>Fine for testing parsing and the final state. To test timing (tokens appearing one by one, a "stop" button mid-stream), point the app at a fake streaming server or a fake LLM back end instead (see <a href="../ai-testing/index.html">Testing AI applications</a>).</td></tr>
+      <tr><td><code>route.fetch()</code> waits for the complete response</td><td>Do not use fetch-and-modify on a long-lived stream; it would wait for the stream to end.</td></tr>
+      <tr><td><code>EventSource</code> reconnects automatically</td><td>A mocked response that ends will make a real <code>EventSource</code> reconnect after a few seconds; include a final event your UI treats as "done", or <code>route.abort()</code> the retry.</td></tr>
+      <tr><td>Waiting for "finished"</td><td>Assert on a UI signal (<code>aria-busy="false"</code>, a "done" attribute, the Send button re-enabled), not on the response event: for streams the response event fires when headers arrive.</td></tr>
+      <tr><td>Real model, real stream</td><td>Use generous timeouts and assert on properties (cites a source, mentions "30 days"), not exact text. ShopBot's default fake LLM is deterministic for tests.</td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="usecases">Real-world use cases</h2>
+  <div class="usecases">
+    <div><b>Front-end tests without a back end</b>Front-end teams test against mocked APIs before the back end is ready, from the agreed OpenAPI examples.</div>
+    <div><b>Error and edge states</b>500s, timeouts, empty results, huge lists, unicode names, expired sessions: one route each.</div>
+    <div><b>Payment and third parties</b>Never charge a real card or send a real SMS in tests: mock the provider's calls and assert the payload.</div>
+    <div><b>Contract checks</b>API tests with <code>APIRequestContext</code> in the same suite and report as the UI tests.</div>
+    <div><b>Fast set-up</b>Create users, carts and orders through the API; spend browser time on the behaviour under test.</div>
+    <div><b>Login once per run</b>Storage state per role and per worker turns a 3-second login per test into one login per run.</div>
+    <div><b>Stable demos and screenshots</b>Replay a HAR so marketing screenshots and visual tests always show the same data.</div>
+    <div><b>Analytics verification</b><code>expect_request</code> checks that the "purchase" event fires once with the right amount.</div>
+    <div><b>AI chat UIs</b>Mock the streamed LLM answer to test rendering, citations and error handling deterministically.</div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="mistakes">Common mistakes</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Mistake</th><th>Symptom</th><th>Fix</th></tr>
+      <tr><td>Registering the route after <code>goto</code> or after the click</td><td>The mock is ignored for the first request</td><td>Call <code>page.route</code> first</td></tr>
+      <tr><td>Glob without the query string: <code>"**/api/products"</code></td><td>Requests with <code>?q=...</code> are not intercepted</td><td><code>"**/api/products*"</code> or a regex</td></tr>
+      <tr><td>Mocking an endpoint the page does not call from the browser</td><td>Nothing changes (server-rendered data)</td><td>Check real traffic with <code>page.on("request")</code> or the trace</td></tr>
+      <tr><td>A handler that never calls fulfill, continue_, abort or fallback</td><td>The page hangs until a timeout</td><td>Every code path must settle the route (unless you are holding it on purpose)</td></tr>
+      <tr><td><code>time.sleep()</code> inside a sync handler</td><td>The whole test freezes</td><td>Hold the route and release it, or use the async API</td></tr>
+      <tr><td>Mocking everything</td><td>All green, yet production is broken: the mocks drifted from the real API</td><td>Keep a smaller set of tests against the real back end; re-record HARs; contract-test the API</td></tr>
+      <tr><td>Starting <code>expect_response</code> after the action</td><td>Timeout: the response already happened</td><td>Start the <code>with</code> block before the click</td></tr>
+      <tr><td>Committing storage-state or HAR files with real tokens</td><td>Leaked sessions</td><td>Temporary or git-ignored folders; scrub HARs</td></tr>
+      <tr><td>Sharing one account across parallel workers for tests that write</td><td>Random failures that vanish with <code>-n 0</code></td><td>Per-worker accounts</td></tr>
+      <tr><td>Expecting <code>playwright.request</code> to share the browser's login</td><td>401s or empty carts</td><td>Use <code>page.request</code>, or pass <code>storage_state=</code> to <code>new_context</code></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="cheatsheet">Cheat sheet</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Task</th><th>Code</th></tr>
+      <tr><td>Mock JSON</td><td><code>page.route("**/api/cart", lambda r: r.fulfill(json={"count": 1}))</code></td></tr>
+      <tr><td>Error status</td><td><code>r.fulfill(status=500, body="oops")</code></td></tr>
+      <tr><td>Network failure</td><td><code>r.abort("internetdisconnected")</code></td></tr>
+      <tr><td>Pass through, modified</td><td><code>r.continue_(headers={...}, post_data={...})</code></td></tr>
+      <tr><td>Edit a real response</td><td><code>resp = r.fetch(); r.fulfill(response=resp, json=new)</code></td></tr>
+      <tr><td>Next handler</td><td><code>r.fallback()</code></td></tr>
+      <tr><td>All pages in a context</td><td><code>context.route(...)</code></td></tr>
+      <tr><td>Remove routes</td><td><code>page.unroute(pattern)</code>, <code>page.unroute_all()</code></td></tr>
+      <tr><td>Block by type</td><td><code>if r.request.resource_type in {"image", "font"}: r.abort()</code></td></tr>
+      <tr><td>Wait for a response</td><td><code>with page.expect_response("**/api/cart") as info: ...</code> then <code>info.value.json()</code></td></tr>
+      <tr><td>Wait for a request</td><td><code>with page.expect_request(...) as info: ...</code></td></tr>
+      <tr><td>Record HAR</td><td><code>context.route_from_har(path, url="**/api/**", update=True)</code></td></tr>
+      <tr><td>Replay HAR</td><td><code>context.route_from_har(path, url="**/api/**", not_found="abort")</code></td></tr>
+      <tr><td>API client</td><td><code>playwright.request.new_context(base_url=...)</code>, <code>.get/.post/.put/.patch/.delete</code>, <code>.dispose()</code></td></tr>
+      <tr><td>API assertion</td><td><code>expect(response).to_be_ok()</code></td></tr>
+      <tr><td>Browser-cookie API calls</td><td><code>page.request.post("/api/cart", data={...})</code></td></tr>
+      <tr><td>Save login</td><td><code>context.storage_state(path="alice.json")</code></td></tr>
+      <tr><td>Reuse login</td><td><code>browser.new_context(storage_state="alice.json")</code> or via <code>browser_context_args</code></td></tr>
+      <tr><td>Per-test context options</td><td><code>@pytest.mark.browser_context_args(locale="en-GB")</code></td></tr>
+      <tr><td>Mock a WebSocket</td><td><code>page.route_web_socket(url, lambda ws: ws.on_message(...))</code></td></tr>
+      <tr><td>Mock SSE</td><td><code>r.fulfill(content_type="text/event-stream", body="data: {...}\n\n")</code></td></tr>
+    </table>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 id="exercises">Exercises</h2>
+  <details class="prob"><summary>1. Empty search results <span class="diff easy">easy</span></summary>
+    <p class="q">Without touching ShopBot's data, make <code>/products</code> show "No products found." by modifying the server's HTML response, and assert the result count text.</p>
+    <p>The product list is rendered on the server, so patch the HTML with <code>route.fetch()</code>. (The real way to get there is a search with no match, but this shows the technique.)</p>
+<pre><code>import re
+
+def test_no_products(page: Page):
+    def empty_grid(route):
+        response = route.fetch()
+        html = re.sub(r'&lt;div class="grid"&gt;.*?&lt;/div&gt;&lt;/main&gt;',
+                      '&lt;div class="grid"&gt;&lt;p role="status"&gt;No products found.&lt;/p&gt;&lt;/div&gt;&lt;/main&gt;',
+                      response.text(), flags=re.S)
+        route.fulfill(response=response, body=html)
+
+    page.route("**/products", empty_grid)
+    page.goto("/products")
+    expect(page.get_by_role("status")).to_have_text("No products found.")
+    expect(page.get_by_test_id("product-card")).to_have_count(0)</code></pre>
+  </details>
+  <details class="prob"><summary>2. Count the API calls <span class="diff easy">easy</span></summary>
+    <p class="q">Add a product to the cart twice and assert that exactly two <code>POST /api/cart</code> requests were made and that the badge shows 2, without mocking.</p>
+<pre><code>def test_two_cart_calls(page: Page):
+    calls = []
+    page.on("request", lambda r: calls.append(r) if r.url.endswith("/api/cart") else None)
+    page.goto("/products/4")
+    button = page.get_by_role("button", name="Add to cart")
+    button.click()
+    expect(page.get_by_test_id("cart-count")).to_have_text("1")
+    button.click()
+    expect(page.get_by_test_id("cart-count")).to_have_text("2")
+    assert [c.method for c in calls] == ["POST", "POST"]</code></pre>
+  </details>
+  <details class="prob"><summary>3. Chat outage <span class="diff med">medium</span></summary>
+    <p class="q">Make <code>/api/chat</code> fail with a network error and check what the chat UI does. What does the test tell you about ShopBot?</p>
+<pre><code>def test_chat_when_api_is_down(page: Page):
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/api/chat", lambda route: route.abort("connectionrefused"))
+    page.goto("/chat")
+    page.get_by_placeholder("Ask a question").fill("Shipping?")
+    page.get_by_role("button", name="Send").click()
+    bot = page.get_by_test_id("bot-message")
+    expect(bot).to_have_attribute("aria-busy", "true")    # stuck "typing" forever
+    expect(bot).to_be_empty()
+    # errors == ['Failed to fetch']: the UI never tells the user the assistant is unavailable</code></pre>
+    <p>The bubble stays busy and empty: a usability bug worth reporting, and a test to flip once the app shows an error.</p>
+  </details>
+  <details class="prob"><summary>4. API-first stock rule <span class="diff med">medium</span></summary>
+    <p class="q">Write a parametrised API test proving that every product rejects a quantity one above its stock, using the stock values returned by <code>GET /api/products</code>. Skip products with no stock.</p>
+<pre><code>def products(api):
+    return api.get("/api/products").json()
+
+def test_stock_limit_for_every_product(api: APIRequestContext):
+    for p in products(api):
+        if p["stock"] == 0:
+            continue
+        r = api.post("/api/cart", data={"product_id": p["id"], "qty": p["stock"] + 1})
+        assert r.status == 422, p["name"]
+        assert r.json()["detail"] == f"Only {p['stock']} in stock"</code></pre>
+    <p class="muted">For one test per product in the report, collect the products in <code>pytest_generate_tests</code> with <code>httpx</code> or load them from a fixture file, then parametrise.</p>
+  </details>
+  <details class="prob"><summary>5. Fast logged-in cart test <span class="diff hard">hard</span></summary>
+    <p class="q">Write a test that starts logged in as Alice (no login form), puts two notebooks in her cart through the API, and checks the cart page total. Then explain why the cart might already contain items when run twice.</p>
+<pre><code>def test_alice_cart(browser, base_url, alice_state):
+    context = browser.new_context(base_url=base_url, storage_state=alice_state)
+    page = context.new_page()
+    page.request.post("/api/cart", data={"product_id": 4, "qty": 2})
+    page.goto("/cart")
+    expect(page.get_by_role("row", name="Notebook Set")).to_contain_text("£19.00")
+    context.close()</code></pre>
+    <p>The storage state holds one session (<code>sid</code>) for the whole run, and ShopBot keeps the cart on the server per session, so every test using <code>alice_state</code> shares one cart: if another test also added notebooks, the row would show more than £19.00. Fixes: empty the cart in a fixture before and after, compare against the count returned by the API call, or give tests that write their own login (a function-scoped state).</p>
+  </details>
+
+  <h2 id="links">Further reading</h2>
+  <ul>
+    <li><a href="https://playwright.dev/python/docs/network">Playwright docs: Network</a> and <a href="https://playwright.dev/python/docs/mock">Mock APIs</a> (including HAR)</li>
+    <li><a href="https://playwright.dev/python/docs/api-testing">API testing</a> and <a href="https://playwright.dev/python/docs/api/class-apirequestcontext">APIRequestContext reference</a></li>
+    <li><a href="https://playwright.dev/python/docs/auth">Authentication</a></li>
+    <li><a href="https://playwright.dev/python/docs/api/class-route">Route</a> and <a href="https://playwright.dev/python/docs/api/class-websocketroute">WebSocketRoute</a> reference</li>
+  </ul>
+
+  <div class="pager"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="../assets/core.js"></script>
+  <script src="../assets/pw.js"></script>
+  <script src="demo.js"></script>
+  <script src="../assets/page.js"></script>
+</body>
+</html>
